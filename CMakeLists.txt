@@ -35,22 +35,27 @@ endif(CMAKE_BUILD_TYPE STREQUAL "Release")
 
 #headers
 file(GLOB_RECURSE HDRS
-    ${WARP_SOURCE_DIR}/Warp/*.h
-    ${WARP_SOURCE_DIR}/Warp/*.hpp
+    ${Warp_SOURCE_DIR}/Warp/*.h
+    ${Warp_SOURCE_DIR}/Warp/*.hpp
 )
 
 #source
 file(GLOB_RECURSE SRCS
-    ${WARP_SOURCE_DIR}/Warp/*.cpp
-    ${WARP_SOURCE_DIR}/Warp/*.c
+    ${Warp_SOURCE_DIR}/Warp/*.cpp
+    ${Warp_SOURCE_DIR}/Warp/*.c
 )
 
+message("Source Dir: ${Warp_SOURCE_DIR}")
+message("Sources: ${SRCS}")
+message("Headers: ${HDRS}")
+
 add_executable(Warp ${HDRS} ${SRCS})
+target_compile_features(Warp PUBLIC cxx_std_20)
 
 include_directories(
-    ${WARP_SOURCE_DIR}/Warp
-    ${WARP_SOURCE_DIR}/Warp/Rendering
-    ${WARP_SOURCE_DIR}/Warp/Engine
+    ${Warp_SOURCE_DIR}/Warp
+    ${Warp_SOURCE_DIR}/Warp/Rendering
+    ${Warp_SOURCE_DIR}/Warp/Engine
 )
 
 #link libraries for each platform
@@ -65,8 +70,8 @@ else()
 endif()
 
 if(WIN32)
-    string(REPLACE "/" "\\" source_path_windows "${WARP_SOURCE_DIR}/Resources")
-    string(REPLACE "/" "\\" build_path_windows "${WARP_BINARY_DIR}/Resources")
+    string(REPLACE "/" "\\" source_path_windows "${Warp_SOURCE_DIR}/Resources")
+    string(REPLACE "/" "\\" build_path_windows "${Warp_BINARY_DIR}/Resources")
     execute_process(COMMAND cmd.exe /c mklink /J "${build_path_windows}" "${source_path_windows}" RESULT_VARIABLE exitcode)
 else()
     execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink ${WARP_SOURCE_DIR}/Resources ${WARP_BINARY_DIR}/Resources RESULT_VARIABLE exitcode)
@@ -85,8 +90,8 @@ endforeach(file IN LISTS RES)
 if(MSVC_IDE)
     foreach(source IN LISTS SRCS HDRS)
         get_filename_component(source_path "${source}" PATH)
-        string(REPLACE "${WARP_SOURCE_DIR}" "" relative_source_path "${source_path}")
+        string(REPLACE "${Warp_SOURCE_DIR}" "" relative_source_path "${source_path}")
         string(REPLACE "/" "\\" source_path_msvc "${relative_source_path}")
         source_group("${source_path_msvc}" FILES "${source}")
-    endforeach(file IN LISTS SRCS HDRS)
+    endforeach(source IN LISTS SRCS HDRS)
 endif()
