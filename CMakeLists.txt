@@ -1,6 +1,6 @@
 
 #most up to date version as of project creation
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.30)
 
 #project name
 project(Warp)
@@ -45,10 +45,6 @@ file(GLOB_RECURSE SRCS
     ${Warp_SOURCE_DIR}/Warp/*.c
 )
 
-message("Source Dir: ${Warp_SOURCE_DIR}")
-message("Sources: ${SRCS}")
-message("Headers: ${HDRS}")
-
 add_executable(Warp ${HDRS} ${SRCS})
 target_compile_features(Warp PUBLIC cxx_std_20)
 
@@ -88,10 +84,14 @@ foreach(file IN LISTS RES)
 endforeach(file IN LISTS RES)
 
 if(MSVC_IDE)
+    #create virtual folders for VS because they still do this for some reason
     foreach(source IN LISTS SRCS HDRS)
         get_filename_component(source_path "${source}" PATH)
         string(REPLACE "${Warp_SOURCE_DIR}" "" relative_source_path "${source_path}")
         string(REPLACE "/" "\\" source_path_msvc "${relative_source_path}")
         source_group("${source_path_msvc}" FILES "${source}")
     endforeach(source IN LISTS SRCS HDRS)
+
+    #set Warp as the startup project
+    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Warp)
 endif()

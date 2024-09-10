@@ -1,7 +1,7 @@
 @echo off
 mkdir build
 cd build
-cmake ../ -G "Visual Studio 17 2022"
+cmake ../ -G "Visual Studio 17 2022" -T ClangCL -A x64
 mkdir Debug
 mkdir Release
 cd ..
