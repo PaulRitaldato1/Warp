@@ -7,8 +7,8 @@ project(Warp)
 
 if(MSVC)
     add_definitions(
-        -c
-        -w4
+        /MP
+        /W4
     )
 else()
     add_definitions(
@@ -30,7 +30,7 @@ if( CMAKE_BUILD_TYPE STREQUAL "" )
 endif( CMAKE_BUILD_TYPE STREQUAL "" )
 
 if( CMAKE_BUILD_TYPE STREQUAL "Release")
-    add_definitions( -O3 )
+    add_definitions( -O2 )
 endif(CMAKE_BUILD_TYPE STREQUAL "Release")
 
 #headers
@@ -56,7 +56,7 @@ include_directories(
 
 #link libraries for each platform
 if(WIN32)
-    target_link_libraries(Warp PUBLIC "d3d12.lib" "dxgi.lib" "d3dcompiler.lib")
+    target_link_libraries(Warp PUBLIC "d3d12.lib" "dxgi.lib" "d3dcompiler.lib" "Gdi32.lib")
 #Linux
 elseif(UNIX AND NOT APPLE)
 
