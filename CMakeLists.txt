@@ -10,12 +10,14 @@ if(MSVC)
         /MP
         /W4
     )
+    message("Adding MSVC /MP and /W4")
 else()
     add_definitions(
         -c
         -Wall
         -msse2
     )
+    message("Adding Unix -c, -Wall, -msse2")
 endif()
 
 if( CMAKE_BUILD_TYPE STREQUAL "" )
