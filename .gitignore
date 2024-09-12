@@ -55,3 +55,9 @@ build/ZERO_CHECK.vcxproj
 build/ZERO_CHECK.vcxproj.filters
 
 build/
+
+.vs/
+
+CMakeSettings.json
+
+out/

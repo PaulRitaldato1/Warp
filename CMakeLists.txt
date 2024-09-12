@@ -1,6 +1,6 @@
 
 #most up to date version as of project creation
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.16)
 
 #project name
 project(Warp)
