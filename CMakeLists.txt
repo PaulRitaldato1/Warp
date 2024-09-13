@@ -39,12 +39,14 @@ endif(CMAKE_BUILD_TYPE STREQUAL "Release")
 file(GLOB_RECURSE HDRS
     ${Warp_SOURCE_DIR}/Warp/*.h
     ${Warp_SOURCE_DIR}/Warp/*.hpp
+    CONFIGURE_DEPENDS
 )
 
 #source
 file(GLOB_RECURSE SRCS
     ${Warp_SOURCE_DIR}/Warp/*.cpp
     ${Warp_SOURCE_DIR}/Warp/*.c
+    CONFIGURE_DEPENDS
 )
 
 add_executable(Warp ${HDRS} ${SRCS})
