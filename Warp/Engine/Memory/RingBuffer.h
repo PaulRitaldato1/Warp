@@ -12,7 +12,7 @@ public:
 	}
 
 	RingBuffer(const u32 size) : m_head(0), m_allocatedSize(0), m_totalSize(size) {}
-	
+
 	~RingBuffer();
 
 	void Create(const u32 size);
@@ -55,7 +55,7 @@ public:
 	void Destroy();
 
 	bool Alloc(const u32 size, u32* outData);
-	
+
 	void OnBeginFrame();
 
 private:
