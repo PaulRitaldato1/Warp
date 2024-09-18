@@ -103,6 +103,6 @@ void RingBufferTabbed::OnBeginFrame()
 	
 	m_backBufferIndex = (m_backBufferIndex + 1) % m_memAllocatedPerBackBuffer.size();
 
-	u32 memToFree = m_allocatedMemPerBackBuffer[m_backBufferIndex];
+	u32 memToFree = m_memAllocatedPerBackBuffer[m_backBufferIndex];
 	m_ringBuffer.Free(memToFree);
 }
