@@ -44,7 +44,7 @@ bool RingBuffer::Free(const u32 size)
 u32 RingBuffer::PaddingToBufferEnd(const u32 size) const
 {
 	u32 tail = Tail();
-	
+
 	if ((tail + size) > m_totalSize)
 	{
 		return m_totalSize - tail;
@@ -96,11 +96,11 @@ bool RingBufferTabbed::Alloc(const uint32_t size, uint32_t* outData)
 	return false;
 }
 
-void RingBufferTabbed::OnBeginFrame() 
+void RingBufferTabbed::OnBeginFrame()
 {
 	m_memAllocatedPerBackBuffer[m_backBufferIndex] = m_memAllocatedInFrame;
 	m_memAllocatedInFrame = 0;
-	
+
 	m_backBufferIndex = (m_backBufferIndex + 1) % m_memAllocatedPerBackBuffer.size();
 
 	u32 memToFree = m_memAllocatedPerBackBuffer[m_backBufferIndex];
