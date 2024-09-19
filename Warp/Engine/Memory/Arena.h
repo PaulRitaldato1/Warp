@@ -8,7 +8,7 @@ class Arena
 public:
 	Arena(size_t size) : m_size(size), m_used(0)
 	{
-		m_data = static_cast<unsigned char*>(std::malloc(size));
+		m_data = static_cast<byte*>(std::malloc(size));
 		if (!m_data)
 		{
 			throw std::bad_alloc();
@@ -28,7 +28,7 @@ public:
 	T* AllocateType(Args&&... args)
 	{
 		size_t alignment = alignof(T);
-		size_t alignedSize = (m_used + alignment - 1) & ~(alignment - 1);
+		size_t alignedSize = AlignOffset(m_used, alignment);
 
 		DYNAMIC_ASSERT(alignedSize + sizeof(T) <= m_size, "ArenaFrameAllocator::AllocateType: Allocation is larger than arena size");
 
@@ -67,7 +67,7 @@ public:
 			m_data = nullptr;
 		}
 
-		m_data = static_cast<unsigned char*>(std::malloc(newSize));
+		m_data = static_cast<byte*>(std::malloc(newSize));
 
 		if (!m_data)
 		{
@@ -81,5 +81,5 @@ private:
 
 	size_t m_size;
 	size_t m_used;
-	unsigned char* m_data;
+	byte* m_data;
 };

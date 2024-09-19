@@ -86,4 +86,4 @@ inline WString StringToWString(const String& string)
 }
 
 template<class T>
-T AlignOffset(const T& uOffset, const T& uAlign) { return ((uOffset + (uAlign - 1)) & ~(uAlign - 1)); }
+inline T AlignOffset(const T& uOffset, const T& uAlign) { return ((uOffset + (uAlign - 1)) & ~(uAlign - 1)); }
