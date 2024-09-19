@@ -3,10 +3,10 @@
 #include "Common/CommonTypes.h"
 #include "Debugging/Assert.h"
 
-class ArenaFrameAllocator
+class Arena
 {
 public:
-	ArenaFrameAllocator(size_t size) : m_size(size), m_used(0)
+	Arena(size_t size) : m_size(size), m_used(0)
 	{
 		m_data = static_cast<unsigned char*>(std::malloc(size));
 		if (!m_data)
@@ -15,7 +15,7 @@ public:
 		}
 	}
 
-	~ArenaFrameAllocator()
+	~Arena()
 	{
 		if (m_data)
 		{
@@ -78,8 +78,6 @@ public:
 	}
 
 private:
-
-	const size_t m_allocationGranularity = 64 * 1024; // 64 KB Pages are standard on windows systems
 
 	size_t m_size;
 	size_t m_used;
