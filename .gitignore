@@ -61,3 +61,5 @@ build/
 CMakeSettings.json
 
 out/
+
+.vscode/
