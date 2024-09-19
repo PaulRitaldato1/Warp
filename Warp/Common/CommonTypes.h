@@ -32,6 +32,9 @@ using int16 = std::int16_t;
 using int32 = std::int32_t;
 using int64 = std::int64_t;
 
+using f32 = float;
+using f64 = double;
+
 using String = std::string;
 using WString = std::wstring;
 
@@ -87,3 +90,34 @@ inline WString StringToWString(const String& string)
 
 template<class T>
 inline T AlignOffset(const T& uOffset, const T& uAlign) { return ((uOffset + (uAlign - 1)) & ~(uAlign - 1)); }
+
+//Platform
+#if defined(_WIN32) || defined(WIN32) || defined(__WIN32__)
+	#define WARP_WINDOWS 1
+	#define WARP_BUILD_DX12 1
+	#define WARP_BUILD_VK 1
+#elif defined(__linux__) || defined(__gnu_linux__)
+	#define WARP_LINUX 1
+	#define WARP_BUILD_VK 1
+#elif defined(__APPLE__)
+	#define WARP_APPLE 1
+	#define WARP_BUILD_METAL 1
+#endif
+
+
+#ifdef WARP_EXPORT
+
+//export
+#ifdef  _MSC_VER
+	#define WARP_API __declspec(dllexport)
+#else
+	#define WARP_API __attribute__((visibility("default")))
+#endif
+
+//import
+#ifdef _MSC_VER
+	#define WARP_API __declspec(dllimport)
+#else
+	#define WARP_API
+#endif
+#endif
