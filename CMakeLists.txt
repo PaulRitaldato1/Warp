@@ -7,6 +7,8 @@ project(Warp)
 
 if(MSVC)
     add_definitions(
+        /EHsc
+        /Zc:preprocessor
         /MP
         /W4
     )
