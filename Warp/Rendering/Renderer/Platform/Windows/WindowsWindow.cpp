@@ -2,8 +2,13 @@
 
 #ifdef WARP_WINDOWS
 
-bool WindowsWindow::Create(WString AppName, int width, int height)
+LRESULT CALLBACK
+MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    
+}
 
+bool WindowsWindow::Create(WString AppName, int width, int height)
 {
     m_width = width;
     m_height = height;
