@@ -4,7 +4,10 @@ class IWindow
 {
 public:
 
-    virtual bool Create() = 0;
+    virtual ~IWindow() { Destroy(); }
+
+    virtual bool Create(String AppName, int width, int height) = 0;
+    virtual void Destroy() = 0;
 
 protected:
 

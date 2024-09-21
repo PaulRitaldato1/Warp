@@ -14,7 +14,8 @@ class WindowsWindow : public IWindow
 {
 public:
 
-    virtual bool Create(WString AppName, int width, int height) final;
+    virtual bool Create(String AppName, int width, int height) final;
+    virtual void Destroy();
 
 private:
 

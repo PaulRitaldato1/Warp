@@ -8,7 +8,7 @@ MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     
 }
 
-bool WindowsWindow::Create(WString AppName, int width, int height)
+bool WindowsWindow::Create(String AppName, int width, int height)
 {
     m_width = width;
     m_height = height;
@@ -25,11 +25,11 @@ bool WindowsWindow::Create(WString AppName, int width, int height)
     wc.hCursor          = LoadCursor(0, IDC_ARROW);
     wc.hbrBackground    = (HBRUSH)GetStockObject(NULL_BRUSH);
     wc.lpszMenuName     = 0;
-    wc.lpszClassName    = AppName.c_str();
+    wc.lpszClassName    = "WarpWindow";
 
     if(!RegisterClass(&wc))
     {
-        MessageBox(0, L"RegisterClass Failed in window Creation", 0, 0);
+        MessageBox(0, "RegisterClass Failed in window Creation", 0, 0);
         return false;
     }
 
@@ -38,12 +38,12 @@ bool WindowsWindow::Create(WString AppName, int width, int height)
     int w = rect.right - rect.left;
     int h = rect.bottom - rect.top;
 
-    m_wndHnd = CreateWindow(AppName.c_str(), AppName.c_str(), WS_OVERLAPPEDWINDOW, 
+    m_wndHnd = CreateWindow("WarpWindow", AppName.c_str(), WS_OVERLAPPEDWINDOW, 
         CW_USEDEFAULT, CW_USEDEFAULT, w, h, 0, 0, m_appInst, 0);
 
     if(!m_wndHnd)
     {
-        MessageBox(0, L"CreateWindow Failed.", 0, 0);
+        MessageBox(0, "CreateWindow Failed.", 0, 0);
         return false;
     }
 
@@ -53,4 +53,12 @@ bool WindowsWindow::Create(WString AppName, int width, int height)
     return true;
 }
 
+void WindowsWindow::Destroy()
+{
+    if(m_wndHnd)
+    {
+        DestroyWindow(m_wndHnd);
+        m_wndHnd = 0;
+    }
+}
 #endif
