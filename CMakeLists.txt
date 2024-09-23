@@ -37,30 +37,44 @@ if( CMAKE_BUILD_TYPE STREQUAL "Release")
     add_definitions( -O2 )
 endif(CMAKE_BUILD_TYPE STREQUAL "Release")
 
-#headers
-file(GLOB_RECURSE HDRS
-    ${Warp_SOURCE_DIR}/Warp/*.h
-    ${Warp_SOURCE_DIR}/Warp/*.hpp
+#Engine headers
+file(GLOB_RECURSE ENGINE_HDRS
+    ${Warp_SOURCE_DIR}/Warp/Engine/*.h
+    ${Warp_SOURCE_DIR}/Warp/Engine/*.hpp
 )
 
-#source
-file(GLOB_RECURSE SRCS
-    ${Warp_SOURCE_DIR}/Warp/*.cpp
-    ${Warp_SOURCE_DIR}/Warp/*.c
+#Engine source
+file(GLOB_RECURSE ENGINE_SRCS
+    ${Warp_SOURCE_DIR}/Warp/Engine/*.cpp
+    ${Warp_SOURCE_DIR}/Warp/Engine/*.c
 )
 
-add_executable(Warp ${HDRS} ${SRCS})
-target_compile_features(Warp PUBLIC cxx_std_20)
+#TestBed Sources
+file(GLOB_RECURSE TESTBED_SRCS
+    ${Warp_SOURCE_DIR}/Warp/TestBed/*.cpp
+    ${Warp_SOURCE_DIR}/Warp/TestBed/*.c
+)
+
+#TestBed
+file(GLOB_RECURSE TESTBED_HDRS
+    ${Warp_SOURCE_DIR}/Warp/TestBed/*.h
+    ${Warp_SOURCE_DIR}/Warp/TestBed/*.hpp
+)
 
 include_directories(
     ${Warp_SOURCE_DIR}/Warp
-    ${Warp_SOURCE_DIR}/Warp/Rendering
+    ${Warp_SOURCE_DIR}/Warp/Engine/Rendering
     ${Warp_SOURCE_DIR}/Warp/Engine
-)
+    )
+    
+add_library(WarpEngine ${ENGINE_SRCS} ${ENGINE_HDRS})
+
+add_executable(Warp ${TESTBED_SRCS} ${TESTBED_HDRS})
+target_compile_features(Warp PUBLIC cxx_std_20)
 
 #link libraries for each platform
 if(WIN32)
-    target_link_libraries(Warp PUBLIC "d3d12.lib" "dxgi.lib" "d3dcompiler.lib" "Gdi32.lib")
+    target_link_libraries(Warp PUBLIC WarpEngine "d3d12.lib" "dxgi.lib" "d3dcompiler.lib" "Gdi32.lib")
 #Linux
 elseif(UNIX AND NOT APPLE)
 
