@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/CommonTypes.h>
 #include <Rendering/Window/Window.h>
 
 #ifdef WARP_WINDOWS
@@ -13,6 +12,8 @@ MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 class WindowsWindow : public IWindow
 {
 public:
+
+    ~WindowsWindow() { Destroy(); }
 
     virtual bool Create(String AppName, int width, int height) final;
     virtual void Destroy();

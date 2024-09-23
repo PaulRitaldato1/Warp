@@ -108,17 +108,19 @@ inline T AlignOffset(const T& uOffset, const T& uAlign) { return ((uOffset + (uA
 
 #ifdef WARP_EXPORT
 
-//export
-#ifdef  _MSC_VER
-	#define WARP_API __declspec(dllexport)
-#else
-	#define WARP_API __attribute__((visibility("default")))
-#endif
+	//export
+	#ifdef  _MSC_VER
+		#define WARP_API __declspec(dllexport)
+	#else
+		#define WARP_API __attribute__((visibility("default")))
+	#endif
 
-//import
-#ifdef _MSC_VER
-	#define WARP_API __declspec(dllimport)
 #else
-	#define WARP_API
-#endif
+	//import
+	#ifdef _MSC_VER
+		#define WARP_API __declspec(dllimport)
+	#else
+		#define WARP_API
+	#endif
+
 #endif

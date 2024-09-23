@@ -1,10 +1,12 @@
 #pragma once
 
+#include <Common/CommonTypes.h>
+
 class IWindow
 {
 public:
 
-    virtual ~IWindow() { Destroy(); }
+    virtual ~IWindow() {}
 
     virtual bool Create(String AppName, int width, int height) = 0;
     virtual void Destroy() = 0;
