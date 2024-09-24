@@ -199,6 +199,11 @@ void WindowsWindow::Destroy()
 bool WindowsWindow::PumpMessages()
 {
     MSG message;
+    if(message.message == WM_QUIT)
+    {
+        return false;
+    } 
+    
     while(PeekMessageA(&message, NULL, 0, 0, PM_REMOVE))
     {
         TranslateMessage(&message);

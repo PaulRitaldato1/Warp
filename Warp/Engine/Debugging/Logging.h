@@ -3,10 +3,18 @@
 #include <Common/CommonTypes.h>
 #include <iostream>
 
+#define LOG_WARN_ENABLED 1
+#define LOG_INFO_ENABLED 1
+#define LOG_DEBUG_ENABLED 1
+
+#if WARP_RELEASE == 1
+#define LOG_DEBUG_ENABLED 0
+#endif
+
 enum LOG_LEVEL
 {
-    LOG_INFO = 0,
-    LOG_DEBUG,
+    LOG_DEBUG = 0,
+    LOG_INFO,
     LOG_WARNING,
     LOG_ERROR,
 
@@ -63,61 +71,32 @@ private:
         std::clog << logLevelColors[level] << logLevelStrings[level] << ": " << outStr << "\033[0m\n";
     }
 
-    inline static const Array<String, LOG_LEVEL_COUNT> logLevelStrings = { "LOG_INFO", "LOG_DEBUG", "LOG_WARNING", "LOG_ERROR"};
+    inline static const Array<String, LOG_LEVEL_COUNT> logLevelStrings = { "LOG_DEBUG", "LOG_INFO", "LOG_WARNING", "LOG_ERROR"};
     inline static const Array<String, LOG_LEVEL_COUNT> logLevelColors = {"\033[0m", "\033[35m", "\033[33m", "\033[31m"};
 
     //TODO: File bullshit here 
 };
 
-namespace Logging
-{
-    WARP_API inline void Log(String& outStr, LOG_LEVEL level)
-    {
-        Logger::Get().ConsoleLog(outStr, level);
-    }
+//Error Log
+#define ERROR_LOG(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_ERROR);
 
-    WARP_API inline void Log(String&& outStr, LOG_LEVEL level)
-    {
-        Logger::Get().ConsoleLog(outStr, level);
-    }
+//warning log
+#if LOG_WARN_ENABLED > 0 
+#define WARNING_LOG(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_WARNING);
+#else
+#define WARNING_LOG(message) do { } while(0)
+#endif
 
-    WARP_API inline void LogError(String& outStr)
-    {
-        Logger::Get().ConsoleLog(outStr, LOG_LEVEL::LOG_ERROR);
-    }
+//info log
+#if LOG_INFO_ENABLED > 0 
+#define INFO_LOG(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_INFO);
+#else
+#define INFO_LOG(message) do { } while(0)
+#endif
 
-    WARP_API inline void LogError(String&& outStr)
-    {
-        Logger::Get().ConsoleLog(outStr, LOG_LEVEL::LOG_ERROR);
-    }
-    
-    WARP_API inline void LogWarning(String& outStr)
-    {
-        Logger::Get().ConsoleLog(outStr, LOG_LEVEL::LOG_WARNING);
-    }
-
-    WARP_API inline void LogWarning(String&& outStr)
-    {
-        Logger::Get().ConsoleLog(outStr, LOG_LEVEL::LOG_WARNING);
-    }
-
-    WARP_API inline void LogDebug(String& outStr)
-    {
-        Logger::Get().ConsoleLog(outStr, LOG_LEVEL::LOG_DEBUG);
-    }
-
-    WARP_API inline void LogDebug(String&& outStr)
-    {
-        Logger::Get().ConsoleLog(outStr, LOG_LEVEL::LOG_DEBUG);
-    }
-
-    WARP_API inline void LogInfo(String& outStr)
-    {
-        Logger::Get().ConsoleLog(outStr, LOG_LEVEL::LOG_INFO);
-    }
-
-    WARP_API inline void LogInfo(String&& outStr)
-    {
-        Logger::Get().ConsoleLog(outStr, LOG_LEVEL::LOG_INFO);
-    }
-}
+//debug log
+#if LOG_DEBUG_ENABLED > 0
+#define DEBUG_LOG(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_DEBUG); 
+#else
+#define DEBUG_LOG(message) do { } while(0)
+#endif

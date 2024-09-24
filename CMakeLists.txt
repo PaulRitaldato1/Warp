@@ -67,11 +67,16 @@ include_directories(
     ${Warp_SOURCE_DIR}/Warp/Engine
     )
     
+#TODO
+#we also have 'WARP_ASSERTIONS_ENABLED', 'LOG_WARN_ENABLED', 'LOG_DEBUG_ENABLED', 'LOG_INFO_ENABLED', and 'WARP_RELEASE'
+#that we need to add depending on the build type
 add_library(WarpEngine SHARED ${ENGINE_SRCS} ${ENGINE_HDRS})
 target_compile_definitions(WarpEngine PUBLIC "WARP_EXPORT")
+target_precompile_headers(WarpEngine PRIVATE "Warp/Engine/Common/CommonTypes.h")
 
 add_executable(Warp ${TESTBED_SRCS} ${TESTBED_HDRS})
 target_compile_features(Warp PRIVATE cxx_std_20)
+target_precompile_headers(Warp PRIVATE "Warp/Engine/Common/CommonTypes.h")
 
 #link libraries for each platform
 if(WIN32)

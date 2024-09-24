@@ -102,6 +102,7 @@ inline T AlignOffset(const T& uOffset, const T& uAlign) { return ((uOffset + (uA
 #elif defined(__APPLE__)
 	#define WARP_APPLE 1
 	#define WARP_BUILD_METAL 1
+	#define WARP_BUILD_MOLTENVK 1
 #endif
 
 #ifdef WARP_EXPORT
