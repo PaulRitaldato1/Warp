@@ -71,11 +71,12 @@ add_library(WarpEngine SHARED ${ENGINE_SRCS} ${ENGINE_HDRS})
 target_compile_definitions(WarpEngine PUBLIC "WARP_EXPORT")
 
 add_executable(Warp ${TESTBED_SRCS} ${TESTBED_HDRS})
-target_compile_features(Warp PUBLIC cxx_std_20)
+target_compile_features(Warp PRIVATE cxx_std_20)
 
 #link libraries for each platform
 if(WIN32)
-    target_link_libraries(Warp PUBLIC WarpEngine "d3d12.lib" "dxgi.lib" "d3dcompiler.lib" "Gdi32.lib")
+    target_link_libraries(WarpEngine PRIVATE "d3d12.lib" "dxgi.lib" "d3dcompiler.lib" "Gdi32.lib")
+    target_link_libraries(Warp PUBLIC WarpEngine)
 #Linux
 elseif(UNIX AND NOT APPLE)
 
