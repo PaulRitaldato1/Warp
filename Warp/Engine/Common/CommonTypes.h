@@ -104,8 +104,6 @@ inline T AlignOffset(const T& uOffset, const T& uAlign) { return ((uOffset + (uA
 	#define WARP_BUILD_METAL 1
 #endif
 
-#define WARP_EXPORT
-
 #ifdef WARP_EXPORT
 
 	//export

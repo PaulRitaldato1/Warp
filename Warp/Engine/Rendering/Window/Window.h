@@ -2,7 +2,7 @@
 
 #include <Common/CommonTypes.h>
 
-class IWindow
+class WARP_API IWindow
 {
 public:
 
@@ -10,6 +10,7 @@ public:
 
     virtual bool Create(String AppName, int width, int height) = 0;
     virtual void Destroy() = 0;
+    virtual bool PumpMessages() = 0;
 
 protected:
 

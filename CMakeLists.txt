@@ -67,7 +67,8 @@ include_directories(
     ${Warp_SOURCE_DIR}/Warp/Engine
     )
     
-add_library(WarpEngine ${ENGINE_SRCS} ${ENGINE_HDRS})
+add_library(WarpEngine SHARED ${ENGINE_SRCS} ${ENGINE_HDRS})
+target_compile_definitions(WarpEngine PUBLIC "WARP_EXPORT")
 
 add_executable(Warp ${TESTBED_SRCS} ${TESTBED_HDRS})
 target_compile_features(Warp PUBLIC cxx_std_20)

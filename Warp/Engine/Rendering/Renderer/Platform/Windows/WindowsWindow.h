@@ -9,14 +9,17 @@
 LRESULT CALLBACK
 MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-class WindowsWindow : public IWindow
+class WARP_API WindowsWindow : public IWindow
 {
 public:
 
+    WindowsWindow(String Name, int width, int height) { Create(Name, width, height); }
     ~WindowsWindow() { Destroy(); }
 
     virtual bool Create(String AppName, int width, int height) final;
-    virtual void Destroy();
+    virtual void Destroy() final;
+
+    virtual bool PumpMessages() final;
 
 private:
 

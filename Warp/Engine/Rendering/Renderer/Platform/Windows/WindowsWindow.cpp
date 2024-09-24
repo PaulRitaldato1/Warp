@@ -195,4 +195,17 @@ void WindowsWindow::Destroy()
         m_wndHnd = 0;
     }
 }
+
+bool WindowsWindow::PumpMessages()
+{
+    MSG message;
+    while(PeekMessageA(&message, NULL, 0, 0, PM_REMOVE))
+    {
+        TranslateMessage(&message);
+        DispatchMessageA(&message);
+    }
+
+    return true;
+}
+
 #endif
