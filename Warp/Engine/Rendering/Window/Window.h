@@ -2,15 +2,18 @@
 
 #include <Common/CommonTypes.h>
 
-class WARP_API IWindow
+class IWindow
 {
 public:
 
     virtual ~IWindow() {}
 
-    virtual bool Create(String AppName, int width, int height) = 0;
+    virtual bool Create(String AppName, int Width, int Height) = 0;
     virtual void Destroy() = 0;
     virtual bool PumpMessages() = 0;
+
+    int16 GetHeight() { return m_height; }
+    int16 GetWidth() { return m_width; }
 
 protected:
 
@@ -20,6 +23,6 @@ protected:
     bool m_bResizing = false;
     bool m_bFullScreenState = false;
 
-    int m_width;
-    int m_height;
+    int16 m_width;
+    int16 m_height;
 };

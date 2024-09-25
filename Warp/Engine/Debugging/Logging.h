@@ -7,7 +7,7 @@
 #define LOG_INFO_ENABLED 1
 #define LOG_DEBUG_ENABLED 1
 
-#if WARP_RELEASE == 1
+#ifdef WARP_RELEASE
 #define LOG_DEBUG_ENABLED 0
 #endif
 
@@ -78,25 +78,25 @@ private:
 };
 
 //Error Log
-#define ERROR_LOG(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_ERROR);
+#define LOG_ERROR(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_ERROR);
 
 //warning log
 #if LOG_WARN_ENABLED > 0 
-#define WARNING_LOG(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_WARNING);
+#define LOG_WARNING(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_WARNING);
 #else
-#define WARNING_LOG(message) do { } while(0)
+#define LOG_WARNING(message) do { } while(0)
 #endif
 
 //info log
 #if LOG_INFO_ENABLED > 0 
-#define INFO_LOG(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_INFO);
+#define LOG_INFO(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_INFO);
 #else
-#define INFO_LOG(message) do { } while(0)
+#define LOG_INFO(message) do { } while(0)
 #endif
 
 //debug log
 #if LOG_DEBUG_ENABLED > 0
-#define DEBUG_LOG(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_DEBUG); 
+#define LOG_DEBUG(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_DEBUG); 
 #else
-#define DEBUG_LOG(message) do { } while(0)
+#define LOG_DEBUG(message) do { } while(0)
 #endif

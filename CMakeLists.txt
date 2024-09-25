@@ -110,13 +110,20 @@ endforeach(file IN LISTS RES)
 
 if(MSVC_IDE)
     #create virtual folders for VS because they still do this for some reason
-    foreach(source IN LISTS SRCS HDRS)
+    foreach(source IN LISTS TESTBED_SRCS TESTBED_HDRS)
         get_filename_component(source_path "${source}" PATH)
         string(REPLACE "${Warp_SOURCE_DIR}" "" relative_source_path "${source_path}")
         string(REPLACE "/" "\\" source_path_msvc "${relative_source_path}")
         source_group("${source_path_msvc}" FILES "${source}")
-    endforeach(source IN LISTS SRCS HDRS)
+    endforeach(source IN LISTS TESTBEd_SRCS TESTBED_HDRS)
 
+     foreach(source IN LISTS ENGINE_SRCS ENGINE_HDRS)
+        get_filename_component(source_path "${source}" PATH)
+        string(REPLACE "${Warp_SOURCE_DIR}" "" relative_source_path "${source_path}")
+        string(REPLACE "/" "\\" source_path_msvc "${relative_source_path}")
+        source_group("${source_path_msvc}" FILES "${source}")
+    endforeach(source IN LISTS ENGINE_SRCS ENGINE_HDRS)   
+    
     #set Warp as the startup project
     set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Warp)
 endif()

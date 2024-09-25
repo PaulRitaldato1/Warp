@@ -9,7 +9,7 @@
 LRESULT CALLBACK
 MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-class WARP_API WindowsWindow : public IWindow
+class WindowsWindow : public IWindow
 {
 public:
 
