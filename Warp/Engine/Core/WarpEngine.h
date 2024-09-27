@@ -2,8 +2,9 @@
 
 #include <Common/CommonTypes.h>
 
-class IRenderer;
+// class IRenderer;
 class IWindow;
+struct UserApplicationBase;
 
 struct EngineDesc
 {
@@ -16,10 +17,10 @@ struct EngineDesc
     String Name;
 };
 
-class WarpEngine
+class WARP_API WarpEngine
 {
 public:
-    WarpEngine(EngineDesc &desc);
+    WarpEngine(UserApplicationBase* App);
 
     bool Run();
 
@@ -34,6 +35,8 @@ private:
 
     f64 m_lastTime;
 
-    URef<IRenderer> m_renderer;
-    URef<IWindow> m_window;
+    // URef<IRenderer> m_renderer;
+    Ref<IWindow> m_window;
+
+    URef<UserApplicationBase> m_app;
 };

@@ -71,8 +71,8 @@ private:
         std::clog << logLevelColors[level] << logLevelStrings[level] << ": " << outStr << "\033[0m\n";
     }
 
-    inline static const Array<String, LOG_LEVEL_COUNT> logLevelStrings = { "LOG_DEBUG", "LOG_INFO", "LOG_WARNING", "LOG_ERROR"};
-    inline static const Array<String, LOG_LEVEL_COUNT> logLevelColors = {"\033[0m", "\033[35m", "\033[33m", "\033[31m"};
+    const Array<String, LOG_LEVEL_COUNT> logLevelStrings = { "LOG_DEBUG", "LOG_INFO", "LOG_WARNING", "LOG_ERROR"};
+    const Array<String, LOG_LEVEL_COUNT> logLevelColors = {"\033[0m", "\033[35m", "\033[33m", "\033[31m"};
 
     //TODO: File bullshit here 
 };

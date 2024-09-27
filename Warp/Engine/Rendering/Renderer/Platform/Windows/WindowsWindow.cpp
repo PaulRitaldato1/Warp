@@ -1,4 +1,5 @@
 #include "WindowsWindow.h"
+#include <Debugging/Logging.h>
 
 #ifdef WARP_WINDOWS
 
@@ -193,19 +194,20 @@ void WindowsWindow::Destroy()
     {
         DestroyWindow(m_wndHnd);
         m_wndHnd = 0;
+        LOG_DEBUG("Destoryed Window");
     }
 }
 
 bool WindowsWindow::PumpMessages()
 {
     MSG message;
-    if(message.message == WM_QUIT)
-    {
-        return false;
-    } 
     
     while(PeekMessageA(&message, NULL, 0, 0, PM_REMOVE))
     {
+        if(message.message == WM_QUIT)
+        {
+            return false;
+        } 
         TranslateMessage(&message);
         DispatchMessageA(&message);
     }

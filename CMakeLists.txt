@@ -55,11 +55,23 @@ file(GLOB_RECURSE TESTBED_SRCS
     ${Warp_SOURCE_DIR}/Warp/TestBed/*.c
 )
 
-#TestBed
+#TestBed headers
 file(GLOB_RECURSE TESTBED_HDRS
     ${Warp_SOURCE_DIR}/Warp/TestBed/*.h
     ${Warp_SOURCE_DIR}/Warp/TestBed/*.hpp
 )
+
+#EntryPoint Sources
+# file(GLOB_RECURSE ENTRY_SRCS
+#     ${Warp_SOURCE_DIR}/Warp/EntryPoint/*.cpp
+#     ${Warp_SOURCE_DIR}/Warp/EntryPoint/*.c
+# )
+
+# #EntryPoint headers
+# file(GLOB_RECURSE ENTRY_HDRS
+#     ${Warp_SOURCE_DIR}/Warp/EntryPoint/*.h
+#     ${Warp_SOURCE_DIR}/Warp/EntryPoint/*.hpp
+# )
 
 include_directories(
     ${Warp_SOURCE_DIR}/Warp
@@ -71,12 +83,19 @@ include_directories(
 #we also have 'WARP_ASSERTIONS_ENABLED', 'LOG_WARN_ENABLED', 'LOG_DEBUG_ENABLED', 'LOG_INFO_ENABLED', and 'WARP_RELEASE'
 #that we need to add depending on the build type
 add_library(WarpEngine SHARED ${ENGINE_SRCS} ${ENGINE_HDRS})
+target_compile_features(WarpEngine PRIVATE cxx_std_20)
 target_compile_definitions(WarpEngine PUBLIC "WARP_EXPORT")
 target_precompile_headers(WarpEngine PRIVATE "Warp/Engine/Common/CommonTypes.h")
 
-add_executable(Warp ${TESTBED_SRCS} ${TESTBED_HDRS})
+add_executable(Warp "Warp/EntryPoint/EntryPoint.h" ${TESTBED_SRCS} ${TESTBED_HDRS})
 target_compile_features(Warp PRIVATE cxx_std_20)
+target_compile_definitions(Warp PUBLIC "WARP_EXPORT")
 target_precompile_headers(Warp PRIVATE "Warp/Engine/Common/CommonTypes.h")
+
+#TODO: Make a separate application so I can hot reload the user code and the engine code
+# add_executable(Application ${ENTRY_SRCS} ${ENTRY_HDRS})
+# target_compile_features(Application PRIVATE cxx_std_20)
+# target_precompile_headers(Application PRIVATE "Warp/Engine/Common/CommonTypes.h")
 
 #link libraries for each platform
 if(WIN32)
@@ -124,6 +143,13 @@ if(MSVC_IDE)
         source_group("${source_path_msvc}" FILES "${source}")
     endforeach(source IN LISTS ENGINE_SRCS ENGINE_HDRS)   
     
+    foreach(source IN LISTS ENTRY_SRCS ENTRY_HDRS)
+        get_filename_component(source_path "${source}" PATH)
+        string(REPLACE "${Warp_SOURCE_DIR}" "" relative_source_path "${source_path}")
+        string(REPLACE "/" "\\" source_path_msvc "${relative_source_path}")
+        source_group("${source_path_msvc}" FILES "${source}")
+    endforeach(source IN LISTS ENGINE_SRCS ENGINE_HDRS)     
+
     #set Warp as the startup project
-    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Warp)
+    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT WarpEngine)
 endif()
