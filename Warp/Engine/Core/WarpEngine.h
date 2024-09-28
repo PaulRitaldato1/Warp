@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
+#include <Core/GameTimer.h>
 
 // class IRenderer;
 class IWindow;
@@ -21,7 +22,7 @@ class WARP_API WarpEngine
 {
 public:
     WarpEngine(UserApplicationBase* App);
-
+    ~WarpEngine();
     bool Run();
 
 private:
@@ -34,9 +35,10 @@ private:
     bool m_bResizing;
 
     f64 m_lastTime;
+    GameTimer m_timer;
 
     // URef<IRenderer> m_renderer;
-    Ref<IWindow> m_window;
+    URef<IWindow> m_window;
 
     URef<UserApplicationBase> m_app;
 };

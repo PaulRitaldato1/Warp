@@ -10,11 +10,7 @@ struct TempGame : public UserApplicationBase
 
     bool Update(f32 DeltaTime)
     {
-        if(DeltaTime > 1.0f)
-        {
-            LOG_DEBUG("Whatever");
-        }
-
+        LOG_DEBUG("DeltaTime: " + std::to_string(DeltaTime));
         return true;
     }
 

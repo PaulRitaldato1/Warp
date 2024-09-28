@@ -4,13 +4,14 @@
 #include <Debugging/Assert.h>
 #include <UserApplication.h>
 #include <Core/GameTimer.h>
+
 #ifdef WARP_WINDOWS
     #include <Renderer/Platform/Windows/WindowsWindow.h>
 #elif WARP_LINUX
 #elif WARP_APPLE
 #endif
 
-WarpEngine::WarpEngine(UserApplicationBase* App)
+WarpEngine::WarpEngine(UserApplicationBase* App) : m_timer()
 {
     LOG_DEBUG("Engine Init Started")
 
@@ -36,9 +37,17 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
     FATAL_ASSERT(App->Initialize(), "Application failed to initialize");
 }
 
+WarpEngine::~WarpEngine()
+{
+    LOG_DEBUG("Shutting down");
+}
+
 bool WarpEngine::Run()
 {
     LOG_DEBUG("Engine Run Started");
+
+    m_timer.Reset();
+
     while(m_bIsRunning)
     {
         if(!m_window->PumpMessages())
@@ -46,9 +55,11 @@ bool WarpEngine::Run()
             m_bIsRunning = false;
         }
 
+        m_timer.Tick();
+
         if(!m_bIsSuspended)
         {
-            if(!m_app->Update(2.0f))
+            if(!m_app->Update(m_timer.DeltaTime()))
             {
                 LOG_ERROR("App update failed.");
                 m_bIsRunning = false;
@@ -56,7 +67,6 @@ bool WarpEngine::Run()
             }
         }
     }
-    LOG_DEBUG("Shutting down");
     m_bIsRunning = false;
 
     return true;
