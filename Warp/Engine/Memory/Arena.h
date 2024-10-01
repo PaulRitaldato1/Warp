@@ -33,7 +33,7 @@ public:
 		DYNAMIC_ASSERT(alignedSize + sizeof(T) <= m_size, "ArenaFrameAllocator::AllocateType: Allocation is larger than arena size");
 
 		T* result = reinterpret_cast<T*>(m_data + alignedSize);
-		used += alignedSize + sizeof(T);
+		m_used += alignedSize + sizeof(T);
 
 		new (result) T(std::forward<Args>(args)...);
 

@@ -26,6 +26,11 @@ public:
     bool Run();
 
 private:
+    void OnMouseCallback(u32 keycode, bool bPressed);
+
+    WarpEngine(WarpEngine const&) = delete;
+    void operator=(WarpEngine const&) = delete;
+
 
     bool m_bIsRunning;
     bool m_bIsSuspended;

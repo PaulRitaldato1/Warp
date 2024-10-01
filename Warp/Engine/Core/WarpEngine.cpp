@@ -4,6 +4,7 @@
 #include <Debugging/Assert.h>
 #include <UserApplication.h>
 #include <Core/GameTimer.h>
+#include <string>
 
 #ifdef WARP_WINDOWS
     #include <Renderer/Platform/Windows/WindowsWindow.h>
@@ -11,13 +12,19 @@
 #elif WARP_APPLE
 #endif
 
-WarpEngine::WarpEngine(UserApplicationBase* App) : m_timer()
+WarpEngine::WarpEngine(UserApplicationBase* App)
 {
+    FATAL_ASSERT(App != nullptr, "Engine was attempting to init with no UserApplicationBase or WarpEngine::Instance() was called before WarpEngine::Init()");
+
+    m_timer = GameTimer();
     LOG_DEBUG("Engine Init Started")
 
     m_app = std::unique_ptr<UserApplicationBase>(App);
 
 #ifdef WARP_WINDOWS
+    OnMouseDelegate<WarpEngine, void(WarpEngine::*)(u32, bool), u32, bool> MouseDelegate(this, &WarpEngine::OnMouseCallback);
+    OnMouseEventManager.Subscribe(&MouseDelegate);
+
     m_window = std::make_unique<WindowsWindow>(App->EngineInitDesc.Name, App->EngineInitDesc.WindowWidth, App->EngineInitDesc.WindowHeight);
     LOG_DEBUG("Windows Window Initialized");
 #elif WARP_LINUX
@@ -35,6 +42,13 @@ WarpEngine::WarpEngine(UserApplicationBase* App) : m_timer()
     m_lastTime = 0.0f;
 
     FATAL_ASSERT(App->Initialize(), "Application failed to initialize");
+
+}
+
+void WarpEngine::OnMouseCallback(u32 keycode, bool bPressed)
+{
+    LOG_INFO("OnMouseCallback called with keycode " + std::to_string(keycode) + " and bPressed " + std::to_string(bPressed));
+    return;
 }
 
 WarpEngine::~WarpEngine()
@@ -59,12 +73,17 @@ bool WarpEngine::Run()
 
         if(!m_bIsSuspended)
         {
+            // LOG_INFO("DeltaTime: " + std::to_string(m_timer.DeltaTime()));
             if(!m_app->Update(m_timer.DeltaTime()))
             {
                 LOG_ERROR("App update failed.");
                 m_bIsRunning = false;
                 break;
             }
+        }
+        else
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
     m_bIsRunning = false;

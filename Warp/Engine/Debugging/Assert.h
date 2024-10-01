@@ -20,6 +20,9 @@
                       << " line " << __LINE__ << " with message: " << message << ".\033[0m\n"; \
         DebugBreak(); \
     }
+#else
+#define DYNAMIC_ASSERT(condition, message) do {} while (false)
+#endif
 
 #define FATAL_ASSERT(condition, message) \
     if(condition){} \
@@ -29,7 +32,3 @@
             << " line " << __LINE__ << " with message: " << message << ".\033[0m\n";\
         std::terminate();\
     }
-#else
-#define DYNAMIC_ASSERT(condition, message) do {} while (false)
-#define FATAL_ASSERT(condition, message) do {} while (false)
-#endif

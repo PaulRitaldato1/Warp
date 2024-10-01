@@ -63,3 +63,5 @@ CMakeSettings.json
 out/
 
 .vscode/
+
+.cache/

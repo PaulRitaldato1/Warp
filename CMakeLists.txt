@@ -1,9 +1,9 @@
 
 #most up to date version as of project creation
 cmake_minimum_required(VERSION 3.16)
-
 #project name
 project(Warp)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(MSVC)
     add_definitions(
@@ -38,25 +38,25 @@ if( CMAKE_BUILD_TYPE STREQUAL "Release")
 endif(CMAKE_BUILD_TYPE STREQUAL "Release")
 
 #Engine headers
-file(GLOB_RECURSE ENGINE_HDRS
+file(GLOB_RECURSE ENGINE_HDRS CONFIGURE_DEPENDS
     ${Warp_SOURCE_DIR}/Warp/Engine/*.h
     ${Warp_SOURCE_DIR}/Warp/Engine/*.hpp
 )
 
 #Engine source
-file(GLOB_RECURSE ENGINE_SRCS
+file(GLOB_RECURSE ENGINE_SRCS CONFIGURE_DEPENDS
     ${Warp_SOURCE_DIR}/Warp/Engine/*.cpp
     ${Warp_SOURCE_DIR}/Warp/Engine/*.c
 )
 
 #TestBed Sources
-file(GLOB_RECURSE TESTBED_SRCS
+file(GLOB_RECURSE TESTBED_SRCS CONFIGURE_DEPENDS
     ${Warp_SOURCE_DIR}/Warp/TestBed/*.cpp
     ${Warp_SOURCE_DIR}/Warp/TestBed/*.c
 )
 
 #TestBed headers
-file(GLOB_RECURSE TESTBED_HDRS
+file(GLOB_RECURSE TESTBED_HDRS CONFIGURE_DEPENDS
     ${Warp_SOURCE_DIR}/Warp/TestBed/*.h
     ${Warp_SOURCE_DIR}/Warp/TestBed/*.hpp
 )
@@ -78,7 +78,7 @@ include_directories(
     ${Warp_SOURCE_DIR}/Warp/Engine/Rendering
     ${Warp_SOURCE_DIR}/Warp/Engine
     )
-    
+
 #TODO
 #we also have 'WARP_ASSERTIONS_ENABLED', 'LOG_WARN_ENABLED', 'LOG_DEBUG_ENABLED', 'LOG_INFO_ENABLED', and 'WARP_RELEASE'
 #that we need to add depending on the build type
@@ -124,7 +124,7 @@ endif()
 
 file(GLOB_RECURSE RES RELATIVE ${WARP_SOURCE_DIR}/Resources ${WARP_SOURCE_DIR}/Resources/*.*)
 foreach(file IN LISTS RES)
-    configure_file(${WARP_SOURCE_DIR}/Resources/${file} ${WARP_BINARY_DIR}/Resources/${file} COPYONLY)    
+    configure_file(${WARP_SOURCE_DIR}/Resources/${file} ${WARP_BINARY_DIR}/Resources/${file} COPYONLY)
 endforeach(file IN LISTS RES)
 
 if(MSVC_IDE)
@@ -141,14 +141,14 @@ if(MSVC_IDE)
         string(REPLACE "${Warp_SOURCE_DIR}" "" relative_source_path "${source_path}")
         string(REPLACE "/" "\\" source_path_msvc "${relative_source_path}")
         source_group("${source_path_msvc}" FILES "${source}")
-    endforeach(source IN LISTS ENGINE_SRCS ENGINE_HDRS)   
-    
+    endforeach(source IN LISTS ENGINE_SRCS ENGINE_HDRS)
+
     foreach(source IN LISTS ENTRY_SRCS ENTRY_HDRS)
         get_filename_component(source_path "${source}" PATH)
         string(REPLACE "${Warp_SOURCE_DIR}" "" relative_source_path "${source_path}")
         string(REPLACE "/" "\\" source_path_msvc "${relative_source_path}")
         source_group("${source_path_msvc}" FILES "${source}")
-    endforeach(source IN LISTS ENGINE_SRCS ENGINE_HDRS)     
+    endforeach(source IN LISTS ENGINE_SRCS ENGINE_HDRS)
 
     #set Warp as the startup project
     set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT WarpEngine)

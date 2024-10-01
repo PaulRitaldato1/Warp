@@ -14,7 +14,6 @@ int main()
 
     FATAL_ASSERT(App != nullptr, "App Failed to exist");
 
-    WarpEngine EngineInstance(App);
-
-    EngineInstance.Run();
+    WarpEngine Engine(App);
+    Engine.Run();
 }

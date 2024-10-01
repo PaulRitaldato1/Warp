@@ -1,6 +1,7 @@
 #pragma once
 #include <Common/CommonTypes.h>
 
+//TODO: This needs to allocate dynamically
 class RingBuffer
 {
 public:
