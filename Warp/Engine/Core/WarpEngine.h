@@ -2,6 +2,7 @@
 
 #include <Common/CommonTypes.h>
 #include <Core/GameTimer.h>
+#include <Window/Window.h>
 
 // class IRenderer;
 class IWindow;
@@ -26,6 +27,8 @@ public:
     bool Run();
 
 private:
+    using MouseDelegate = MemberFuncType<WarpEngine, u32, bool>;
+    URef< MouseDelegate > m_mouseDelegate;
     void OnMouseCallback(u32 keycode, bool bPressed);
 
     WarpEngine(WarpEngine const&) = delete;
@@ -35,8 +38,6 @@ private:
     bool m_bIsRunning;
     bool m_bIsSuspended;
     bool m_bIsFullScreen;
-    bool m_bMinimized;
-    bool m_bMaximized;
     bool m_bResizing;
 
     f64 m_lastTime;

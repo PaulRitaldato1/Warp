@@ -3,8 +3,8 @@
 #include <Common/CommonTypes.h>
 #include <Events/DelegateDefs.h>
 
-inline EventManager<u32, bool> OnMouseEventManager;
-inline EventManager<u32, bool> OnKeyboardEventManager;
+inline EventManager<u32, bool> OnMouseButtonEventManager;
+inline EventManager<u32, bool> OnKeyPressedEventManager;
 
 class IWindow
 {

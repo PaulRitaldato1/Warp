@@ -3,7 +3,6 @@
 #include <Debugging/Logging.h>
 #include <Debugging/Assert.h>
 #include <UserApplication.h>
-#include <Core/GameTimer.h>
 #include <string>
 
 #ifdef WARP_WINDOWS
@@ -21,10 +20,10 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 
     m_app = std::unique_ptr<UserApplicationBase>(App);
 
-#ifdef WARP_WINDOWS
-    OnMouseDelegate<WarpEngine, void(WarpEngine::*)(u32, bool), u32, bool> MouseDelegate(this, &WarpEngine::OnMouseCallback);
-    OnMouseEventManager.Subscribe(&MouseDelegate);
+    m_mouseDelegate = std::make_unique<MouseDelegate>(this, &WarpEngine::OnMouseCallback);
+    OnMouseButtonEventManager.Subscribe(m_mouseDelegate.get());
 
+#ifdef WARP_WINDOWS
     m_window = std::make_unique<WindowsWindow>(App->EngineInitDesc.Name, App->EngineInitDesc.WindowWidth, App->EngineInitDesc.WindowHeight);
     LOG_DEBUG("Windows Window Initialized");
 #elif WARP_LINUX
@@ -35,8 +34,6 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 
     m_bIsRunning = true;
     m_bIsSuspended = false;
-    m_bMaximized = false;
-    m_bMinimized = false;
     m_bResizing = false;
     m_bIsFullScreen = false;
     m_lastTime = 0.0f;
