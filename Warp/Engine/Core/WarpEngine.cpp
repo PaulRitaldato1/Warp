@@ -20,9 +20,6 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 
     m_app = std::unique_ptr<UserApplicationBase>(App);
 
-    m_mouseDelegate = std::make_unique<MouseDelegate>(this, &WarpEngine::OnMouseCallback);
-    OnMouseButtonEventManager.Subscribe(m_mouseDelegate.get());
-
 #ifdef WARP_WINDOWS
     m_window = std::make_unique<WindowsWindow>(App->EngineInitDesc.Name, App->EngineInitDesc.WindowWidth, App->EngineInitDesc.WindowHeight);
     LOG_DEBUG("Windows Window Initialized");
@@ -40,12 +37,6 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 
     FATAL_ASSERT(App->Initialize(), "Application failed to initialize");
 
-}
-
-void WarpEngine::OnMouseCallback(u32 keycode, bool bPressed)
-{
-    LOG_INFO("OnMouseCallback called with keycode " + std::to_string(keycode) + " and bPressed " + std::to_string(bPressed));
-    return;
 }
 
 WarpEngine::~WarpEngine()

@@ -5,7 +5,6 @@
 #include <Debugging/Logging.h>
 #include <UserApplication.h>
 
-
 int main()
 {
     UserApplicationBase* App = nullptr;

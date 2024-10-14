@@ -1,13 +1,16 @@
 #include "WindowsWindow.h"
 #include <Debugging/Logging.h>
 #include <cstdlib>
+#include <Input/Input.h>
 
 #ifdef WARP_WINDOWS
+
+#include <WindowsX.h>
 
 LRESULT CALLBACK
 MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    switch( msg )
+  switch( msg )
   {
   // WM_ACTIVATE is sent when the window is activated or deactivated.
   // We pause the game when the window is deactivated and unpause it
@@ -118,29 +121,36 @@ MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 
   case WM_LBUTTONDOWN:
+      g_InputEventManager.MouseButtonEventManager.Broadcast(MouseCode::BUTTON_LEFT, true);
+      return 0;
   case WM_MBUTTONDOWN:
+      g_InputEventManager.MouseButtonEventManager.Broadcast(MouseCode::BUTTON_MIDDLE, true);
+      return 0;
   case WM_RBUTTONDOWN:
-        //TODO: Send Mouse Down Event
-        OnMouseButtonEventManager.Broadcast(1, true);
-    // OnMouseDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-    return 0;
+      g_InputEventManager.MouseButtonEventManager.Broadcast(MouseCode::BUTTON_RIGHT, true);
+      return 0;
   case WM_LBUTTONUP:
+      g_InputEventManager.MouseButtonEventManager.Broadcast(MouseCode::BUTTON_LEFT, false);
+      return 0;
   case WM_MBUTTONUP:
+      g_InputEventManager.MouseButtonEventManager.Broadcast(MouseCode::BUTTON_MIDDLE, false);
+      return 0;
   case WM_RBUTTONUP:
-    OnMouseButtonEventManager.Broadcast(1, false);
-        //TODO: Send Mouse up event
-    // OnMouseUp(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-    return 0;
+      g_InputEventManager.MouseButtonEventManager.Broadcast(MouseCode::BUTTON_RIGHT, false);
+      return 0;
   case WM_MOUSEMOVE:
-        //TODO: Send mouse move event
-    // OnMouseMove(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-    return 0;
-    case WM_KEYUP:
-        if(wParam == VK_ESCAPE)
-        {
-            PostQuitMessage(0);
-        }
-        return 0;
+      g_InputEventManager.MouseMoveEventManager.Broadcast(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)); 
+      return 0;
+  case WM_KEYDOWN:
+      g_InputEventManager.KeyPressedEventManager.Broadcast(static_cast<KeyCode>(wParam), true);
+      return 0;
+  case WM_KEYUP:
+      g_InputEventManager.KeyPressedEventManager.Broadcast(static_cast<KeyCode>(wParam), false);
+      if(wParam == VK_ESCAPE)
+      {
+          PostQuitMessage(0);
+      }
+      return 0;
   }
 
   return DefWindowProc(hwnd, msg, wParam, lParam);

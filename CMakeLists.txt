@@ -89,7 +89,7 @@ target_precompile_headers(WarpEngine PRIVATE "Warp/Engine/Common/CommonTypes.h")
 
 add_executable(Warp "Warp/EntryPoint/EntryPoint.h" ${TESTBED_SRCS} ${TESTBED_HDRS})
 target_compile_features(Warp PRIVATE cxx_std_20)
-target_compile_definitions(Warp PUBLIC "WARP_EXPORT")
+target_compile_definitions(Warp PUBLIC)
 target_precompile_headers(Warp PRIVATE "Warp/Engine/Common/CommonTypes.h")
 
 #TODO: Make a separate application so I can hot reload the user code and the engine code

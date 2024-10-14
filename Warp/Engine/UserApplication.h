@@ -2,6 +2,7 @@
 
 #include <Common/CommonTypes.h>
 #include <Core/WarpEngine.h>
+#include <Input/Input.h>
 
 //The user of the engine MUST implement this
 extern bool HookEngineFromApp(UserApplicationBase** outDesc);

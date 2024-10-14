@@ -2,8 +2,7 @@
 
 #include <Common/CommonTypes.h>
 #include <Core/GameTimer.h>
-#include <Window/Window.h>
-
+#include <Input/Input.h>
 // class IRenderer;
 class IWindow;
 struct UserApplicationBase;
@@ -27,9 +26,6 @@ public:
     bool Run();
 
 private:
-    using MouseDelegate = MemberFuncType<WarpEngine, u32, bool>;
-    URef< MouseDelegate > m_mouseDelegate;
-    void OnMouseCallback(u32 keycode, bool bPressed);
 
     WarpEngine(WarpEngine const&) = delete;
     void operator=(WarpEngine const&) = delete;

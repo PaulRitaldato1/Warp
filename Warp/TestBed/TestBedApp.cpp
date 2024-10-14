@@ -1,5 +1,6 @@
 #include <EntryPoint/EntryPoint.h>
 #include <Common/CommonTypes.h>
+#include <Input/Input.h>
 
 struct TempGame : public UserApplicationBase
 {
@@ -26,6 +27,11 @@ struct TempGame : public UserApplicationBase
     }
 };
 
+void wKeyUp()
+{
+    LOG_INFO("W key pressed");
+}
+
 bool HookEngineFromApp(UserApplicationBase** outDesc)
 {
     (*outDesc) = new TempGame();
@@ -34,5 +40,6 @@ bool HookEngineFromApp(UserApplicationBase** outDesc)
     (*outDesc)->EngineInitDesc.WindowWidth = 1920;
     (*outDesc)->EngineInitDesc.WindowHeight = 1080;
 
+    g_InputEventManager.SubscribeToKeyUp(KeyCode::KEY_W, wKeyUp);
     return true;
 }

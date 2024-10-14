@@ -5,7 +5,7 @@
 
 #define LOG_WARN_ENABLED 1
 #define LOG_INFO_ENABLED 1
-#define LOG_DEBUG_ENABLED 1
+#define LOG_DEBUG_ENABLED 0
 
 #ifdef WARP_RELEASE
 #define LOG_DEBUG_ENABLED 0
@@ -84,19 +84,19 @@ private:
 #if LOG_WARN_ENABLED > 0 
 #define LOG_WARNING(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_WARNING);
 #else
-#define LOG_WARNING(message) do { } while(0)
+#define LOG_WARNING(message) do { } while(0);
 #endif
 
 //info log
 #if LOG_INFO_ENABLED > 0 
 #define LOG_INFO(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_INFO);
 #else
-#define LOG_INFO(message) do { } while(0)
+#define LOG_INFO(message) do { } while(0);
 #endif
 
 //debug log
 #if LOG_DEBUG_ENABLED > 0
 #define LOG_DEBUG(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_DEBUG); 
 #else
-#define LOG_DEBUG(message) do { } while(0)
+#define LOG_DEBUG(message) do { } while(0);
 #endif
