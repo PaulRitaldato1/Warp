@@ -31,14 +31,14 @@ public:
 
     void Subscribe(DelegateBase<Args...>* delegate)
     {
-        m_delegates.push_back(delegate);
+      m_delegates.push_back(delegate);
     }
 
     void Broadcast(Args... args)
     {
         for(DelegateBase<Args...>* delegate : m_delegates)
         {
-            delegate->Invoke(args...);
+          delegate->Invoke(args...);
         }
     }
 
