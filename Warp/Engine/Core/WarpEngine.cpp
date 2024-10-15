@@ -62,12 +62,14 @@ bool WarpEngine::Run()
         if(!m_bIsSuspended)
         {
             // LOG_INFO("DeltaTime: " + std::to_string(m_timer.DeltaTime()));
+            //calc frame stats
             if(!m_app->Update(m_timer.DeltaTime()))
             {
                 LOG_ERROR("App update failed.");
                 m_bIsRunning = false;
                 break;
             }
+            //render
         }
         else
         {
