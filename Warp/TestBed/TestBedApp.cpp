@@ -29,7 +29,7 @@ struct TempGame : public UserApplicationBase
 
 void wKeyUp()
 {
-    LOG_INFO("W key pressed");
+    LOG_INFO("W key released");
 }
 
 bool HookEngineFromApp(UserApplicationBase** outDesc)
