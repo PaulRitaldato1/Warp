@@ -2,23 +2,26 @@
 
 #include <Common/CommonTypes.h>
 
-template <typename... Args> class DelegateBase {
+template <typename... Args>
+class DelegateBase
+{
 public:
-  virtual ~DelegateBase() = default;
-  virtual void Invoke(Args... args) = 0;
+    virtual ~DelegateBase() = default;
+    virtual void Invoke(Args... args) = 0;
 };
 
 template <typename Instance, typename Function, typename... Args>
-class MemberFuncDelegate : public DelegateBase<Args...> {
+class MemberFuncDelegate : public DelegateBase<Args...>
+{
 public:
-  MemberFuncDelegate(Instance *instance, Function func)
-      : m_instance(instance), m_func(func) {}
+    MemberFuncDelegate(Instance* instance, Function func)
+        : m_instance(instance), m_func(func) {}
 
-  void Invoke(Args... args) override { (m_instance->*m_func)(args...); }
+    void Invoke(Args... args) override { (m_instance->*m_func)(args...); }
 
 private:
-  Instance *m_instance;
-  Function m_func;
+    Instance* m_instance;
+    Function m_func;
 };
 
 template <typename ClassType, typename... Args>

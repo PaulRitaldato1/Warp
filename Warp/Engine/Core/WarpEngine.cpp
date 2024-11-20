@@ -3,7 +3,6 @@
 #include <Debugging/Logging.h>
 #include <Debugging/Assert.h>
 #include <UserApplication.h>
-#include <string>
 
 #ifdef WARP_WINDOWS
     #include <Renderer/Platform/Windows/WindowsWindow.h>

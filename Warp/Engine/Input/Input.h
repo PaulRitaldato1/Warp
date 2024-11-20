@@ -264,6 +264,9 @@ enum MouseCode : u32
 //     KEYS_MAX_KEYS
 // };
 
+// TODO: Currently only one callback can be registered to each input event
+// I want to eventually change this to a list so multiple callbacks can be
+// attached
 class WARP_API InputEventManager
 {
 public:
