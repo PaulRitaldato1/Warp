@@ -4,6 +4,7 @@
 
 class IDevice;
 class IResource;
+class ICommandList;
 
 enum BufferType
 {
@@ -32,22 +33,34 @@ struct Vertex
 	float UV[2];
 };
 
-class StaticBufferHeap
+enum class VertexBufferType
 {
-public:
-	
-	~StaticBufferHeap()
-	{
-		Destroy();
-	}
+	COLOR = 0,
+	COLOR_AND_ALPHA,
+	NORMAL,
+	NORMAL_AND_TANGENT,
 
-	void Create(IDevice* device, BufferType type, u32 size, bool useVRAM, const char* name);
-	void Destroy();
-
-	bool AllocBuffer(u32 numElements, u32 strideInBytes, const void* initData);
+	NUM_VERTEX_BUFFER_TYPES
 };
 
-class DynamicBufferHeap
+class IBuffer
 {
+public:
+	virtual ~IBuffer() = default;
 
+	// virtual void Create(IDevice* device, BufferType type, u32 size, bool useVRAM, const char* name) = 0;
+
+	// virtual u64 GetSize()		 = 0;
+	// virtual void* GetNativePtr() = 0;
+	// virtual bool IsDynamic()	 = 0;
+
+	// virtual bool AllocBuffer(u32 numElements, u32 strideInBytes, const void* initData) = 0;
+	virtual void UploadData(URef<ICommandList> commandList) = 0;
+	virtual void* Map()										= 0;
+	virtual void UnMap()									= 0;
+
+private:
+	// Static: Used for infrequently updated data like vertex/index buffers that do not update frequently
+	// Dynamic: Used for data that will be updated per-frame or multiple times per frame
+	bool m_bIsDynamic;
 };
