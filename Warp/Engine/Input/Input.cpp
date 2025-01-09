@@ -96,7 +96,7 @@ void InputEventManager::SubscribeToMouseDown(MouseCode codeToSubTo, void (*func)
     m_subbedButtonsDOWN[static_cast<u32>(codeToSubTo)] = func;
 }
 
-void InputEventManager::SubscribteToMouseMove(void (*func)(int32, int32))
+void InputEventManager::SubscribeToMouseMove(void (*func)(int32, int32))
 {
     m_subbedMouseMoveFunc = func;
 }

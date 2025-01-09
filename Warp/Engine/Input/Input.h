@@ -279,7 +279,7 @@ public:
     void SubscribeToMouseUp(MouseCode CodeToSubTo, void (*func)(void));
     void SubscribeToMouseDown(MouseCode codeToSubTo, void (*func)(void));
 
-    void SubscribteToMouseMove(void (*func)(int32, int32));
+    void SubscribeToMouseMove(void (*func)(int32, int32));
 
     EventManager<MouseCode, bool> MouseButtonEventManager;
     EventManager<int32, int32> MouseMoveEventManager;
