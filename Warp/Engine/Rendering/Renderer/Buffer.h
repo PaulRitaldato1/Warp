@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
+#include <Rendering/Renderer/Resource.h>
 
 class IDevice;
-class IResource;
 class ICommandList;
 
 enum BufferType
@@ -15,12 +15,19 @@ enum BufferType
 	NUM_BUFFER_TYPES
 };
 
+enum class BufferUsage
+{
+	Static,
+	Dynamic
+};
+
 struct BufferDesc
 {
 	BufferType Type;
 	u32 NumElements;
 	u32 Stride;
 	const void* Data;
+	BufferUsage Usage;
 	String Name;
 };
 
@@ -52,15 +59,19 @@ public:
 
 	// virtual u64 GetSize()		 = 0;
 	// virtual void* GetNativePtr() = 0;
-	// virtual bool IsDynamic()	 = 0;
+
+	inline bool IsDynamic()
+	{
+		return m_bIsDynamic == BufferUsage::Dynamic ? true : false;
+	}
 
 	// virtual bool AllocBuffer(u32 numElements, u32 strideInBytes, const void* initData) = 0;
-	virtual void UploadData(URef<ICommandList> commandList) = 0;
-	virtual void* Map()										= 0;
-	virtual void UnMap()									= 0;
+	virtual void UploadData(const void* Data, size_t Size) = 0;
+	virtual void* Map()									   = 0;
+	virtual void UnMap()								   = 0;
 
 private:
 	// Static: Used for infrequently updated data like vertex/index buffers that do not update frequently
 	// Dynamic: Used for data that will be updated per-frame or multiple times per frame
-	bool m_bIsDynamic;
+	BufferUsage m_bIsDynamic;
 };
