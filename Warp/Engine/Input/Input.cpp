@@ -5,98 +5,98 @@ WARP_API InputEventManager g_InputEventManager;
 
 InputEventManager::InputEventManager()
 {
-    m_mouseDelegate = std::make_unique<MouseDelegate>(this, &InputEventManager::MouseButtonCallback);
-    MouseButtonEventManager.Subscribe(m_mouseDelegate.get());
+	m_mouseDelegate = std::make_unique<MouseDelegate>(this, &InputEventManager::MouseButtonCallback);
+	MouseButtonEventManager.Subscribe(m_mouseDelegate.get());
 
-    m_mouseMoveDelegate = std::make_unique<MouseMoveDelegate>(this, &InputEventManager::MouseMoveCallback);
-    MouseMoveEventManager.Subscribe(m_mouseMoveDelegate.get());
+	m_mouseMoveDelegate = std::make_unique<MouseMoveDelegate>(this, &InputEventManager::MouseMoveCallback);
+	MouseMoveEventManager.Subscribe(m_mouseMoveDelegate.get());
 
-    m_keyDelegate = std::make_unique<KeyDelegate>(this, &InputEventManager::KeyCallback);
-    KeyPressedEventManager.Subscribe(m_keyDelegate.get());
+	m_keyDelegate = std::make_unique<KeyDelegate>(this, &InputEventManager::KeyCallback);
+	KeyPressedEventManager.Subscribe(m_keyDelegate.get());
 
-    m_subbedMouseMoveFunc = nullptr;
+	m_subbedMouseMoveFunc = nullptr;
 
-    // for(auto func : m_subbedButtonsUP)
-    // {
-    //     func = nullptr;
-    // }
+	// for(auto func : m_subbedButtonsUP)
+	// {
+	//     func = nullptr;
+	// }
 
-    // for(auto func : m_subbedButtonsDOWN)
-    // {
-    //     func = nullptr;
-    // }
+	// for(auto func : m_subbedButtonsDOWN)
+	// {
+	//     func = nullptr;
+	// }
 }
 
 void InputEventManager::MouseButtonCallback(MouseCode mb, bool bPressed)
 {
-    LOG_DEBUG("Mouse Button and bPressed " + std::to_string(bPressed));
+	LOG_DEBUG("Mouse Button and bPressed " + std::to_string(bPressed));
 
-    if(bPressed)
-    {
-        if(m_subbedButtonsDOWN[static_cast<u32>(mb)] != nullptr)
-        {
-            m_subbedButtonsDOWN[static_cast<u32>(mb)](); 
-        }
-    }
-    else
-    {
-        if(m_subbedButtonsUP[static_cast<u32>(mb)] != nullptr)
-        {
-            m_subbedButtonsUP[static_cast<u32>(mb)](); 
-        }
-    }
+	if (bPressed)
+	{
+		if (m_subbedButtonsDOWN[static_cast<u32>(mb)] != nullptr)
+		{
+			m_subbedButtonsDOWN[static_cast<u32>(mb)]();
+		}
+	}
+	else
+	{
+		if (m_subbedButtonsUP[static_cast<u32>(mb)] != nullptr)
+		{
+			m_subbedButtonsUP[static_cast<u32>(mb)]();
+		}
+	}
 }
 
-void InputEventManager::KeyCallback(KeyCode keycode, bool bPressed)
+void InputEventManager::KeyCallback(KeyCode KeyCode, bool bPressed)
 {
-    LOG_DEBUG("Key " + KeyCodeToStringMap[keycode] + ", bPressed " + std::to_string(bPressed));
+	LOG_DEBUG("Key " + KeyCodeToStringMap[KeyCode] + ", bPressed " + std::to_string(bPressed));
 
-    if(bPressed)
-    {
-        if(m_subbedKeysDOWN.contains(keycode))
-        {
-            m_subbedKeysDOWN[keycode]();
-        }
-    }
-    else 
-    {
-        if(m_subbedKeysUP.contains(keycode))
-        {
-            m_subbedKeysUP[keycode]();
-        }
-    }
+	if (bPressed)
+	{
+		if (m_subbedKeysDOWN.contains(KeyCode))
+		{
+			m_subbedKeysDOWN[KeyCode]();
+		}
+	}
+	else
+	{
+		if (m_subbedKeysUP.contains(KeyCode))
+		{
+			m_subbedKeysUP[KeyCode]();
+		}
+	}
 }
 
 void InputEventManager::MouseMoveCallback(int32 x, int32 y)
 {
-    LOG_DEBUG("Mouse Move Pos (" + std::to_string(x) + ", " + std::to_string(y) + ")");
-    if(m_subbedMouseMoveFunc != nullptr)
-    {
-        m_subbedMouseMoveFunc(x, y);
-    }
+	LOG_DEBUG("Mouse Move Pos (" + std::to_string(x) + ", " + std::to_string(y) + ")");
+	if (m_subbedMouseMoveFunc != nullptr)
+	{
+		m_subbedMouseMoveFunc(x, y);
+	}
 }
 
-void InputEventManager::SubscribeToKeyUp(KeyCode codeToSubTo, void (*func)(void))
+void InputEventManager::SubscribeToKeyUp(KeyCode Code, void (*Func)(void))
 {
-    m_subbedKeysUP[codeToSubTo] = func;
+	m_subbedKeysUP[Code] = Func;
 }
 
-void InputEventManager::SubscribeToKeyDown(KeyCode codeToSubTo, void (*func)(void))
+void InputEventManager::SubscribeToKeyDown(KeyCode Code, void (*Func)(void))
 {
-    m_subbedKeysDOWN[codeToSubTo] = func;
+	m_subbedKeysDOWN[Code] = Func;
 }
 
-void InputEventManager::SubscribeToMouseUp(MouseCode codeToSubTo, void (*func)(void))
+void InputEventManager::SubscribeToMouseUp(MouseCode Code, void (*Func)(void))
 {
-    m_subbedButtonsUP[static_cast<u32>(codeToSubTo)] = func;
+	m_subbedButtonsUP[static_cast<u32>(Code)] = Func;
 }
 
-void InputEventManager::SubscribeToMouseDown(MouseCode codeToSubTo, void (*func)(void))
+void InputEventManager::SubscribeToMouseDown(MouseCode Code, void (*Func)(void))
 {
-    m_subbedButtonsDOWN[static_cast<u32>(codeToSubTo)] = func;
+	m_subbedButtonsDOWN[static_cast<u32>(Code)] = Func;
 }
 
-void InputEventManager::SubscribeToMouseMove(void (*func)(int32, int32))
+void InputEventManager::SubscribeToMouseMove(void (*Func)(int32, int32))
 {
-    m_subbedMouseMoveFunc = func;
+	m_subbedMouseMoveFunc = Func;
 }
