@@ -21,7 +21,7 @@ struct SwapChainDesc
 	bool bUseVsync = false;
 };
 
-class ISwapChain
+class SwapChain
 {
 public:
 	// Initialize the swap chain
@@ -48,7 +48,7 @@ public:
 	// Cleanup resources
 	virtual void Cleanup() = 0;
 
-	virtual ~ISwapChain() = default;
+	virtual ~SwapChain() = default;
 
 private:
 };

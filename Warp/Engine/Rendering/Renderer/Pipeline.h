@@ -2,7 +2,7 @@
 
 #include <Common/CommonTypes.h>
 
-class IShader;
+class Shader;
 
 struct BlendState
 {
@@ -59,9 +59,9 @@ struct RasterizerState
 
 struct PipelineDesc
 {
-	IShader* VertexShader;
-	IShader* FragmantShader;
-	IShader* ComputeShader;
+	Shader* VertexShader;
+	Shader* FragmantShader;
+	Shader* ComputeShader;
 
 	bool bEnableDepthTest;
 	bool bEnableStencilTest;
@@ -72,10 +72,10 @@ struct PipelineDesc
 	RasterizerState RasterState;
 };
 
-class IPipelineState
+class PipelineState
 {
 public:
-	virtual ~IPipelineState() = default;
+	virtual ~PipelineState() = default;
 
 	virtual void Initialize(const PipelineDesc& Desc) = 0;
 

@@ -4,7 +4,7 @@
 
 #ifdef WARP_WINDOWS
 
-class D3D12Device : public IDevice
+class D3D12Device : public Device
 {
 public:
 	const char* GetAPIName() override

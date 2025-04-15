@@ -41,7 +41,7 @@ struct TextureDesc
 	TextureUsage Usage;
 };
 
-class ITexture
+class Texture
 {
 public:
 	virtual void Init(const TextureDesc& Desc) = 0;
@@ -67,7 +67,7 @@ public:
 	// Get number of mip levels
 	virtual u32 GetMipLevels() const = 0;
 
-	virtual ~ITexture() = default;
+	virtual ~Texture() = default;
 
 private:
 };

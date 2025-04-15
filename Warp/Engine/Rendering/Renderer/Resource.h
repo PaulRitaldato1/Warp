@@ -8,10 +8,10 @@ enum class ResourceType
 	DepthStencil
 };
 
-class IResource
+class Resource
 {
 public:
-	virtual ~IResource() = default;
+	virtual ~Resource() = default;
 
 	virtual ResourceType GetType() = 0;
 

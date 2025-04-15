@@ -2,11 +2,11 @@
 
 class ICommandList;
 
-class ICommandQueue
+class CommandQueue
 {
 public:
-	ICommandQueue()	 = default;
-	~ICommandQueue() = default;
+	CommandQueue()	= default;
+	~CommandQueue() = default;
 
 	virtual void Begin()					= 0;
 	virtual void End()						= 0;

@@ -3,7 +3,7 @@
 #include <Common/CommonTypes.h>
 #include <Rendering/Renderer/Resource.h>
 
-class IDevice;
+class Device;
 class ICommandList;
 
 enum BufferType
@@ -50,12 +50,12 @@ enum class VertexBufferType
 	NUM_VERTEX_BUFFER_TYPES
 };
 
-class IBuffer
+class Buffer
 {
 public:
-	virtual ~IBuffer() = default;
+	virtual ~Buffer() = default;
 
-	// virtual void Create(IDevice* device, BufferType type, u32 size, bool useVRAM, const char* name) = 0;
+	// virtual void Create(Device* device, BufferType type, u32 size, bool useVRAM, const char* name) = 0;
 
 	// virtual u64 GetSize()		 = 0;
 	// virtual void* GetNativePtr() = 0;

@@ -2,22 +2,22 @@
 
 #include <Common/CommonTypes.h>
 
-class ITexture;
+class Texture;
 struct TextureDesc;
 
-class IBuffer;
+class Buffer;
 struct BufferDesc;
 
-class ISwapChain;
+class SwapChain;
 struct SwapChainDesc;
 
-class IShader;
+class Shader;
 struct ShaderDesc;
 
-class IPipelineState;
+class PipelineState;
 struct PipelineDesc;
 
-class ICommandQueue;
+class CommandQueue;
 
 struct DeviceDesc
 {
@@ -36,33 +36,31 @@ struct PhysicalDeviceInfo
 	u32 MaxComputeWorkGroupSize;
 };
 
-class IDevice
+class Device
 {
 public:
-	virtual ~IDevice() = default;
-
-	virtual void Initialize(const DeviceDesc& Desc) = 0;
+	virtual ~Device() = default;
 
 	// Initialize the device
 	virtual void Initialize(const DeviceDesc& Desc) = 0;
 
 	// Create a command queue
-	virtual URef<ICommandQueue> CreateCommandQueue() = 0;
+	virtual URef<CommandQueue> CreateCommandQueue() = 0;
 
 	// Create a swap chain
-	virtual URef<ISwapChain> CreateSwapChain(const SwapChainDesc& Desc) = 0;
+	virtual URef<SwapChain> CreateSwapChain(const SwapChainDesc& Desc) = 0;
 
 	// Create a pipeline state object
-	virtual URef<IPipelineState> CreatePipelineState(const PipelineDesc& Desc) = 0;
+	virtual URef<PipelineState> CreatePipelineState(const PipelineDesc& Desc) = 0;
 
 	// Create a buffer
-	virtual URef<IBuffer> CreateBuffer(const BufferDesc& Desc) = 0;
+	virtual URef<Buffer> CreateBuffer(const BufferDesc& Desc) = 0;
 
 	// Create a texture
-	virtual URef<ITexture> CreateTexture(const TextureDesc& Desc) = 0;
+	virtual URef<Texture> CreateTexture(const TextureDesc& Desc) = 0;
 
 	// Create a shader
-	virtual URef<IShader> CreateShader(const ShaderDesc& Desc) = 0;
+	virtual URef<Shader> CreateShader(const ShaderDesc& Desc) = 0;
 
 	// Synchronize the device (wait for all operations to complete)
 	virtual void WaitForIdle() = 0;

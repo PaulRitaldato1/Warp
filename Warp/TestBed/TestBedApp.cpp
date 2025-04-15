@@ -4,42 +4,39 @@
 
 struct TempGame : public UserApplicationBase
 {
-    bool Initialize()
-    {
-        return true;
-    }
+	bool Initialize()
+	{
+		return true;
+	}
 
-    bool Update(f32 DeltaTime)
-    {
-        if(DeltaTime > 0)
-        {
-        }
-        // LOG_DEBUG("DeltaTime: " + std::to_string(DeltaTime));
-        return true;
-    }
+	bool Update(f32 DeltaTime)
+	{
+		if (DeltaTime > 0)
+		{
+		}
+		// LOG_DEBUG("DeltaTime: " + std::to_string(DeltaTime));
+		return true;
+	}
 
-    void OnResize(f32 DeltaTime)
-    {
-        if(DeltaTime > 1.0f)
-        {
-            // LOG_DEBUG("Whatever");
-        }
-    }
+	void OnResize(f32 DeltaTime)
+	{
+		if (DeltaTime > 1.0f)
+		{
+			// LOG_DEBUG("Whatever");
+		}
+	}
 };
-
-void wKeyUp()
-{
-    LOG_INFO("W key released");
-}
 
 bool HookEngineFromApp(UserApplicationBase** outDesc)
 {
-    (*outDesc) = new TempGame();
-    
-    (*outDesc)->EngineInitDesc.Name = "Test Bed";
-    (*outDesc)->EngineInitDesc.WindowWidth = 1920;
-    (*outDesc)->EngineInitDesc.WindowHeight = 1080;
+	(*outDesc) = new TempGame();
 
-    g_InputEventManager.SubscribeToKeyUp(KeyCode::KEY_W, wKeyUp);
-    return true;
+	(*outDesc)->EngineInitDesc.Name			= "Test Bed";
+	(*outDesc)->EngineInitDesc.WindowWidth	= 1920;
+	(*outDesc)->EngineInitDesc.WindowHeight = 1080;
+
+	// g_InputEventManager.SubscribeToKeyUp(KeyCode::KEY_W, wKeyUp);
+	// g_InputEventManager.SubscribeToKeyDown(KeyCode::KEY_W, wKeyDown);
+
+	return true;
 }

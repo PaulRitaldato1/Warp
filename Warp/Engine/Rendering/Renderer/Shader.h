@@ -20,7 +20,7 @@ struct ShaderDesc
 	String FilePath;
 };
 
-class IShader
+class Shader
 {
 public:
 	// Initialize the shader
@@ -35,7 +35,7 @@ public:
 	// Cleanup resources
 	virtual void Cleanup() = 0;
 
-	virtual ~IShader() = default;
+	virtual ~Shader() = default;
 
 protected:
 	virtual String ShaderTypeToTarget(ShaderType Type) = 0;
