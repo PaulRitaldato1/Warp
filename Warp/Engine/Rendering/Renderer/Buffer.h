@@ -3,9 +3,6 @@
 #include <Common/CommonTypes.h>
 #include <Rendering/Renderer/Resource.h>
 
-class Device;
-class ICommandList;
-
 enum BufferType
 {
 	BufferType_Vertex = 0,

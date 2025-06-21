@@ -6,7 +6,7 @@ class PipelineState;
 class Buffer;
 class Resource;
 
-class ICommandList
+class CommandList
 {
 public:
 	virtual void Begin() = 0;
