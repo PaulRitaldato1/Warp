@@ -84,7 +84,7 @@ include_directories(
 #that we need to add depending on the build type
 add_library(WarpEngine SHARED ${ENGINE_SRCS} ${ENGINE_HDRS})
 target_compile_features(WarpEngine PRIVATE cxx_std_20)
-target_compile_definitions(WarpEngine PUBLIC "WARP_EXPORT")
+target_compile_definitions(WarpEngine PRIVATE "WARP_EXPORT")
 target_precompile_headers(WarpEngine PRIVATE "Warp/Engine/Common/CommonTypes.h")
 
 add_executable(Warp "Warp/EntryPoint/EntryPoint.h" ${TESTBED_SRCS} ${TESTBED_HDRS})

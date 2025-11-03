@@ -260,9 +260,6 @@ enum MouseCode : u32
 //     KEYS_MAX_KEYS
 // };
 
-// TODO: Currently only one callback can be registered to each input event
-// I want to eventually change this to a list so multiple callbacks can be
-// attached
 class WARP_API InputEventManager
 {
 public:
@@ -299,8 +296,8 @@ private:
 	using MouseDelegate = MemberFuncType<InputEventManager, MouseCode, bool>;
 	URef<MouseDelegate> m_mouseDelegate;
 	void MouseButtonCallback(MouseCode mb, bool bPressed);
-	Array<void (*)(void), MouseCode::MAX_BUTTONS> m_subbedButtonsUP;
-	Array<void (*)(void), MouseCode::MAX_BUTTONS> m_subbedButtonsDOWN;
+	HashMap<MouseCode, Vector<void (*)(void)>> m_subbedButtonsDOWN;
+	HashMap<MouseCode, Vector<void (*)(void)>> m_subbedButtonsUP;
 
 	using MouseMoveDelegate = MemberFuncType<InputEventManager, int32, int32>;
 	URef<MouseMoveDelegate> m_mouseMoveDelegate;
@@ -310,8 +307,8 @@ private:
 	using KeyDelegate = MemberFuncType<InputEventManager, KeyCode, bool>;
 	URef<KeyDelegate> m_keyDelegate;
 	void KeyCallback(KeyCode KeyCode, bool bPressed);
-	HashMap<KeyCode, void (*)(void)> m_subbedKeysUP;
-	HashMap<KeyCode, void (*)(void)> m_subbedKeysDOWN;
+	HashMap<KeyCode, Vector<void (*)(void)>> m_subbedKeysUP;
+	HashMap<KeyCode, Vector<void (*)(void)>> m_subbedKeysDOWN;
 };
 
-extern __declspec(dllimport) InputEventManager g_InputEventManager;
+extern WARP_API InputEventManager g_InputEventManager;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Engine/Common/CommonTypes.h"
+
 enum class ResourceType
 {
 	Buffer,

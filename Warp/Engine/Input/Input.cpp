@@ -15,16 +15,6 @@ InputEventManager::InputEventManager()
 	KeyPressedEventManager.Subscribe(m_keyDelegate.get());
 
 	m_subbedMouseMoveFunc = nullptr;
-
-	// for(auto func : m_subbedButtonsUP)
-	// {
-	//     func = nullptr;
-	// }
-
-	// for(auto func : m_subbedButtonsDOWN)
-	// {
-	//     func = nullptr;
-	// }
 }
 
 void InputEventManager::MouseButtonCallback(MouseCode mb, bool bPressed)
@@ -33,16 +23,22 @@ void InputEventManager::MouseButtonCallback(MouseCode mb, bool bPressed)
 
 	if (bPressed)
 	{
-		if (m_subbedButtonsDOWN[static_cast<u32>(mb)] != nullptr)
+		if (m_subbedButtonsDOWN.contains(mb))
 		{
-			m_subbedButtonsDOWN[static_cast<u32>(mb)]();
+			for (auto& Callback : m_subbedButtonsDOWN[mb])
+			{
+				Callback();
+			}
 		}
 	}
 	else
 	{
-		if (m_subbedButtonsUP[static_cast<u32>(mb)] != nullptr)
+		if (m_subbedButtonsUP.contains(mb))
 		{
-			m_subbedButtonsUP[static_cast<u32>(mb)]();
+			for (auto& Callback : m_subbedButtonsUP[mb])
+			{
+				Callback();
+			}
 		}
 	}
 }
@@ -55,14 +51,20 @@ void InputEventManager::KeyCallback(KeyCode KeyCode, bool bPressed)
 	{
 		if (m_subbedKeysDOWN.contains(KeyCode))
 		{
-			m_subbedKeysDOWN[KeyCode]();
+			for (auto& CallBack : m_subbedKeysDOWN[KeyCode])
+			{
+				CallBack();
+			}
 		}
 	}
 	else
 	{
 		if (m_subbedKeysUP.contains(KeyCode))
 		{
-			m_subbedKeysUP[KeyCode]();
+			for (auto& CallBack : m_subbedKeysUP[KeyCode])
+			{
+				CallBack();
+			}
 		}
 	}
 }
@@ -78,22 +80,22 @@ void InputEventManager::MouseMoveCallback(int32 x, int32 y)
 
 void InputEventManager::SubscribeToKeyUp(KeyCode Code, void (*Func)(void))
 {
-	m_subbedKeysUP[Code] = Func;
+	m_subbedKeysUP[Code].push_back(Func);
 }
 
 void InputEventManager::SubscribeToKeyDown(KeyCode Code, void (*Func)(void))
 {
-	m_subbedKeysDOWN[Code] = Func;
+	m_subbedKeysDOWN[Code].push_back(Func);
 }
 
 void InputEventManager::SubscribeToMouseUp(MouseCode Code, void (*Func)(void))
 {
-	m_subbedButtonsUP[static_cast<u32>(Code)] = Func;
+	m_subbedButtonsUP[Code].push_back(Func);
 }
 
 void InputEventManager::SubscribeToMouseDown(MouseCode Code, void (*Func)(void))
 {
-	m_subbedButtonsDOWN[static_cast<u32>(Code)] = Func;
+	m_subbedButtonsDOWN[Code].push_back(Func);
 }
 
 void InputEventManager::SubscribeToMouseMove(void (*Func)(int32, int32))

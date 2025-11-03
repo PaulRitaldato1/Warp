@@ -12,6 +12,10 @@ public:
 	virtual void Begin() = 0;
 	virtual void End()	 = 0;
 
+	virtual void BeginEvent(std::string_view Name) = 0;
+	virtual void EndEvent();
+	virtual void SetMarker(std::string_view Name) = 0;
+
 	virtual void SetPipelineState(URef<PipelineState> State)	 = 0;
 	virtual void SetVertexBuffer(URef<Buffer> VertexBuffer)		 = 0;
 	virtual void SetIndexBuffer(URef<Buffer> IndexBuffer)		 = 0;

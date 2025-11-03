@@ -27,6 +27,11 @@ struct TempGame : public UserApplicationBase
 	}
 };
 
+void wKeyDown()
+{
+	LOG_DEBUG("W Key Down");
+}
+
 bool HookEngineFromApp(UserApplicationBase** outDesc)
 {
 	(*outDesc) = new TempGame();
@@ -36,7 +41,7 @@ bool HookEngineFromApp(UserApplicationBase** outDesc)
 	(*outDesc)->EngineInitDesc.WindowHeight = 1080;
 
 	// g_InputEventManager.SubscribeToKeyUp(KeyCode::KEY_W, wKeyUp);
-	// g_InputEventManager.SubscribeToKeyDown(KeyCode::KEY_W, wKeyDown);
+	g_InputEventManager.SubscribeToKeyDown(KeyCode::KEY_W, wKeyDown);
 
 	return true;
 }
