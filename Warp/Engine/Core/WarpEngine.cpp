@@ -8,8 +8,7 @@
 
 WarpEngine::WarpEngine(UserApplicationBase* App)
 {
-	FATAL_ASSERT(App != nullptr, "Engine was attempting to init with no UserApplicationBase or "
-								 "WarpEngine::Instance() was called before WarpEngine::Init()");
+	FATAL_ASSERT(App != nullptr, "Engine was attempting to init with no UserApplicationBase");
 
 	m_timer = GameTimer();
 	LOG_DEBUG("Engine Init Started")
