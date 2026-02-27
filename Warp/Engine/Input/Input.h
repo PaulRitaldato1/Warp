@@ -122,14 +122,14 @@
 #define CREATE_KEYS(name, code) KEY_##name = code,
 #define CREATE_KEY_STRINGS(name, code) { KEY_##name, #name },
 
-enum KeyCode
+enum WarpKeyCode
 {
 	FOREACH_KEY(CREATE_KEYS)
 
 	KEYS_MAX_KEYS
 };
 
-inline HashMap<KeyCode, String> KeyCodeToStringMap = { FOREACH_KEY(CREATE_KEY_STRINGS) };
+inline HashMap<WarpKeyCode, String> WarpWarpKeyCodeToStringMap = { FOREACH_KEY(CREATE_KEY_STRINGS) };
 
 enum MouseCode : u32
 {
@@ -140,7 +140,7 @@ enum MouseCode : u32
 	MAX_BUTTONS
 };
 
-// enum KeyCode : u32
+// enum WarpKeyCode : u32
 // {
 //     DEFINE_KEY(BACKSPACE, 0x08),
 //     DEFINE_KEY(ENTER, 0x0D),
@@ -265,8 +265,8 @@ class WARP_API InputEventManager
 public:
 	InputEventManager();
 
-	void SubscribeToKeyUp(KeyCode Code, void (*Func)(void));
-	void SubscribeToKeyDown(KeyCode Code, void (*Func)(void));
+	void SubscribeToKeyUp(WarpKeyCode Code, void (*Func)(void));
+	void SubscribeToKeyDown(WarpKeyCode Code, void (*Func)(void));
 
 	void SubscribeToMouseUp(MouseCode Code, void (*Func)(void));
 	void SubscribeToMouseDown(MouseCode Code, void (*Func)(void));
@@ -283,7 +283,7 @@ public:
 		MouseMoveEventManager.Broadcast(X, Y);
 	}
 
-	inline void BroadcastKey(KeyCode Code, bool bPressed)
+	inline void BroadcastKey(WarpKeyCode Code, bool bPressed)
 	{
 		KeyPressedEventManager.Broadcast(Code, bPressed);
 	}
@@ -291,7 +291,7 @@ public:
 private:
 	EventManager<MouseCode, bool> MouseButtonEventManager;
 	EventManager<int32, int32> MouseMoveEventManager;
-	EventManager<KeyCode, bool> KeyPressedEventManager;
+	EventManager<WarpKeyCode, bool> KeyPressedEventManager;
 
 	using MouseDelegate = MemberFuncType<InputEventManager, MouseCode, bool>;
 	URef<MouseDelegate> m_mouseDelegate;
@@ -304,11 +304,11 @@ private:
 	void MouseMoveCallback(int32 x, int32 y);
 	void (*m_subbedMouseMoveFunc)(int32, int32);
 
-	using KeyDelegate = MemberFuncType<InputEventManager, KeyCode, bool>;
+	using KeyDelegate = MemberFuncType<InputEventManager, WarpKeyCode, bool>;
 	URef<KeyDelegate> m_keyDelegate;
-	void KeyCallback(KeyCode KeyCode, bool bPressed);
-	HashMap<KeyCode, Vector<void (*)(void)>> m_subbedKeysUP;
-	HashMap<KeyCode, Vector<void (*)(void)>> m_subbedKeysDOWN;
+	void KeyCallback(WarpKeyCode WarpKeyCode, bool bPressed);
+	HashMap<WarpKeyCode, Vector<void (*)(void)>> m_subbedKeysUP;
+	HashMap<WarpKeyCode, Vector<void (*)(void)>> m_subbedKeysDOWN;
 };
 
 extern WARP_API InputEventManager g_InputEventManager;

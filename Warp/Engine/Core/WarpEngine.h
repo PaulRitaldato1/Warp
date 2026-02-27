@@ -3,8 +3,10 @@
 #include <Common/CommonTypes.h>
 #include <Core/GameTimer.h>
 #include <Input/Input.h>
-// class Renderer;
+#include <Rendering/RenderBackend.h>
+
 class IWindow;
+class Renderer;
 struct UserApplicationBase;
 
 struct EngineDesc
@@ -37,8 +39,9 @@ private:
 	f64 m_lastTime;
 	GameTimer m_timer;
 
-	// URef<Renderer> m_renderer;
-	URef<IWindow> m_window;
+	URef<RenderBackend> m_backend;
+	URef<IWindow>       m_window;
+	URef<Renderer>      m_renderer;
 
 	URef<UserApplicationBase> m_app;
 };

@@ -40,8 +40,8 @@ bool HookEngineFromApp(UserApplicationBase** outDesc)
 	(*outDesc)->EngineInitDesc.WindowWidth	= 1920;
 	(*outDesc)->EngineInitDesc.WindowHeight = 1080;
 
-	// g_InputEventManager.SubscribeToKeyUp(KeyCode::KEY_W, wKeyUp);
-	g_InputEventManager.SubscribeToKeyDown(KeyCode::KEY_W, wKeyDown);
+	// g_InputEventManager.SubscribeToKeyUp(WarpKeyCode::KEY_W, wKeyUp);
+	g_InputEventManager.SubscribeToKeyDown(WarpKeyCode::KEY_W, wKeyDown);
 
 	return true;
 }

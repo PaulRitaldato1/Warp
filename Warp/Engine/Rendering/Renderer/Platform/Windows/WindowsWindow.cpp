@@ -141,10 +141,10 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			g_InputEventManager.BroadcastMouseMove(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 			return 0;
 		case WM_KEYDOWN:
-			g_InputEventManager.BroadcastKey(static_cast<KeyCode>(wParam), true);
+			g_InputEventManager.BroadcastKey(static_cast<WarpKeyCode>(wParam), true);
 			return 0;
 		case WM_KEYUP:
-			g_InputEventManager.BroadcastKey(static_cast<KeyCode>(wParam), false);
+			g_InputEventManager.BroadcastKey(static_cast<WarpKeyCode>(wParam), false);
 			if (wParam == VK_ESCAPE)
 			{
 				PostQuitMessage(0);

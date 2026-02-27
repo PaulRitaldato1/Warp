@@ -43,15 +43,15 @@ void InputEventManager::MouseButtonCallback(MouseCode mb, bool bPressed)
 	}
 }
 
-void InputEventManager::KeyCallback(KeyCode KeyCode, bool bPressed)
+void InputEventManager::KeyCallback(WarpKeyCode WarpKeyCode, bool bPressed)
 {
-	LOG_DEBUG("Key " + KeyCodeToStringMap[KeyCode] + ", bPressed " + std::to_string(bPressed));
+	LOG_DEBUG("Key " + WarpWarpKeyCodeToStringMap[WarpKeyCode] + ", bPressed " + std::to_string(bPressed));
 
 	if (bPressed)
 	{
-		if (m_subbedKeysDOWN.contains(KeyCode))
+		if (m_subbedKeysDOWN.contains(WarpKeyCode))
 		{
-			for (auto& CallBack : m_subbedKeysDOWN[KeyCode])
+			for (auto& CallBack : m_subbedKeysDOWN[WarpKeyCode])
 			{
 				CallBack();
 			}
@@ -59,9 +59,9 @@ void InputEventManager::KeyCallback(KeyCode KeyCode, bool bPressed)
 	}
 	else
 	{
-		if (m_subbedKeysUP.contains(KeyCode))
+		if (m_subbedKeysUP.contains(WarpKeyCode))
 		{
-			for (auto& CallBack : m_subbedKeysUP[KeyCode])
+			for (auto& CallBack : m_subbedKeysUP[WarpKeyCode])
 			{
 				CallBack();
 			}
@@ -78,12 +78,12 @@ void InputEventManager::MouseMoveCallback(int32 x, int32 y)
 	}
 }
 
-void InputEventManager::SubscribeToKeyUp(KeyCode Code, void (*Func)(void))
+void InputEventManager::SubscribeToKeyUp(WarpKeyCode Code, void (*Func)(void))
 {
 	m_subbedKeysUP[Code].push_back(Func);
 }
 
-void InputEventManager::SubscribeToKeyDown(KeyCode Code, void (*Func)(void))
+void InputEventManager::SubscribeToKeyDown(WarpKeyCode Code, void (*Func)(void))
 {
 	m_subbedKeysDOWN[Code].push_back(Func);
 }

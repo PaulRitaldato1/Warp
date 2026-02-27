@@ -1,14 +1,15 @@
 #pragma once
 
-#include <Common/CommonTypes.h>
-#include <Renderer/Renderer.h>
+#include <Rendering/Renderer/Renderer.h>
 
 #ifdef WARP_WINDOWS
 
 class D3D12Renderer : public Renderer
 {
 public:
-private:
+	void Init(IWindow* window)           override;
+	void Shutdown()                      override;
+	void OnResize(u32 width, u32 height) override;
 };
 
 #endif

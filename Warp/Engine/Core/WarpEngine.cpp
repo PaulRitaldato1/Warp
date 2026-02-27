@@ -3,12 +3,8 @@
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 #include <UserApplication.h>
-
-#ifdef WARP_WINDOWS
-#include <Renderer/Platform/Windows/WindowsWindow.h>
-#elif WARP_LINUX
-#elif WARP_APPLE
-#endif
+#include <Rendering/Renderer/Renderer.h>
+#include <thread>
 
 WarpEngine::WarpEngine(UserApplicationBase* App)
 {
@@ -20,15 +16,17 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 
 	m_app = std::unique_ptr<UserApplicationBase>(App);
 
-#ifdef WARP_WINDOWS
-	m_window = std::make_unique<WindowsWindow>(App->EngineInitDesc.Name, App->EngineInitDesc.WindowWidth,
-											   App->EngineInitDesc.WindowHeight);
-	LOG_DEBUG("Windows Window Initialized");
-#elif WARP_LINUX
-	LOG_DEBUG("Linux Window Initializing");
-#elif WARP_APPLE
-	LOG_DEBUG("Apple Window Initializing");
-#endif
+	m_backend  = RenderBackend::Create();
+	m_window   = m_backend->CreateWindow(App->EngineInitDesc.Name,
+										  App->EngineInitDesc.WindowWidth,
+										  App->EngineInitDesc.WindowHeight);
+	m_renderer = m_backend->CreateRenderer();
+	if (m_renderer)
+	{
+		m_renderer->Init(m_window.get());
+	}
+
+	LOG_DEBUG("Render backend initialized (" + String(m_renderer ? "renderer ready" : "no renderer") + ")");
 
 	m_bIsRunning	= true;
 	m_bIsSuspended	= false;
@@ -42,6 +40,7 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 WarpEngine::~WarpEngine()
 {
 	LOG_DEBUG("Shutting down");
+	if (m_renderer) { m_renderer->Shutdown(); }
 }
 
 bool WarpEngine::Run()
@@ -61,15 +60,19 @@ bool WarpEngine::Run()
 
 		if (!m_bIsSuspended)
 		{
-			// LOG_INFO("DeltaTime: " + std::to_string(m_timer.DeltaTime()));
-			// calc frame stats
 			if (!m_app->Update(m_timer.DeltaTime()))
 			{
 				LOG_ERROR("App update failed.");
 				m_bIsRunning = false;
 				break;
 			}
-			// render
+
+			if (m_renderer)
+			{
+				m_renderer->BeginFrame();
+				m_renderer->Draw();
+				m_renderer->EndFrame();
+			}
 		}
 		else
 		{

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
+#include <Rendering/Renderer/CommandQueue.h>
 
 class Texture;
 struct TextureDesc;
@@ -17,7 +18,8 @@ struct ShaderDesc;
 class PipelineState;
 struct PipelineDesc;
 
-class CommandQueue;
+class CommandList;
+class UploadBuffer;
 
 struct DeviceDesc
 {
@@ -44,8 +46,14 @@ public:
 	// Initialize the device
 	virtual void Initialize(const DeviceDesc& Desc) = 0;
 
-	// Create a command queue
-	virtual URef<CommandQueue> CreateCommandQueue() = 0;
+	// Create a command queue of the given type
+	virtual URef<CommandQueue>  CreateCommandQueue(CommandQueueType type) = 0;
+
+	// Create a command list; one allocator slot is allocated per frame-in-flight
+	virtual URef<CommandList>   CreateCommandList(CommandQueueType type, u32 framesInFlight) = 0;
+
+	// Create a GPU-visible upload heap backed by a ring buffer
+	virtual URef<UploadBuffer>  CreateUploadBuffer(u64 size, u32 framesInFlight) = 0;
 
 	// Create a swap chain
 	virtual URef<SwapChain> CreateSwapChain(const SwapChainDesc& Desc) = 0;

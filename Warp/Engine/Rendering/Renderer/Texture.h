@@ -11,10 +11,28 @@ enum class TextureType
 
 enum class TextureFormat
 {
-	RGBA8,
-	RGB8,
-	R8,
-	R32F,
+	Unknown,
+
+	// LDR uncompressed
+	RGBA8,          // 4x u8, linear
+	RGBA8_SRGB,     // 4x u8, sRGB (albedo / diffuse textures)
+	RGB8,           // 3x u8, linear
+	RG8,            // 2x u8 (packed normal maps)
+	R8,             // 1x u8 (roughness, AO, masks)
+
+	// HDR uncompressed
+	RGBA16F,        // 4x f16 (GPU-resident HDR)
+	RGBA32F,        // 4x f32 (CPU-loaded HDR from stb_image)
+	R32F,           // 1x f32 (shadow maps, depth)
+
+	// BC compressed (added when DDS support lands)
+	BC1,            // opaque or 1-bit alpha
+	BC3,            // full alpha
+	BC4,            // single channel
+	BC5,            // two channel (normal maps)
+	BC7,            // high-quality RGBA
+
+	// Depth
 	Depth24Stencil8
 };
 

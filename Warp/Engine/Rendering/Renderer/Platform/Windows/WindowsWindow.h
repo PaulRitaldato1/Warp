@@ -26,6 +26,8 @@ public:
 
 	virtual bool PumpMessages() final;
 
+	void* GetNativeHandle() const override { return (void*)m_wndHnd; }
+
 private:
 	HWND m_wndHnd;
 	HINSTANCE m_appInst;

@@ -15,6 +15,8 @@ public:
     int16 GetHeight() { return m_height; }
     int16 GetWidth() { return m_width; }
 
+    virtual void* GetNativeHandle() const = 0;
+
 protected:
 
     bool m_bAppPaused = false;

@@ -37,6 +37,47 @@ if( CMAKE_BUILD_TYPE STREQUAL "Release")
     add_definitions( -O2 )
 endif(CMAKE_BUILD_TYPE STREQUAL "Release")
 
+include(FetchContent)
+
+# Shared library (WarpEngine.so) requires all static deps to be PIC
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+FetchContent_Declare(
+    DirectXMath
+    GIT_REPOSITORY https://github.com/microsoft/DirectXMath.git
+    GIT_TAG        oct2024
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_Declare(
+    fastgltf
+    GIT_REPOSITORY https://github.com/spnda/fastgltf.git
+    GIT_TAG        v0.7.2
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_Declare(
+    tinyddsloader
+    GIT_REPOSITORY https://github.com/benikabocha/tinyddsloader.git
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(DirectXMath fastgltf)
+
+# DirectXMath includes sal.h which is a Windows-only SAL annotation header.
+# Provide a no-op stub for non-Windows builds. configure_file runs on every
+# CMake configure so it survives fresh build-directory cleans.
+if(NOT WIN32)
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/sal.h
+        ${directxmath_SOURCE_DIR}/Inc/sal.h
+        COPYONLY
+    )
+endif()
+
+# tinyddsloader is a single header — skip its outdated CMakeLists entirely
+FetchContent_Populate(tinyddsloader)
+
 #Engine headers
 file(GLOB_RECURSE ENGINE_HDRS CONFIGURE_DEPENDS
     ${Warp_SOURCE_DIR}/Warp/Engine/*.h
@@ -98,11 +139,18 @@ target_precompile_headers(Warp PRIVATE "Warp/Engine/Common/CommonTypes.h")
 # target_precompile_headers(Application PRIVATE "Warp/Engine/Common/CommonTypes.h")
 
 #link libraries for each platform
+target_link_libraries(WarpEngine PUBLIC  DirectXMath)
+target_link_libraries(WarpEngine PRIVATE fastgltf::fastgltf)
+target_include_directories(WarpEngine PUBLIC  ${directxmath_SOURCE_DIR}/Inc)
+target_include_directories(WarpEngine PRIVATE ${tinyddsloader_SOURCE_DIR})
+
 if(WIN32)
     target_link_libraries(WarpEngine PRIVATE "d3d12.lib" "dxgi.lib" "d3dcompiler.lib" "Gdi32.lib")
     target_link_libraries(Warp PUBLIC WarpEngine)
 #Linux
 elseif(UNIX AND NOT APPLE)
+    target_link_libraries(WarpEngine PRIVATE X11)
+    target_link_libraries(Warp PUBLIC WarpEngine)
 
 #Apple
 else()

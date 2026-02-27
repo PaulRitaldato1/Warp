@@ -91,6 +91,8 @@ inline WString StringToWString(const String& string)
 template<class T>
 inline T AlignOffset(const T& uOffset, const T& uAlign) { return ((uOffset + (uAlign - 1)) & ~(uAlign - 1)); }
 
+#include <Math/Math.h>
+
 //Platform
 #if defined(_WIN32) || defined(WIN32) || defined(__WIN32__)
 	#define WARP_WINDOWS 1
