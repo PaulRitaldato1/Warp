@@ -9,36 +9,31 @@ enum class ShaderType
 	Compute,
 	Geometry,
 	Hull,
-	Domain
+	Domain,
 };
 
 struct ShaderDesc
 {
-	ShaderType Type;
-	String SourceCode;
-	String EntryPoint;
-	String FilePath;
+	ShaderType type;
+	String     entryPoint = "main";
+	String     filePath;       // load from file   (preferred)
+	String     sourceCode;     // compile from string (fallback / runtime)
 };
 
 class Shader
 {
 public:
-	// Initialize the shader
-	virtual void Initialize(const ShaderDesc& Desc) = 0;
-
-	// Get native shader handle (platform-specific)
-	virtual void* GetNativeHandle() const = 0;
-
-	// Bind the shader to the pipeline
-	virtual void Bind() const = 0;
-
-	// Cleanup resources
-	virtual void Cleanup() = 0;
-
 	virtual ~Shader() = default;
 
-protected:
-	virtual String ShaderTypeToTarget(ShaderType Type) = 0;
+	// Compile or load the shader. Logs and asserts on failure.
+	virtual void Initialize(const ShaderDesc& desc) = 0;
 
-private:
+	// Raw pointer to compiled bytecode (ID3DBlob data, SPIRV words, etc.)
+	virtual const void* GetBytecode()     const = 0;
+	virtual u64         GetBytecodeSize() const = 0;
+
+	// Generic handle — same as GetBytecode() on most backends.
+	virtual void* GetNativeHandle() const = 0;
+
+	virtual void  Cleanup() = 0;
 };

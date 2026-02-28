@@ -19,11 +19,12 @@ public:
 	URef<CommandQueue>  CreateCommandQueue(CommandQueueType type) override;
 	URef<CommandList>   CreateCommandList(CommandQueueType type, u32 framesInFlight) override;
 	URef<UploadBuffer>  CreateUploadBuffer(u64 size, u32 framesInFlight) override;
-	URef<SwapChain>     CreateSwapChain(const SwapChainDesc& desc) override;
-	URef<PipelineState> CreatePipelineState(const PipelineDesc& desc) override;
-	URef<Buffer>		CreateBuffer(const BufferDesc& desc) override;
-	URef<Texture>		CreateTexture(const TextureDesc& desc) override;
-	URef<Shader>		CreateShader(const ShaderDesc& desc) override;
+	URef<SwapChain>            CreateSwapChain(const SwapChainDesc& desc) override;
+	URef<PipelineState>        CreatePipelineState(const PipelineDesc& desc) override;
+	URef<ComputePipelineState> CreateComputePipelineState(const ComputePipelineDesc& desc) override;
+	URef<Buffer>               CreateBuffer(const BufferDesc& desc) override;
+	URef<Texture>              CreateTexture(const TextureDesc& desc) override;
+	URef<Shader>               CreateShader(const ShaderDesc& desc) override;
 
 	void WaitForIdle() override;
 

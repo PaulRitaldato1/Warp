@@ -1,5 +1,6 @@
 #include <Rendering/Renderer/Renderer.h>
 #include <Debugging/Assert.h>
+#include <Debugging/Logging.h>
 
 void Renderer::BeginFrame()
 {
@@ -63,10 +64,73 @@ void Renderer::EndFrame()
 
 void Renderer::DrawDeferred()
 {
+	CommandList& cmd = *m_graphicsLists[0];
+
+	// Transition the current back buffer from present state to renderable.
+	m_swapChain->TransitionToRenderTarget(cmd);
+
+	// Bind and clear the back buffer + depth.
+	DescriptorHandle rtv = m_swapChain->GetCurrentRTV();
+	cmd.SetRenderTargets(1, &rtv, m_depthHandle);
+	cmd.ClearRenderTarget(rtv, 0.1f, 0.1f, 0.1f, 1.f);
+	if (m_depthHandle.IsValid())
+		cmd.ClearDepthStencil(m_depthHandle, 1.f, 0);
+
+	// Full-screen viewport and scissor.
+	const f32 w = static_cast<f32>(m_swapChain->GetWidth());
+	const f32 h = static_cast<f32>(m_swapChain->GetHeight());
+	cmd.SetViewport(0.f, 0.f, w, h);
+	cmd.SetScissorRect(0, 0, m_swapChain->GetWidth(), m_swapChain->GetHeight());
+
+	// Test triangle — drawn until a scene system replaces it.
+	if (m_testTriPSO)
+	{
+		cmd.SetPipelineState(m_testTriPSO.get());
+		cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
+		cmd.Draw(3);
+	}
+
 	// TODO: G-buffer pass, lighting pass, post-process
+
+	// Transition back buffer to present state before EndFrame submits the list.
+	m_swapChain->TransitionToPresent(cmd);
 }
 
 void Renderer::DrawForwardPlus()
 {
-	// TODO: light culling compute pass, forward pass
+	// TODO: light culling compute pass, forward opaque pass
+	// Shares the same back-buffer setup as deferred for now.
+	DrawDeferred();
+}
+
+void Renderer::CreateTestTriangle()
+{
+	ShaderDesc vsDesc;
+	vsDesc.type       = ShaderType::Vertex;
+	vsDesc.entryPoint = "VSMain";
+	vsDesc.sourceCode = k_triVSSrc;
+	m_testTriVS = m_device->CreateShader(vsDesc);
+
+	ShaderDesc psDesc;
+	psDesc.type       = ShaderType::Pixel;
+	psDesc.entryPoint = "PSMain";
+	psDesc.sourceCode = k_triPSSrc;
+	m_testTriPS = m_device->CreateShader(psDesc);
+
+	PipelineDesc triDesc;
+	triDesc.vertexShader          = m_testTriVS.get();
+	triDesc.pixelShader           = m_testTriPS.get();
+	triDesc.inputLayout           = {};
+	triDesc.renderTargetFormats   = { TextureFormat::BGRA8 };
+	triDesc.depthFormat           = TextureFormat::Depth32F;
+	triDesc.topology              = PrimitiveTopology::TriangleList;
+	triDesc.enableDepthTest       = false;
+	triDesc.enableDepthWrite      = false;
+	triDesc.enableStencilTest     = false;
+	triDesc.enableBlending        = false;
+	triDesc.rasterState.cullMode  = RasterizerState::CullMode::None;
+	triDesc.rasterState.fillMode  = RasterizerState::FillMode::Solid;
+	m_testTriPSO = m_device->CreatePipelineState(triDesc);
+
+	LOG_DEBUG("Renderer: test triangle PSO ready");
 }

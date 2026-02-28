@@ -18,8 +18,8 @@ public:
 
 	virtual void             Initialize(u64 size, u32 framesInFlight) = 0;
 	virtual UploadAllocation Alloc(u64 size, u64 alignment = 256)     = 0;
-	virtual void             OnBeginFrame()                            = 0;
-	virtual void             Cleanup()                                 = 0;
+	virtual void             OnBeginFrame()                           = 0;
+	virtual void             Cleanup()                                = 0;
 
 	u64 GetTotalSize() const { return m_size; }
 

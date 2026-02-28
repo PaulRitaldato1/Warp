@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
+#include <Rendering/Renderer/DescriptorHandle.h>
 
 class IWindow;
+class CommandList;
 
 enum class SwapChainFormat
 {
@@ -47,6 +49,15 @@ public:
 
 	// Cleanup resources
 	virtual void Cleanup() = 0;
+
+	// Returns the CPU descriptor handle for the current back buffer's RTV.
+	virtual DescriptorHandle GetCurrentRTV() const = 0;
+
+	// Records a resource barrier transitioning the current back buffer
+	// from its present state to render-target and vice-versa.
+	// Both must be called within an open command list.
+	virtual void TransitionToRenderTarget(CommandList& cmd) = 0;
+	virtual void TransitionToPresent(CommandList& cmd)      = 0;
 
 	virtual ~SwapChain() = default;
 

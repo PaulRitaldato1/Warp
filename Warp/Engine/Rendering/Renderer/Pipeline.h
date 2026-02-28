@@ -1,85 +1,144 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
+#include <Rendering/Renderer/Texture.h>  // TextureFormat
 
 class Shader;
 
-struct BlendState
+// ---------------------------------------------------------------------------
+// Input layout
+// ---------------------------------------------------------------------------
+
+struct InputElement
 {
-	bool bEnableAlphaBlend = false;
+	// Use UINT32_MAX (or InputElement::AppendAligned) to let the driver
+	// calculate the byte offset automatically from the previous element.
+	static constexpr u32 AppendAligned = ~0u;
 
-	enum class BlendFactor
-	{
-		Zero,
-		One,
-		SrcColor,
-		InvSrcColor,
-		SrcAlpha,
-		InvSrcAlpha,
-		DestAlpha,
-		InvDestAlpha,
-		DestColor,
-		InvDestColor,
-	};
-
-	enum class BlendOperation
-	{
-		Add,
-		Subtract,
-		ReverseSubtract,
-		Min,
-		Max,
-	};
-
-	BlendFactor SrcBlend;
-	BlendFactor DestBlend;
-	BlendOperation BlendOp;
+	String semanticName;              // "POSITION", "NORMAL", "TEXCOORD", etc.
+	u32    semanticIndex   = 0;
+	TextureFormat format;             // e.g. TextureFormat::RGB32F for Vec3
+	u32    inputSlot       = 0;       // vertex buffer binding slot
+	u32    alignedByteOffset = AppendAligned;
 };
+
+// ---------------------------------------------------------------------------
+// Rasterizer state
+// ---------------------------------------------------------------------------
 
 struct RasterizerState
 {
-	bool bCullFace = true;
+	enum class CullMode { None, Front, Back };
+	enum class FillMode { Solid, Wireframe };
 
-	enum class FaceCullMode
-	{
-		None,
-		Front,
-		Back,
-	};
-
-	enum class FillMode
-	{
-		Solid,
-		Wireframe,
-	};
-
-	FaceCullMode cullMode = FaceCullMode::Back;
-	FillMode fillMode	  = FillMode::Solid;
+	CullMode cullMode = CullMode::Back;
+	FillMode fillMode = FillMode::Solid;
+	bool     depthClipEnable = true;
 };
+
+// ---------------------------------------------------------------------------
+// Blend state
+// ---------------------------------------------------------------------------
+
+struct BlendState
+{
+	enum class BlendFactor
+	{
+		Zero, One,
+		SrcColor,  InvSrcColor,
+		SrcAlpha,  InvSrcAlpha,
+		DestAlpha, InvDestAlpha,
+		DestColor, InvDestColor,
+	};
+
+	enum class BlendOp { Add, Subtract, ReverseSubtract, Min, Max };
+
+	BlendFactor srcBlend  = BlendFactor::SrcAlpha;
+	BlendFactor destBlend = BlendFactor::InvSrcAlpha;
+	BlendOp     blendOp   = BlendOp::Add;
+
+	BlendFactor srcBlendAlpha  = BlendFactor::One;
+	BlendFactor destBlendAlpha = BlendFactor::Zero;
+	BlendOp     blendOpAlpha   = BlendOp::Add;
+};
+
+// ---------------------------------------------------------------------------
+// Topology
+// ---------------------------------------------------------------------------
+
+enum class PrimitiveTopology
+{
+	PointList,
+	LineList,
+	LineStrip,
+	TriangleList,
+	TriangleStrip,
+};
+
+// ---------------------------------------------------------------------------
+// Graphics pipeline descriptor
+// ---------------------------------------------------------------------------
 
 struct PipelineDesc
 {
-	Shader* VertexShader;
-	Shader* FragmantShader;
-	Shader* ComputeShader;
+	Shader* vertexShader = nullptr;
+	Shader* pixelShader  = nullptr;
 
-	bool bEnableDepthTest;
-	bool bEnableStencilTest;
+	Vector<InputElement>   inputLayout;
 
-	bool bEnableBlending;
-	BlendState Blend;
+	// Up to 8 simultaneous render targets.
+	Vector<TextureFormat>  renderTargetFormats;
+	TextureFormat          depthFormat = TextureFormat::Unknown;
 
-	RasterizerState RasterState;
+	PrimitiveTopology      topology    = PrimitiveTopology::TriangleList;
+
+	bool           enableDepthTest  = true;
+	bool           enableDepthWrite = true;
+	bool           enableStencilTest = false;
+	bool           enableBlending   = false;
+
+	BlendState     blend;
+	RasterizerState rasterState;
 };
+
+// ---------------------------------------------------------------------------
+// Compute pipeline descriptor
+// ---------------------------------------------------------------------------
+
+struct ComputePipelineDesc
+{
+	Shader* computeShader = nullptr;
+};
+
+// ---------------------------------------------------------------------------
+// Abstract pipeline state — graphics
+// ---------------------------------------------------------------------------
 
 class PipelineState
 {
 public:
 	virtual ~PipelineState() = default;
 
-	virtual void Initialize(const PipelineDesc& Desc) = 0;
+	// Not used directly — created via Device::CreatePipelineState().
+	virtual void  Initialize(const PipelineDesc& desc) = 0;
+	virtual void  Cleanup()                            = 0;
+	virtual void* GetNativeHandle() const              = 0;
+};
 
-	virtual void Bind() const = 0;
+// ---------------------------------------------------------------------------
+// Abstract pipeline state — compute
+//
+// Kept separate from PipelineState so Renderer can dispatch compute without
+// any platform casts. Device::CreateComputePipelineState returns this type.
+// ---------------------------------------------------------------------------
 
-	virtual void Cleanup() = 0;
+class ComputePipelineState
+{
+public:
+	virtual ~ComputePipelineState() = default;
+
+	// Not used directly — created via Device::CreateComputePipelineState().
+	virtual void  Initialize(const ComputePipelineDesc& desc) = 0;
+	virtual void  Cleanup()                                   = 0;
+	virtual void* GetNativeHandle() const                     = 0;
 };

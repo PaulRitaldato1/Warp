@@ -1,0 +1,436 @@
+#ifdef WARP_BUILD_VK
+
+#include <Rendering/Renderer/Platform/Vulkan/VKCommandList.h>
+#include <Rendering/Renderer/Platform/Vulkan/VKPipeline.h>
+#include <Rendering/Renderer/Platform/Vulkan/VKBuffer.h>
+#include <Rendering/Renderer/Platform/Vulkan/VKTexture.h>
+#include <Rendering/Renderer/Platform/Vulkan/VKTranslate.h>
+#include <Debugging/Assert.h>
+#include <Debugging/Logging.h>
+#include <cstring>
+
+VKCommandList::~VKCommandList()
+{
+	for (VkCommandPool pool : m_pools)
+	{
+		if (pool != VK_NULL_HANDLE)
+		{
+			vkDestroyCommandPool(m_device, pool, nullptr);
+		}
+	}
+	m_pools.clear();
+}
+
+void VKCommandList::InitializeWithDevice(VkDevice device, u32 familyIndex, u32 framesInFlight)
+{
+	DYNAMIC_ASSERT(device,          "VKCommandList: device is null");
+	DYNAMIC_ASSERT(framesInFlight > 0, "VKCommandList: framesInFlight must be > 0");
+
+	m_device = device;
+	m_pools.resize(framesInFlight, VK_NULL_HANDLE);
+
+	for (u32 i = 0; i < framesInFlight; ++i)
+	{
+		VkCommandPoolCreateInfo poolInfo = {};
+		poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		poolInfo.queueFamilyIndex = familyIndex;
+		poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+		VK_CHECK(vkCreateCommandPool(device, &poolInfo, nullptr, &m_pools[i]),
+		         "VKCommandList: vkCreateCommandPool failed");
+	}
+
+	// Allocate the command buffer from pool[0] initially; it gets re-allocated
+	// if needed, or simply re-recorded from the same underlying buffer.
+	VkCommandBufferAllocateInfo allocInfo = {};
+	allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool        = m_pools[0];
+	allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount = 1;
+
+	VK_CHECK(vkAllocateCommandBuffers(device, &allocInfo, &m_cmdBuf),
+	         "VKCommandList: vkAllocateCommandBuffers failed");
+
+	LOG_DEBUG("VKCommandList initialized");
+}
+
+// ---------------------------------------------------------------------------
+// Frame lifecycle
+// ---------------------------------------------------------------------------
+
+void VKCommandList::Begin(u32 frameIndex)
+{
+	DYNAMIC_ASSERT(frameIndex < m_pools.size(), "VKCommandList::Begin: frameIndex out of range");
+
+	// Reset the pool for this frame slot (frees all allocations in it).
+	vkResetCommandPool(m_device, m_pools[frameIndex], 0);
+
+	// Re-allocate the command buffer from the newly reset pool.
+	VkCommandBufferAllocateInfo allocInfo = {};
+	allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool        = m_pools[frameIndex];
+	allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount = 1;
+
+	VK_CHECK(vkAllocateCommandBuffers(m_device, &allocInfo, &m_cmdBuf),
+	         "VKCommandList::Begin: vkAllocateCommandBuffers failed");
+
+	VkCommandBufferBeginInfo beginInfo = {};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	VK_CHECK(vkBeginCommandBuffer(m_cmdBuf, &beginInfo),
+	         "VKCommandList::Begin: vkBeginCommandBuffer failed");
+
+	m_inRenderPass = false;
+}
+
+void VKCommandList::End()
+{
+	if (m_inRenderPass)
+	{
+		vkCmdEndRendering(m_cmdBuf);
+		m_inRenderPass = false;
+	}
+
+	VK_CHECK(vkEndCommandBuffer(m_cmdBuf),
+	         "VKCommandList::End: vkEndCommandBuffer failed");
+}
+
+// ---------------------------------------------------------------------------
+// GPU debug markers (VK_EXT_debug_utils — no-op if not loaded)
+// ---------------------------------------------------------------------------
+
+void VKCommandList::BeginEvent(std::string_view name)
+{
+	(void)name;
+	// TODO: vkCmdBeginDebugUtilsLabelEXT when the extension is loaded at runtime
+}
+
+void VKCommandList::EndEvent()
+{
+	// TODO: vkCmdEndDebugUtilsLabelEXT
+}
+
+void VKCommandList::SetMarker(std::string_view name)
+{
+	(void)name;
+	// TODO: vkCmdInsertDebugUtilsLabelEXT
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline state
+// ---------------------------------------------------------------------------
+
+void VKCommandList::SetPipelineState(PipelineState* state)
+{
+	DYNAMIC_ASSERT(state, "VKCommandList::SetPipelineState: state is null");
+	VKPipeline* vkPipeline = static_cast<VKPipeline*>(state);
+	vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline->GetNativePipeline());
+}
+
+void VKCommandList::SetComputePipelineState(ComputePipelineState* state)
+{
+	DYNAMIC_ASSERT(state, "VKCommandList::SetComputePipelineState: state is null");
+	VKComputePipeline* vkPipeline = static_cast<VKComputePipeline*>(state);
+	vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, vkPipeline->GetNativePipeline());
+}
+
+// ---------------------------------------------------------------------------
+// Input assembly
+// ---------------------------------------------------------------------------
+
+void VKCommandList::SetVertexBuffer(Buffer* vb)
+{
+	DYNAMIC_ASSERT(vb, "VKCommandList::SetVertexBuffer: vb is null");
+	VKBuffer* vkBuf = static_cast<VKBuffer*>(vb);
+	VkBuffer  buf   = vkBuf->GetNativeBuffer();
+	VkDeviceSize offset = 0;
+	vkCmdBindVertexBuffers(m_cmdBuf, 0, 1, &buf, &offset);
+}
+
+void VKCommandList::SetIndexBuffer(Buffer* ib)
+{
+	DYNAMIC_ASSERT(ib, "VKCommandList::SetIndexBuffer: ib is null");
+	VKBuffer* vkBuf = static_cast<VKBuffer*>(ib);
+	vkCmdBindIndexBuffer(m_cmdBuf, vkBuf->GetNativeBuffer(), 0, VK_INDEX_TYPE_UINT32);
+}
+
+void VKCommandList::SetPrimitiveTopology(PrimitiveTopology /*topo*/)
+{
+	// Topology is baked into the Vulkan PSO — no dynamic topology for now.
+}
+
+// ---------------------------------------------------------------------------
+// Viewport & scissor
+// ---------------------------------------------------------------------------
+
+void VKCommandList::SetViewport(f32 x, f32 y, f32 width, f32 height,
+                                f32 minDepth, f32 maxDepth)
+{
+	VkViewport vp = {};
+	vp.x        = x;
+	vp.y        = y;
+	vp.width    = width;
+	vp.height   = height;
+	vp.minDepth = minDepth;
+	vp.maxDepth = maxDepth;
+	vkCmdSetViewport(m_cmdBuf, 0, 1, &vp);
+}
+
+void VKCommandList::SetScissorRect(u32 left, u32 top, u32 right, u32 bottom)
+{
+	VkRect2D rect = {};
+	rect.offset = { static_cast<int32_t>(left), static_cast<int32_t>(top) };
+	rect.extent = { right - left, bottom - top };
+	vkCmdSetScissor(m_cmdBuf, 0, 1, &rect);
+}
+
+// ---------------------------------------------------------------------------
+// Render output binding — dynamic rendering
+// ---------------------------------------------------------------------------
+
+void VKCommandList::SetRenderTargets(u32 rtvCount, const DescriptorHandle* rtvs,
+                                     DescriptorHandle dsv)
+{
+	DYNAMIC_ASSERT(rtvCount <= k_maxRTVs, "VKCommandList: max 8 RTVs");
+
+	// End any previous render pass before starting a new one.
+	if (m_inRenderPass)
+	{
+		vkCmdEndRendering(m_cmdBuf);
+		m_inRenderPass = false;
+	}
+
+	// Store the current render targets for ClearRenderTarget / ClearDepthStencil.
+	for (u32 i = 0; i < rtvCount; ++i)
+	{
+		m_currentRTVs[i] = rtvs[i];
+	}
+	m_rtvCount   = rtvCount;
+	m_currentDSV = dsv;
+
+	// Derive the render area from the first attachment's stored extent.
+	u32 areaWidth  = (rtvCount > 0) ? rtvs[0].width  : dsv.width;
+	u32 areaHeight = (rtvCount > 0) ? rtvs[0].height : dsv.height;
+
+	// Build colour attachment infos (load = LOAD so explicit clears work via vkCmdClearAttachments).
+	VkRenderingAttachmentInfoKHR colourAttachments[k_maxRTVs] = {};
+	for (u32 i = 0; i < rtvCount; ++i)
+	{
+		colourAttachments[i].sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+		colourAttachments[i].imageView   = reinterpret_cast<VkImageView>(static_cast<uintptr_t>(rtvs[i].ptr));
+		colourAttachments[i].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		colourAttachments[i].loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
+		colourAttachments[i].storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+	}
+
+	// Depth attachment info.
+	VkRenderingAttachmentInfoKHR depthAttachment = {};
+	if (dsv.IsValid())
+	{
+		depthAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+		depthAttachment.imageView   = reinterpret_cast<VkImageView>(static_cast<uintptr_t>(dsv.ptr));
+		depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		depthAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
+		depthAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+	}
+
+	VkRenderingInfoKHR renderingInfo = {};
+	renderingInfo.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
+	renderingInfo.renderArea.offset    = { 0, 0 };
+	renderingInfo.renderArea.extent    = { areaWidth, areaHeight };
+	renderingInfo.layerCount           = 1;
+	renderingInfo.colorAttachmentCount = rtvCount;
+	renderingInfo.pColorAttachments    = colourAttachments;
+	renderingInfo.pDepthAttachment     = dsv.IsValid() ? &depthAttachment : nullptr;
+
+	vkCmdBeginRendering(m_cmdBuf, &renderingInfo);
+	m_inRenderPass = true;
+}
+
+void VKCommandList::ClearRenderTarget(DescriptorHandle rtv, f32 r, f32 g, f32 b, f32 a)
+{
+	// Find attachment index by matching the stored RTV handle.
+	u32 attachIndex = 0;
+	for (u32 i = 0; i < m_rtvCount; ++i)
+	{
+		if (m_currentRTVs[i].ptr == rtv.ptr)
+		{
+			attachIndex = i;
+			break;
+		}
+	}
+
+	VkClearAttachment clearAtt = {};
+	clearAtt.aspectMask                  = VK_IMAGE_ASPECT_COLOR_BIT;
+	clearAtt.colorAttachment             = attachIndex;
+	clearAtt.clearValue.color.float32[0] = r;
+	clearAtt.clearValue.color.float32[1] = g;
+	clearAtt.clearValue.color.float32[2] = b;
+	clearAtt.clearValue.color.float32[3] = a;
+
+	VkClearRect clearRect = {};
+	clearRect.rect            = { {0, 0}, { rtv.width, rtv.height } };
+	clearRect.baseArrayLayer  = 0;
+	clearRect.layerCount      = 1;
+
+	vkCmdClearAttachments(m_cmdBuf, 1, &clearAtt, 1, &clearRect);
+}
+
+void VKCommandList::ClearDepthStencil(DescriptorHandle dsv, f32 depth, u8 stencil)
+{
+	VkClearAttachment clearAtt = {};
+	clearAtt.aspectMask                     = VK_IMAGE_ASPECT_DEPTH_BIT;
+	clearAtt.clearValue.depthStencil.depth  = depth;
+	clearAtt.clearValue.depthStencil.stencil= stencil;
+
+	VkClearRect clearRect = {};
+	clearRect.rect           = { {0, 0}, { dsv.width, dsv.height } };
+	clearRect.baseArrayLayer = 0;
+	clearRect.layerCount     = 1;
+
+	vkCmdClearAttachments(m_cmdBuf, 1, &clearAtt, 1, &clearRect);
+}
+
+void VKCommandList::EndCurrentRenderPass()
+{
+	if (m_inRenderPass)
+	{
+		vkCmdEndRendering(m_cmdBuf);
+		m_inRenderPass = false;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Resource transitions (synchronization2)
+// ---------------------------------------------------------------------------
+
+void VKCommandList::TransitionTexture(Texture* texture, ResourceState newState)
+{
+	DYNAMIC_ASSERT(texture, "VKCommandList::TransitionTexture: texture is null");
+	VKTexture* vkTex = static_cast<VKTexture*>(texture);
+
+	VkResourceStateInfo srcInfo = ToVkResourceStateInfo(ResourceState::Undefined);
+	VkResourceStateInfo dstInfo = ToVkResourceStateInfo(newState);
+
+	// Determine the correct source info from the current layout.
+	VkImageLayout currentLayout = vkTex->GetCurrentLayout();
+	for (int s = 0; s <= static_cast<int>(ResourceState::Present); ++s)
+	{
+		VkResourceStateInfo candidate = ToVkResourceStateInfo(static_cast<ResourceState>(s));
+		if (candidate.layout == currentLayout)
+		{
+			srcInfo = candidate;
+			break;
+		}
+	}
+
+	if (currentLayout == dstInfo.layout)
+	{
+		return; // Already in the target layout.
+	}
+
+	const bool isDepth = (vkTex->GetFormat() == TextureFormat::Depth32F ||
+	                      vkTex->GetFormat() == TextureFormat::Depth24Stencil8);
+	VkImageAspectFlags aspect = isDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+
+	VkImageMemoryBarrier2 barrier = {};
+	barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+	barrier.srcStageMask        = srcInfo.stages  ? srcInfo.stages  : VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+	barrier.srcAccessMask       = srcInfo.access;
+	barrier.dstStageMask        = dstInfo.stages  ? dstInfo.stages  : VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+	barrier.dstAccessMask       = dstInfo.access;
+	barrier.oldLayout           = currentLayout;
+	barrier.newLayout           = dstInfo.layout;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image               = vkTex->GetNativeImage();
+	barrier.subresourceRange    = { aspect, 0, vkTex->GetMipLevels(), 0, 1 };
+
+	VkDependencyInfo depInfo = {};
+	depInfo.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+	depInfo.imageMemoryBarrierCount = 1;
+	depInfo.pImageMemoryBarriers    = &barrier;
+
+	vkCmdPipelineBarrier2(m_cmdBuf, &depInfo);
+	vkTex->SetCurrentLayout(dstInfo.layout);
+}
+
+void VKCommandList::TransitionBuffer(Buffer* buffer, ResourceState newState)
+{
+	DYNAMIC_ASSERT(buffer, "VKCommandList::TransitionBuffer: buffer is null");
+	VKBuffer* vkBuf = static_cast<VKBuffer*>(buffer);
+
+	// Dynamic / upload buffers are always HOST_VISIBLE — skip barriers.
+	if (vkBuf->IsDynamic())
+	{
+		return;
+	}
+
+	VkAccessFlags2 srcAccess = vkBuf->GetCurrentAccess();
+	VkAccessFlags2 dstAccess = ToVkBufferAccess(newState);
+
+	if (srcAccess == dstAccess)
+	{
+		return;
+	}
+
+	VkBufferMemoryBarrier2 barrier = {};
+	barrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+	barrier.srcStageMask        = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	barrier.srcAccessMask       = srcAccess;
+	barrier.dstStageMask        = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	barrier.dstAccessMask       = dstAccess;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.buffer              = vkBuf->GetNativeBuffer();
+	barrier.offset              = 0;
+	barrier.size                = VK_WHOLE_SIZE;
+
+	VkDependencyInfo depInfo = {};
+	depInfo.sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+	depInfo.bufferMemoryBarrierCount = 1;
+	depInfo.pBufferMemoryBarriers    = &barrier;
+
+	vkCmdPipelineBarrier2(m_cmdBuf, &depInfo);
+	vkBuf->SetCurrentAccess(dstAccess);
+}
+
+// ---------------------------------------------------------------------------
+// Resource binding stubs — push-constant / descriptor system is future work
+// ---------------------------------------------------------------------------
+
+void VKCommandList::SetConstantBuffer(u32 /*rootIndex*/, Buffer* /*buffer*/)
+{
+	// TODO: vkCmdPushConstants once a proper pipeline layout is in place
+}
+
+void VKCommandList::SetShaderResource(u32 /*rootIndex*/, Texture* /*texture*/)
+{
+	// TODO: vkCmdPushDescriptorSetKHR once push-descriptor layout is set up
+}
+
+// ---------------------------------------------------------------------------
+// Draw / dispatch
+// ---------------------------------------------------------------------------
+
+void VKCommandList::Draw(u32 vertexCount, u32 instanceCount,
+                         u32 firstVertex, u32 firstInstance)
+{
+	vkCmdDraw(m_cmdBuf, vertexCount, instanceCount, firstVertex, firstInstance);
+}
+
+void VKCommandList::DrawIndexed(u32 indexCount, u32 instanceCount,
+                                u32 firstIndex, u32 baseVertex, u32 firstInstance)
+{
+	vkCmdDrawIndexed(m_cmdBuf, indexCount, instanceCount, firstIndex,
+	                 static_cast<int32_t>(baseVertex), firstInstance);
+}
+
+void VKCommandList::Dispatch(u32 x, u32 y, u32 z)
+{
+	vkCmdDispatch(m_cmdBuf, x, y, z);
+}
+
+#endif // WARP_BUILD_VK

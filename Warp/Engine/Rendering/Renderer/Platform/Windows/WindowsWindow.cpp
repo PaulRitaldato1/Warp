@@ -1,9 +1,10 @@
+#ifdef WARP_WINDOWS
+
 #include "WindowsWindow.h"
 #include <Debugging/Logging.h>
 #include <cstdlib>
 #include <Input/Input.h>
 
-#ifdef WARP_WINDOWS
 
 #include <WindowsX.h>
 

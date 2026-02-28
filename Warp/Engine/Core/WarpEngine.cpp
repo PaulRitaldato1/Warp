@@ -55,6 +55,12 @@ bool WarpEngine::Run()
 			m_bIsRunning = false;
 		}
 
+		if (m_renderer && m_window->WasResized())
+		{
+			m_renderer->OnResize(static_cast<u32>(m_window->GetWidth()),
+			                     static_cast<u32>(m_window->GetHeight()));
+		}
+
 		m_timer.Tick();
 
 		if (!m_bIsSuspended)

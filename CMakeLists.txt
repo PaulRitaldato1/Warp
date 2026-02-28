@@ -62,7 +62,14 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(DirectXMath fastgltf)
+FetchContent_Declare(
+    VulkanMemoryAllocator
+    GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+    GIT_TAG        v3.1.0
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(DirectXMath fastgltf VulkanMemoryAllocator)
 
 # DirectXMath includes sal.h which is a Windows-only SAL annotation header.
 # Provide a no-op stub for non-Windows builds. configure_file runs on every
@@ -145,17 +152,21 @@ target_include_directories(WarpEngine PUBLIC  ${directxmath_SOURCE_DIR}/Inc)
 target_include_directories(WarpEngine PRIVATE ${tinyddsloader_SOURCE_DIR})
 
 if(WIN32)
-    target_link_libraries(WarpEngine PRIVATE "d3d12.lib" "dxgi.lib" "d3dcompiler.lib" "Gdi32.lib")
+    target_link_libraries(WarpEngine PRIVATE "d3d12.lib" "dxgi.lib" "dxcompiler.lib" "Gdi32.lib")
     target_link_libraries(Warp PUBLIC WarpEngine)
 #Linux
 elseif(UNIX AND NOT APPLE)
-    target_link_libraries(WarpEngine PRIVATE X11)
+    find_package(Vulkan REQUIRED)
+    target_link_libraries(WarpEngine PRIVATE X11 Vulkan::Vulkan shaderc_shared)
     target_link_libraries(Warp PUBLIC WarpEngine)
 
 #Apple
 else()
 
 endif()
+
+# VMA — header-only, needed by Vulkan backend on all platforms
+target_link_libraries(WarpEngine PRIVATE GPUOpen::VulkanMemoryAllocator)
 
 if(WIN32)
     string(REPLACE "/" "\\" source_path_windows "${Warp_SOURCE_DIR}/Resources")

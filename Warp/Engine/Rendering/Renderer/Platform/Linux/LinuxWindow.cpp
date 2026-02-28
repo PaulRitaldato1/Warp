@@ -238,6 +238,18 @@ bool LinuxWindow::PumpMessages()
 				}
 				break;
 			}
+			case ConfigureNotify:
+			{
+				const int newW = event.xconfigure.width;
+				const int newH = event.xconfigure.height;
+				if (newW != m_width || newH != m_height)
+				{
+					m_width     = static_cast<int16>(newW);
+					m_height    = static_cast<int16>(newH);
+					m_bResizing = true;
+				}
+				break;
+			}
 			case DestroyNotify:
 			{
 				return false;

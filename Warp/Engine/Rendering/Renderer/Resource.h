@@ -1,27 +1,3 @@
 #pragma once
-
-#include "Engine/Common/CommonTypes.h"
-
-enum class ResourceType
-{
-	Buffer,
-	Texture,
-	RenderTarget,
-	DepthStencil
-};
-
-class Resource
-{
-public:
-	virtual ~Resource() = default;
-
-	virtual ResourceType GetType() = 0;
-
-	virtual size_t GetSize() = 0;
-
-	virtual void Bind(u32 Slot) const = 0;
-
-	virtual void Cleanup() = 0;
-
-	virtual void* GetNativeHandle() = 0;
-};
+// Resource.h has been superseded — Buffer.h and Texture.h stand independently.
+// This file is kept as an empty header so existing includes don't break during transition.

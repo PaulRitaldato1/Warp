@@ -8,6 +8,10 @@
 #include <Rendering/Renderer/Device.h>
 #include <Rendering/Renderer/SwapChain.h>
 #include <Rendering/Renderer/UploadBuffer.h>
+#include <Rendering/Renderer/Texture.h>
+#include <Rendering/Renderer/DescriptorHandle.h>
+#include <Rendering/Renderer/Shader.h>
+#include <Rendering/Renderer/Pipeline.h>
 
 #include <thread>
 #include <future>
@@ -55,7 +59,21 @@ protected:
 	void DrawDeferred();
 	void DrawForwardPlus();
 
+	// Creates the test triangle shaders + PSO from the shared HLSL source below.
+	// Called from platform Init() after the device and swap chain are ready.
+	// Uses only abstract Device / Shader / PipelineState types — no platform casts.
+	void CreateTestTriangle();
+
+	// How many frames the CPU is allowed to run ahead of the GPU.
+	// Controls the number of command allocator slots, upload buffer slices,
+	// and FrameSyncPoints — NOT the swap chain back buffer count.
 	static constexpr u32 k_framesInFlight  = 3;
+
+	// Swap chain back buffers — independent of k_framesInFlight.
+	// 2 is standard (double-buffering). The GPU renders into one while the
+	// monitor displays the other.
+	static constexpr u32 k_backBufferCount = 2;
+
 	static constexpr u64 k_uploadHeapSize  = 32 * 1024 * 1024; // 32 MB
 	static constexpr u64 k_frameArenaSize  =  4 * 1024 * 1024; //  4 MB
 
@@ -64,6 +82,40 @@ protected:
 	URef<CommandQueue>  m_computeQueue;
 	URef<CommandQueue>  m_copyQueue;
 	URef<SwapChain>     m_swapChain;
+
+	// Depth buffer shared across all render paths.
+	// Created by the platform Init(); handle stored here for use in DrawXxx().
+	URef<Texture>    m_depthTexture;
+	DescriptorHandle m_depthHandle;
+
+	// Test triangle — filled by CreateTestTriangle(), drawn in DrawDeferred().
+	// Replace with a proper scene submission system once the pipeline is proven.
+	URef<Shader>        m_testTriVS;
+	URef<Shader>        m_testTriPS;
+	URef<PipelineState> m_testTriPSO;
+
+	// Shared HLSL source for the test triangle.
+	// SV_VertexID-driven — no vertex buffer needed.
+	// Both D3D12 and Vulkan backends compile this via their respective
+	// shader compiler (DXC / shaderc).
+	static constexpr const char* k_triVSSrc = R"hlsl(
+float4 VSMain(uint vid : SV_VertexID) : SV_Position
+{
+    float2 pos[3] = {
+        float2( 0.0,  0.5),
+        float2( 0.5, -0.5),
+        float2(-0.5, -0.5)
+    };
+    return float4(pos[vid], 0.0, 1.0);
+}
+)hlsl";
+
+	static constexpr const char* k_triPSSrc = R"hlsl(
+float4 PSMain() : SV_Target
+{
+    return float4(1.0, 0.5, 0.0, 1.0);
+}
+)hlsl";
 
 	RenderPath          m_renderPath = RenderPath::Deferred;
 

@@ -23,7 +23,8 @@ public:
 	virtual void Destroy() final;
 	virtual bool PumpMessages() final;
 
-	void* GetNativeHandle() const override { return (void*)(uintptr_t)m_window; }
+	void* GetNativeHandle()  const override { return (void*)(uintptr_t)m_window; }
+	void* GetNativeDisplay() const override { return (void*)m_display; }
 
 private:
 	Display* m_display		  = nullptr;

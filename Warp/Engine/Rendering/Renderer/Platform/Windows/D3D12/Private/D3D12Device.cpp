@@ -6,6 +6,10 @@
 #include <Rendering/Renderer/Platform/Windows/D3D12/D3D12UploadBuffer.h>
 #include <Rendering/Renderer/Platform/Windows/D3D12/D3D12SwapChain.h>
 #include <Rendering/Renderer/Platform/Windows/D3D12/D3D12Fence.h>
+#include <Rendering/Renderer/Platform/Windows/D3D12/D3D12Buffer.h>
+#include <Rendering/Renderer/Platform/Windows/D3D12/D3D12Texture.h>
+#include <Rendering/Renderer/Platform/Windows/D3D12/D3D12Shader.h>
+#include <Rendering/Renderer/Platform/Windows/D3D12/D3D12Pipeline.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 
@@ -117,29 +121,48 @@ URef<SwapChain> D3D12Device::CreateSwapChain(const SwapChainDesc& desc)
 	d3dQueue->InitializeWithDevice(m_device.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT);
 
 	auto swapChain = std::make_unique<D3D12SwapChain>();
-	swapChain->InitializeWithFactory(m_factory.Get(), d3dQueue->GetNative(), desc);
+	swapChain->InitializeWithFactory(m_device.Get(), m_factory.Get(), d3dQueue->GetNative(), desc);
 	return swapChain;
 }
 
-// Stubs — implemented in later sessions
-URef<PipelineState> D3D12Device::CreatePipelineState(const PipelineDesc& /*desc*/)
+URef<PipelineState> D3D12Device::CreatePipelineState(const PipelineDesc& desc)
 {
-	return nullptr;
+	DYNAMIC_ASSERT(m_device, "D3D12Device::CreatePipelineState: device not initialized");
+	URef<D3D12Pipeline> pipeline = std::make_unique<D3D12Pipeline>();
+	pipeline->InitializeWithDevice(m_device.Get(), desc);
+	return pipeline;
 }
 
-URef<Buffer> D3D12Device::CreateBuffer(const BufferDesc& /*desc*/)
+URef<ComputePipelineState> D3D12Device::CreateComputePipelineState(const ComputePipelineDesc& desc)
 {
-	return nullptr;
+	DYNAMIC_ASSERT(m_device, "D3D12Device::CreateComputePipelineState: device not initialized");
+	URef<D3D12ComputePipeline> pipeline = std::make_unique<D3D12ComputePipeline>();
+	pipeline->InitializeWithDevice(m_device.Get(), desc);
+	return pipeline;
 }
 
-URef<Texture> D3D12Device::CreateTexture(const TextureDesc& /*desc*/)
+URef<Buffer> D3D12Device::CreateBuffer(const BufferDesc& desc)
 {
-	return nullptr;
+	DYNAMIC_ASSERT(m_device, "D3D12Device::CreateBuffer: device not initialized");
+	URef<D3D12Buffer> buffer = std::make_unique<D3D12Buffer>();
+	buffer->InitializeWithDevice(m_device.Get(), desc);
+	return buffer;
 }
 
-URef<Shader> D3D12Device::CreateShader(const ShaderDesc& /*desc*/)
+URef<Texture> D3D12Device::CreateTexture(const TextureDesc& desc)
 {
-	return nullptr;
+	DYNAMIC_ASSERT(m_device, "D3D12Device::CreateTexture: device not initialized");
+	URef<D3D12Texture> texture = std::make_unique<D3D12Texture>();
+	texture->InitializeWithDevice(m_device.Get(), desc);
+	return texture;
+}
+
+URef<Shader> D3D12Device::CreateShader(const ShaderDesc& desc)
+{
+	DYNAMIC_ASSERT(m_device, "D3D12Device::CreateShader: device not initialized");
+	URef<D3D12Shader> shader = std::make_unique<D3D12Shader>();
+	shader->Initialize(desc);
+	return shader;
 }
 
 void D3D12Device::WaitForIdle()

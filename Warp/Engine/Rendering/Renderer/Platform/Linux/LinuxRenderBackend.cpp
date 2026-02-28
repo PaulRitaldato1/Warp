@@ -2,6 +2,7 @@
 
 #include <Rendering/RenderBackend.h>
 #include <Rendering/Renderer/Platform/Linux/LinuxWindow.h>
+#include <Rendering/Renderer/Platform/Vulkan/VKRenderer.h>
 #include <Debugging/Logging.h>
 
 class LinuxRenderBackend : public RenderBackend
@@ -14,9 +15,7 @@ public:
 
 	URef<Renderer> CreateRenderer() override
 	{
-		// TODO: Vulkan renderer
-		LOG_WARNING("LinuxRenderBackend: no renderer backend available yet");
-		return nullptr;
+		return std::make_unique<VKRenderer>();
 	}
 };
 

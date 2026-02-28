@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Renderer/Pipeline.h"
 #include <Common/CommonTypes.h>
 #include <Rendering/Renderer/CommandQueue.h>
 
@@ -16,7 +17,9 @@ class Shader;
 struct ShaderDesc;
 
 class PipelineState;
+class ComputePipelineState;
 struct PipelineDesc;
+struct ComputePipelineDesc;
 
 class CommandList;
 class UploadBuffer;
@@ -58,8 +61,11 @@ public:
 	// Create a swap chain
 	virtual URef<SwapChain> CreateSwapChain(const SwapChainDesc& Desc) = 0;
 
-	// Create a pipeline state object
+	// Create a graphics pipeline state object
 	virtual URef<PipelineState> CreatePipelineState(const PipelineDesc& Desc) = 0;
+
+	// Create a compute pipeline state object
+	virtual URef<ComputePipelineState> CreateComputePipelineState(const ComputePipelineDesc& Desc) = 0;
 
 	// Create a buffer
 	virtual URef<Buffer> CreateBuffer(const BufferDesc& Desc) = 0;
