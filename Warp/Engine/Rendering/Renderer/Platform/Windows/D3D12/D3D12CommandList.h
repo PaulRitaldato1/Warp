@@ -44,6 +44,9 @@ public:
 	void SetConstantBuffer(u32 rootIndex, Buffer* buffer)   override;
 	void SetShaderResource(u32 rootIndex, Texture* texture) override;
 
+	void CopyBuffer(Buffer* src, Buffer* dst,
+	                u64 srcOffset, u64 dstOffset, u64 size) override;
+
 	void TransitionTexture(Texture* texture, ResourceState newState) override;
 	void TransitionBuffer(Buffer* buffer, ResourceState newState)    override;
 

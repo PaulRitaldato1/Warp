@@ -303,6 +303,27 @@ void VKCommandList::EndCurrentRenderPass()
 }
 
 // ---------------------------------------------------------------------------
+// Copy / transfer
+// ---------------------------------------------------------------------------
+
+void VKCommandList::CopyBuffer(Buffer* src, Buffer* dst,
+                                u64 srcOffset, u64 dstOffset, u64 size)
+{
+	DYNAMIC_ASSERT(src, "VKCommandList::CopyBuffer: src is null");
+	DYNAMIC_ASSERT(dst, "VKCommandList::CopyBuffer: dst is null");
+
+	VKBuffer* vkSrc = static_cast<VKBuffer*>(src);
+	VKBuffer* vkDst = static_cast<VKBuffer*>(dst);
+
+	VkBufferCopy region = {};
+	region.srcOffset = srcOffset;
+	region.dstOffset = dstOffset;
+	region.size      = size;
+
+	vkCmdCopyBuffer(m_cmdBuf, vkSrc->GetNativeBuffer(), vkDst->GetNativeBuffer(), 1, &region);
+}
+
+// ---------------------------------------------------------------------------
 // Resource transitions (synchronization2)
 // ---------------------------------------------------------------------------
 
@@ -362,8 +383,8 @@ void VKCommandList::TransitionBuffer(Buffer* buffer, ResourceState newState)
 	DYNAMIC_ASSERT(buffer, "VKCommandList::TransitionBuffer: buffer is null");
 	VKBuffer* vkBuf = static_cast<VKBuffer*>(buffer);
 
-	// Dynamic / upload buffers are always HOST_VISIBLE — skip barriers.
-	if (vkBuf->IsDynamic())
+	// Staging buffers are always HOST_VISIBLE — skip barriers.
+	if (vkBuf->IsStagingBuffer())
 	{
 		return;
 	}

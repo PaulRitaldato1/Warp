@@ -35,7 +35,8 @@ void D3D12Renderer::Init(IWindow* window)
 		m_computeLists[i]  = m_device->CreateCommandList(CommandQueueType::Compute,  k_framesInFlight);
 	}
 	m_copyList = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
-
+	m_urgentCopyList = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
+	
 	// --- Swap chain ---
 	SwapChainDesc scDesc;
 	scDesc.Window      = window;

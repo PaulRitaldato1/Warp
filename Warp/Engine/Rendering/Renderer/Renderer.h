@@ -3,6 +3,7 @@
 #include <Common/CommonTypes.h>
 #include <Memory/Arena.h>
 #include <Threading/ThreadPool.h>
+#include <Rendering/Renderer/Buffer.h>
 #include <Rendering/Renderer/CommandList.h>
 #include <Rendering/Renderer/CommandQueue.h>
 #include <Rendering/Renderer/Device.h>
@@ -30,7 +31,8 @@ enum class RenderPath
 struct FrameSyncPoint
 {
 	u64 graphicsFenceValue = 0;
-	u64 computeFenceValue = 0;
+	u64 computeFenceValue  = 0;
+	u64 copyFenceValue     = 0;
 };
 
 class Renderer
@@ -127,6 +129,7 @@ float4 PSMain() : SV_Target
 	Vector<URef<CommandList>> m_graphicsLists;
 	Vector<URef<CommandList>> m_computeLists;
 	URef<CommandList>         m_copyList;
+	URef<CommandList>         m_urgentCopyList;  // Separate list for same-frame copies.
 
 	// CPU-side bump allocator: Reset() at the start of every frame.
 	// Use for transient per-frame structures (draw lists, sort keys, etc.).
@@ -137,4 +140,37 @@ float4 PSMain() : SV_Target
 	URef<UploadBuffer> m_uploadBuffer;
 
 	URef<ThreadPool>  m_workerPool;
+
+	// ---------------------------------------------------------------------------
+	// Staging upload lifecycle
+	// ---------------------------------------------------------------------------
+
+	// Deferred uploads — copied on the copy queue, available within k_framesInFlight frames.
+	Vector<PendingStagingUpload> m_deferredUploads;
+
+	// Urgent uploads — copied and fenced before graphics/compute submission this frame.
+	Vector<PendingStagingUpload> m_urgentUploads;
+
+	// Staging buffers that have been submitted for copy, paired with the
+	// copy queue fence value. Freed once the GPU completes past that value.
+	struct InFlightStaging
+	{
+		URef<Buffer> stagingBuffer;
+		u64          fenceValue;
+	};
+	Vector<InFlightStaging> m_inFlightStagingBuffers;
+
+	// Cross-queue wait flags — set by QueueCopyForThisFrame, consumed by EndFrame.
+	bool m_graphicsWaitOnCopy = false;
+	bool m_computeWaitOnCopy  = false;
+
+public:
+	// Queue a staging upload for the Renderer to process.
+	// Data is available within k_framesInFlight frames.
+	void QueueStagingUpload(PendingStagingUpload& upload);
+
+	// Queue a staging upload that must be available THIS frame.
+	// Inserts a cross-queue GPU wait on the specified queue so it won't
+	// execute until the copy completes.
+	void QueueCopyForThisFrame(PendingStagingUpload& upload, CommandQueueType queueType);
 };

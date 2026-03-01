@@ -1,6 +1,7 @@
 #include <Rendering/Renderer/Renderer.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
+#include <algorithm>
 
 void Renderer::BeginFrame()
 {
@@ -14,6 +15,23 @@ void Renderer::BeginFrame()
 	{
 		m_computeQueue->WaitForValue(retiring.computeFenceValue);
 	}
+	if (retiring.copyFenceValue > 0)
+	{
+		m_copyQueue->WaitForValue(retiring.copyFenceValue);
+	}
+
+	// Free staging buffers whose copies have completed on the GPU.
+	{
+		u64 completedCopyValue = m_copyQueue->GetCompletedValue();
+		m_inFlightStagingBuffers.erase(
+			std::remove_if(m_inFlightStagingBuffers.begin(),
+			               m_inFlightStagingBuffers.end(),
+			               [completedCopyValue](const InFlightStaging& s)
+			               {
+			                   return s.fenceValue <= completedCopyValue;
+			               }),
+			m_inFlightStagingBuffers.end());
+	}
 
 	// Retire the oldest frame's upload-buffer slice so the ring buffer can reuse it.
 	m_uploadBuffer->OnBeginFrame();
@@ -21,10 +39,15 @@ void Renderer::BeginFrame()
 	// Reset all CPU-side per-frame allocations.
 	m_frameArena.Reset();
 
+	// Reset cross-queue wait flags for the new frame.
+	m_graphicsWaitOnCopy = false;
+	m_computeWaitOnCopy  = false;
+
 	// Open all command lists for this frame slot.
-	for (auto& list : m_graphicsLists) { list->Begin(m_frameIndex); }
-	for (auto& list : m_computeLists)  { list->Begin(m_frameIndex); }
+	for (URef<CommandList>& list : m_graphicsLists) { list->Begin(m_frameIndex); }
+	for (URef<CommandList>& list : m_computeLists)  { list->Begin(m_frameIndex); }
 	m_copyList->Begin(m_frameIndex);
+	m_urgentCopyList->Begin(m_frameIndex);
 }
 
 void Renderer::Draw()
@@ -39,22 +62,92 @@ void Renderer::Draw()
 void Renderer::EndFrame()
 {
 	// Close all command lists.
-	for (auto& list : m_graphicsLists) { list->End(); }
-	for (auto& list : m_computeLists)  { list->End(); }
+	for (URef<CommandList>& list : m_graphicsLists) { list->End(); }
+	for (URef<CommandList>& list : m_computeLists)  { list->End(); }
+
+	u64 lastCopyFenceValue = 0;
+
+	// --- Urgent copies: submitted first, cross-queue wait inserted so
+	//     graphics/compute won't execute until these specific copies finish.
+	if (!m_urgentUploads.empty())
+	{
+		for (PendingStagingUpload& upload : m_urgentUploads)
+		{
+			m_urgentCopyList->CopyBuffer(upload.stagingBuffer.get(), upload.destination,
+			                             0, 0, upload.size);
+		}
+		m_urgentCopyList->End();
+
+		u64 urgentFenceValue = m_copyQueue->Submit(*m_urgentCopyList);
+
+		if (m_graphicsWaitOnCopy)
+		{
+			m_graphicsQueue->WaitForQueue(*m_copyQueue, urgentFenceValue);
+		}
+		if (m_computeWaitOnCopy)
+		{
+			m_computeQueue->WaitForQueue(*m_copyQueue, urgentFenceValue);
+		}
+
+		for (PendingStagingUpload& upload : m_urgentUploads)
+		{
+			InFlightStaging entry;
+			entry.stagingBuffer = std::move(upload.stagingBuffer);
+			entry.fenceValue    = urgentFenceValue;
+			m_inFlightStagingBuffers.push_back(std::move(entry));
+		}
+		m_urgentUploads.clear();
+
+		lastCopyFenceValue = urgentFenceValue;
+	}
+	else
+	{
+		m_urgentCopyList->End();
+	}
+
+	// --- Deferred copies: no cross-queue wait, available within k_framesInFlight frames.
+	for (PendingStagingUpload& upload : m_deferredUploads)
+	{
+		m_copyList->CopyBuffer(upload.stagingBuffer.get(), upload.destination,
+		                       0, 0, upload.size);
+	}
 	m_copyList->End();
 
-	// Copy queue first — graphics/compute may read data uploaded this frame.
-	m_copyQueue->Submit(*m_copyList);
+	u64 deferredFenceValue = m_copyQueue->Submit(*m_copyList);
 
-	// Submit worker lists and track the last signaled fence value per queue.
-	FrameSyncPoint& sync = m_frameSyncPoints[m_frameIndex];
-	for (auto& list : m_graphicsLists)
+	for (PendingStagingUpload& upload : m_deferredUploads)
 	{
-		sync.graphicsFenceValue = m_graphicsQueue->Submit(*list);
+		InFlightStaging entry;
+		entry.stagingBuffer = std::move(upload.stagingBuffer);
+		entry.fenceValue    = deferredFenceValue;
+		m_inFlightStagingBuffers.push_back(std::move(entry));
 	}
-	for (auto& list : m_computeLists)
+	m_deferredUploads.clear();
+
+	lastCopyFenceValue = deferredFenceValue;
+
+	// Submit worker lists as batches and track the signaled fence value per queue.
+	FrameSyncPoint& sync = m_frameSyncPoints[m_frameIndex];
+	sync.copyFenceValue = lastCopyFenceValue;
+
+	if (!m_graphicsLists.empty())
 	{
-		sync.computeFenceValue = m_computeQueue->Submit(*list);
+		Vector<CommandList*> graphicsBatch(m_graphicsLists.size());
+		for (u32 i = 0; i < m_graphicsLists.size(); ++i)
+		{
+			graphicsBatch[i] = m_graphicsLists[i].get();
+		}
+		sync.graphicsFenceValue = m_graphicsQueue->Submit(graphicsBatch);
+	}
+
+	if (!m_computeLists.empty())
+	{
+		Vector<CommandList*> computeBatch(m_computeLists.size());
+		for (u32 i = 0; i < m_computeLists.size(); ++i)
+		{
+			computeBatch[i] = m_computeLists[i].get();
+		}
+		sync.computeFenceValue = m_computeQueue->Submit(computeBatch);
 	}
 
 	m_swapChain->Present();
@@ -101,6 +194,26 @@ void Renderer::DrawForwardPlus()
 	// TODO: light culling compute pass, forward opaque pass
 	// Shares the same back-buffer setup as deferred for now.
 	DrawDeferred();
+}
+
+void Renderer::QueueStagingUpload(PendingStagingUpload& upload)
+{
+	DYNAMIC_ASSERT(upload.IsValid(), "Renderer::QueueStagingUpload: invalid upload");
+	m_deferredUploads.push_back(std::move(upload));
+}
+
+void Renderer::QueueCopyForThisFrame(PendingStagingUpload& upload, CommandQueueType queueType)
+{
+	DYNAMIC_ASSERT(upload.IsValid(), "Renderer::QueueCopyForThisFrame: invalid upload");
+
+	m_urgentUploads.push_back(std::move(upload));
+
+	switch (queueType)
+	{
+		case CommandQueueType::Graphics: m_graphicsWaitOnCopy = true; break;
+		case CommandQueueType::Compute:  m_computeWaitOnCopy  = true; break;
+		case CommandQueueType::Copy:     break; // No cross-queue wait needed
+	}
 }
 
 void Renderer::CreateTestTriangle()

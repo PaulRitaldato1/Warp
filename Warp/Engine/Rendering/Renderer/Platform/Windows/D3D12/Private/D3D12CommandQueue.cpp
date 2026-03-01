@@ -23,14 +23,19 @@ void D3D12CommandQueue::InitializeWithDevice(ID3D12Device* device, D3D12_COMMAND
 	LOG_DEBUG("D3D12CommandQueue initialized");
 }
 
-u64 D3D12CommandQueue::Submit(CommandList& list)
+u64 D3D12CommandQueue::Submit(const Vector<CommandList*>& lists)
 {
 	DYNAMIC_ASSERT(m_queue, "D3D12CommandQueue::Submit: queue not initialized");
+	DYNAMIC_ASSERT(!lists.empty(), "D3D12CommandQueue::Submit: empty list");
 
-	D3D12CommandList& d3dList = static_cast<D3D12CommandList&>(list);
-	ID3D12CommandList* raw	  = d3dList.GetNative();
+	Vector<ID3D12CommandList*> raw(lists.size());
+	for (u32 i = 0; i < lists.size(); ++i)
+	{
+		D3D12CommandList& d3dList = static_cast<D3D12CommandList&>(*lists[i]);
+		raw[i] = d3dList.GetNative();
+	}
 
-	m_queue->ExecuteCommandLists(1, &raw);
+	m_queue->ExecuteCommandLists(static_cast<UINT>(raw.size()), raw.data());
 	m_fence->GPUSignal(m_queue.Get());
 
 	// GPUSignal increments m_nextValue, so the value just signaled is m_nextValue - 1.
@@ -41,6 +46,20 @@ void D3D12CommandQueue::WaitForValue(u64 value)
 {
 	DYNAMIC_ASSERT(m_fence, "D3D12CommandQueue::WaitForValue: fence not initialized");
 	m_fence->WaitForValue(value);
+}
+
+u64 D3D12CommandQueue::GetCompletedValue() const
+{
+	DYNAMIC_ASSERT(m_fence, "D3D12CommandQueue::GetCompletedValue: fence not initialized");
+	return m_fence->GetCompletedValue();
+}
+
+void D3D12CommandQueue::WaitForQueue(CommandQueue& other, u64 fenceValue)
+{
+	DYNAMIC_ASSERT(m_queue, "D3D12CommandQueue::WaitForQueue: queue not initialized");
+
+	D3D12CommandQueue& d3dOther = static_cast<D3D12CommandQueue&>(other);
+	ThrowIfFailed(m_queue->Wait(d3dOther.m_fence->GetNative(), fenceValue));
 }
 
 void D3D12CommandQueue::Reset()

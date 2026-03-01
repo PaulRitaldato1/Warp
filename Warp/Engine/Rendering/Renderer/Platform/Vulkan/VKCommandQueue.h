@@ -20,9 +20,11 @@ public:
 
 	void InitializeWithDevice(VkDevice device, VkQueue queue, u32 familyIndex);
 
-	u64  Submit(CommandList& list)   override;
-	void WaitForValue(u64 value)     override;
-	void Reset()                     override;  // wait for queue to become idle
+	u64  Submit(const Vector<CommandList*>& lists)           override;
+	void WaitForValue(u64 value)                           override;
+	u64  GetCompletedValue() const                         override;
+	void WaitForQueue(CommandQueue& other, u64 fenceValue) override;
+	void Reset()                                           override;
 
 	VkQueue GetNative()       const { return m_queue; }
 	u32     GetFamilyIndex()  const { return m_familyIndex; }
@@ -32,6 +34,10 @@ private:
 	VkQueue      m_queue       = VK_NULL_HANDLE;
 	u32          m_familyIndex = 0;
 	VKFence      m_fence;
+
+	// Pending cross-queue wait — accumulated by WaitForQueue(), consumed by Submit().
+	VkSemaphore  m_pendingWaitSemaphore = VK_NULL_HANDLE;
+	u64          m_pendingWaitValue     = 0;
 };
 
 #endif // WARP_BUILD_VK

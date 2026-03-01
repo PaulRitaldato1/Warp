@@ -149,7 +149,7 @@ target_precompile_headers(Warp PRIVATE "Warp/Engine/Common/CommonTypes.h")
 target_link_libraries(WarpEngine PUBLIC  DirectXMath)
 target_link_libraries(WarpEngine PRIVATE fastgltf::fastgltf)
 target_include_directories(WarpEngine PUBLIC  ${directxmath_SOURCE_DIR}/Inc)
-target_include_directories(WarpEngine PRIVATE ${tinyddsloader_SOURCE_DIR})
+target_include_directories(WarpEngine SYSTEM PRIVATE ${tinyddsloader_SOURCE_DIR})
 
 if(WIN32)
     target_link_libraries(WarpEngine PRIVATE "d3d12.lib" "dxgi.lib" "dxcompiler.lib" "Gdi32.lib")
@@ -165,8 +165,11 @@ else()
 
 endif()
 
-# VMA — header-only, needed by Vulkan backend on all platforms
+# VMA — header-only, needed by Vulkan backend on all platforms.
+# Mark as SYSTEM to suppress third-party warnings (nullability, unused function, etc.).
 target_link_libraries(WarpEngine PRIVATE GPUOpen::VulkanMemoryAllocator)
+get_target_property(VMA_INCLUDE_DIRS GPUOpen::VulkanMemoryAllocator INTERFACE_INCLUDE_DIRECTORIES)
+target_include_directories(WarpEngine SYSTEM PRIVATE ${VMA_INCLUDE_DIRS})
 
 if(WIN32)
     string(REPLACE "/" "\\" source_path_windows "${Warp_SOURCE_DIR}/Resources")

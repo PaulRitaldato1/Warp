@@ -14,8 +14,10 @@ public:
 							  D3D12_COMMAND_LIST_TYPE type = D3D12_COMMAND_LIST_TYPE_DIRECT);
 
 	// CommandQueue interface
-	u64  Submit(CommandList& list) override;  // executes + GPU signals; returns fence value
+	u64  Submit(const Vector<CommandList*>& lists) override;
 	void WaitForValue(u64 value) override;
+	u64  GetCompletedValue() const override;
+	void WaitForQueue(CommandQueue& other, u64 fenceValue) override;
 	void Reset() override;
 
 	// D3D12-specific

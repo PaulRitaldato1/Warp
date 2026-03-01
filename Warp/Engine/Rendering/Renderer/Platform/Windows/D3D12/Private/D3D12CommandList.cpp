@@ -201,6 +201,23 @@ void D3D12CommandList::SetShaderResource(u32 rootIndex, Texture* texture)
 }
 
 // ---------------------------------------------------------------------------
+// Copy / transfer
+// ---------------------------------------------------------------------------
+
+void D3D12CommandList::CopyBuffer(Buffer* src, Buffer* dst,
+                                   u64 srcOffset, u64 dstOffset, u64 size)
+{
+	DYNAMIC_ASSERT(src, "D3D12CommandList::CopyBuffer: src is null");
+	DYNAMIC_ASSERT(dst, "D3D12CommandList::CopyBuffer: dst is null");
+
+	D3D12Buffer* d3dSrc = static_cast<D3D12Buffer*>(src);
+	D3D12Buffer* d3dDst = static_cast<D3D12Buffer*>(dst);
+
+	m_list->CopyBufferRegion(d3dDst->GetNativeResource(), dstOffset,
+	                         d3dSrc->GetNativeResource(), srcOffset, size);
+}
+
+// ---------------------------------------------------------------------------
 // Resource transitions
 // ---------------------------------------------------------------------------
 

@@ -1,3 +1,4 @@
+#include "Renderer/CommandQueue.h"
 #ifdef WARP_BUILD_VK
 
 #include <Rendering/Renderer/Platform/Vulkan/VKRenderer.h>
@@ -64,7 +65,7 @@ void VKRenderer::Init(IWindow* window)
 	m_computeLists.push_back(
 		m_device->CreateCommandList(CommandQueueType::Compute, k_framesInFlight));
 	m_copyList = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
-
+	m_urgentCopyList = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
 	// -------------------------------------------------------------------------
 	// Upload buffer
 	// -------------------------------------------------------------------------

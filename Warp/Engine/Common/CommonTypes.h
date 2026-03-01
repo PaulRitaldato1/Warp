@@ -53,6 +53,9 @@ using Ref = std::shared_ptr<T>;
 template <typename T>
 using URef = std::unique_ptr<T>;
 
+template <typename T>
+using WRef = std::weak_ptr<T>;
+
 template <typename T, typename J>
 using HashMap = std::unordered_map<T, J>;
 

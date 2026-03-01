@@ -80,6 +80,15 @@ public:
 	virtual void SetShaderResource(u32 rootIndex, Texture* texture) = 0;
 
 	// ---------------------------------------------------------------------------
+	// Copy / transfer
+	// ---------------------------------------------------------------------------
+
+	// Copies size bytes from src to dst at the given offsets.
+	// Typically used with a staging (upload-heap) buffer as src.
+	virtual void CopyBuffer(Buffer* src, Buffer* dst,
+	                         u64 srcOffset, u64 dstOffset, u64 size) = 0;
+
+	// ---------------------------------------------------------------------------
 	// Draw / dispatch
 	// ---------------------------------------------------------------------------
 
