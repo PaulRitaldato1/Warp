@@ -51,8 +51,7 @@ void D3D12Buffer::InitializeWithDevice(ID3D12Device* device, const BufferDesc& d
 		m_resource->SetName(wname.c_str());
 	}
 
-	LOG_DEBUG("D3D12Buffer created: " + desc.name +
-			  " (" + std::to_string(m_size) + " bytes, GPU-only)");
+	LOG_DEBUG("D3D12Buffer created: {} ({} bytes, GPU-only)", desc.name, m_size);
 }
 
 URef<D3D12Buffer> D3D12Buffer::CreateStagingBuffer(ID3D12Device* device, u64 size)

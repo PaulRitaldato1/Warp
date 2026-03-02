@@ -165,7 +165,7 @@ void D3D12Renderer::OnResize(u32 width, u32 height)
 	m_depthHandle = {};
 	CreateDepthBuffer(width, height);
 
-	LOG_DEBUG("D3D12Renderer resized: " + std::to_string(width) + "x" + std::to_string(height));
+	LOG_DEBUG("D3D12Renderer resized: {}x{}", width, height);
 }
 
 #endif

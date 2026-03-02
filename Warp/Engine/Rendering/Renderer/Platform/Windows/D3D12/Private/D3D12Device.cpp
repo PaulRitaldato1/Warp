@@ -67,7 +67,7 @@ void D3D12Device::Initialize(const DeviceDesc& desc)
 		m_adapter->GetDesc1(&adapterDesc);
 		WString wname(adapterDesc.Description);
 		String name(wname.begin(), wname.end());
-		LOG_DEBUG("D3D12Device initialized on: " + name);
+		LOG_DEBUG("D3D12Device initialized on: {}", name);
 	}
 }
 

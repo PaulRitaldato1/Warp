@@ -19,7 +19,7 @@ InputEventManager::InputEventManager()
 
 void InputEventManager::MouseButtonCallback(MouseCode mb, bool bPressed)
 {
-	LOG_DEBUG("Mouse Button and bPressed " + std::to_string(bPressed));
+	LOG_DEBUG("Mouse Button and bPressed {}", bPressed);
 
 	if (bPressed)
 	{
@@ -45,7 +45,7 @@ void InputEventManager::MouseButtonCallback(MouseCode mb, bool bPressed)
 
 void InputEventManager::KeyCallback(WarpKeyCode WarpKeyCode, bool bPressed)
 {
-	LOG_DEBUG("Key " + WarpWarpKeyCodeToStringMap[WarpKeyCode] + ", bPressed " + std::to_string(bPressed));
+	LOG_DEBUG("Key {}, bPressed {}", WarpWarpKeyCodeToStringMap[WarpKeyCode], bPressed);
 
 	if (bPressed)
 	{
@@ -71,7 +71,6 @@ void InputEventManager::KeyCallback(WarpKeyCode WarpKeyCode, bool bPressed)
 
 void InputEventManager::MouseMoveCallback(int32 x, int32 y)
 {
-	LOG_DEBUG("Mouse Move Pos (" + std::to_string(x) + ", " + std::to_string(y) + ")");
 	if (m_subbedMouseMoveFunc != nullptr)
 	{
 		m_subbedMouseMoveFunc(x, y);

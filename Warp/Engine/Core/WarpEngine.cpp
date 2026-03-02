@@ -11,7 +11,8 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 	FATAL_ASSERT(App != nullptr, "Engine was attempting to init with no UserApplicationBase");
 
 	m_timer = GameTimer();
-	LOG_DEBUG("Engine Init Started")
+	Logger::Get().Init();
+	LOG_DEBUG("Engine Init Started");
 
 	m_app = std::unique_ptr<UserApplicationBase>(App);
 
@@ -25,7 +26,7 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 		m_renderer->Init(m_window.get());
 	}
 
-	LOG_DEBUG("Render backend initialized (" + String(m_renderer ? "renderer ready" : "no renderer") + ")");
+	LOG_DEBUG("Render backend initialized ({})", m_renderer ? "renderer ready" : "no renderer");
 
 	m_bIsRunning	= true;
 	m_bIsSuspended	= false;
@@ -40,6 +41,7 @@ WarpEngine::~WarpEngine()
 {
 	LOG_DEBUG("Shutting down");
 	if (m_renderer) { m_renderer->Shutdown(); }
+	Logger::Get().Shutdown();
 }
 
 bool WarpEngine::Run()

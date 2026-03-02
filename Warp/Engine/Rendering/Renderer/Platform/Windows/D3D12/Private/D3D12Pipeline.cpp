@@ -75,8 +75,8 @@ void D3D12Pipeline::BuildRootSignature(ID3D12Device* device)
 											  &serialized, &errorBlob);
 	if (errorBlob)
 	{
-		LOG_WARNING("D3D12Pipeline root sig serialization: " +
-					String(static_cast<char*>(errorBlob->GetBufferPointer())));
+		LOG_WARNING("D3D12Pipeline root sig serialization: {}",
+					static_cast<char*>(errorBlob->GetBufferPointer()));
 	}
 	ThrowIfFailed(hr);
 	ThrowIfFailed(device->CreateRootSignature(0, serialized->GetBufferPointer(),
@@ -279,8 +279,8 @@ void D3D12ComputePipeline::BuildRootSignature(ID3D12Device* device)
 											  &serialized, &errorBlob);
 	if (errorBlob)
 	{
-		LOG_WARNING("D3D12ComputePipeline root sig: " +
-					String(static_cast<char*>(errorBlob->GetBufferPointer())));
+		LOG_WARNING("D3D12ComputePipeline root sig: {}",
+					static_cast<char*>(errorBlob->GetBufferPointer()));
 	}
 	ThrowIfFailed(hr);
 	ThrowIfFailed(device->CreateRootSignature(0, serialized->GetBufferPointer(),

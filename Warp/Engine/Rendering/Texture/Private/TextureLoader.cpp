@@ -73,14 +73,14 @@ URef<TextureData> TextureLoader::Load(const String& path)
 
 	if (result != tinyddsloader::Success)
 	{
-		LOG_ERROR("TextureLoader: failed to load '" + path + "'");
+		LOG_ERROR("TextureLoader: failed to load '{}'", path);
 		return nullptr;
 	}
 
 	const TextureFormat format = TranslateDXGIFormat(dds.GetFormat());
 	if (format == TextureFormat::Unknown)
 	{
-		LOG_ERROR("TextureLoader: unsupported DXGI format in '" + path + "'");
+		LOG_ERROR("TextureLoader: unsupported DXGI format in '{}'", path);
 		return nullptr;
 	}
 
@@ -134,10 +134,9 @@ URef<TextureData> TextureLoader::Load(const String& path)
 		}
 	}
 
-	LOG_DEBUG("TextureLoader: loaded '" + tex->name + "' — " +
-			  std::to_string(tex->width) + "x" + std::to_string(tex->height) +
-			  ", " + std::to_string(tex->mipLevels) + " mips" +
-			  (tex->isCubemap ? ", cubemap" : ""));
+	LOG_DEBUG("TextureLoader: loaded '{}' — {}x{}, {} mips{}",
+	          tex->name, tex->width, tex->height, tex->mipLevels,
+	          tex->isCubemap ? ", cubemap" : "");
 
 	return tex;
 }

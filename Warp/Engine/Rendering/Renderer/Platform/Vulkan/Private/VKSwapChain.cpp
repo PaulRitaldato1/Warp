@@ -67,8 +67,7 @@ void VKSwapChain::Initialize(const SwapChainDesc& desc)
 	CreateSwapChain(desc);
 	CreateImageViews();
 
-	LOG_DEBUG("VKSwapChain initialized (" + std::to_string(m_width) + "x" +
-	          std::to_string(m_height) + ", " + std::to_string(m_images.size()) + " images)");
+	LOG_DEBUG("VKSwapChain initialized ({}x{}, {} images)", m_width, m_height, m_images.size());
 }
 
 void VKSwapChain::CreateSwapChain(const SwapChainDesc& desc)
@@ -254,7 +253,7 @@ void VKSwapChain::Resize(u32 width, u32 height)
 	CreateSwapChain(desc);
 	CreateImageViews();
 
-	LOG_DEBUG("VKSwapChain resized: " + std::to_string(width) + "x" + std::to_string(height));
+	LOG_DEBUG("VKSwapChain resized: {}x{}", width, height);
 }
 
 void VKSwapChain::Cleanup()

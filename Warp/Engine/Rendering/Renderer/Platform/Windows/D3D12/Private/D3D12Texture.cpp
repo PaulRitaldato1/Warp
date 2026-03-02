@@ -71,9 +71,7 @@ void D3D12Texture::InitializeWithDevice(ID3D12Device* device, const TextureDesc&
 
 	m_currentState = initState;
 
-	LOG_DEBUG("D3D12Texture created: " +
-			  std::to_string(desc.width) + "x" + std::to_string(desc.height) +
-			  ", mips=" + std::to_string(desc.mipLevels));
+	LOG_DEBUG("D3D12Texture created: {}x{}, mips={}", desc.width, desc.height, desc.mipLevels);
 }
 
 void D3D12Texture::Init(const TextureDesc& /*desc*/)

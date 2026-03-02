@@ -29,7 +29,7 @@ inline void VkCheck(VkResult result, const char* msg)
 {
 	if (result != VK_SUCCESS)
 	{
-		LOG_ERROR(std::string(msg) + "  (VkResult=" + std::to_string(static_cast<int>(result)) + ")");
+		LOG_ERROR("{}  (VkResult={})", msg, static_cast<int>(result));
 		FATAL_ASSERT(false, msg);
 	}
 }

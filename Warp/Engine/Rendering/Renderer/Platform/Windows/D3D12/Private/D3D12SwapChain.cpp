@@ -90,9 +90,7 @@ void D3D12SwapChain::InitializeWithFactory(ID3D12Device* device, IDXGIFactory4* 
 
 	CreateRTVs(device);
 
-	LOG_DEBUG("D3D12SwapChain initialized: " +
-	          std::to_string(desc.Width) + "x" + std::to_string(desc.Height) +
-	          ", " + std::to_string(desc.BufferCount) + " buffers");
+	LOG_DEBUG("D3D12SwapChain initialized: {}x{}, {} buffers", desc.Width, desc.Height, desc.BufferCount);
 }
 
 void D3D12SwapChain::Initialize(const SwapChainDesc& /*desc*/)

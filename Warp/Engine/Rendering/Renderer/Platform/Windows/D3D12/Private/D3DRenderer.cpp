@@ -50,7 +50,7 @@ void D3D12Renderer::Init(IWindow* window)
 	// --- Upload buffer ---
 	m_uploadBuffer = m_device->CreateUploadBuffer(k_uploadHeapSize, k_framesInFlight);
 
-	LOG_DEBUG("D3D12Renderer initialized (" + std::to_string(workerCount) + " workers)");
+	LOG_DEBUG("D3D12Renderer initialized ({} workers)", workerCount);
 }
 
 void D3D12Renderer::Shutdown()

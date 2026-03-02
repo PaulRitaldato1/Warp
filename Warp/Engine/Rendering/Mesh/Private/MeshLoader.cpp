@@ -259,7 +259,7 @@ URef<Mesh> MeshLoader::Load(const String& path)
 	fastgltf::GltfDataBuffer dataBuffer;
 	if (!dataBuffer.loadFromFile(fsPath))
 	{
-		LOG_ERROR("MeshLoader: failed to read file: " + path);
+		LOG_ERROR("MeshLoader: failed to read file: {}", path);
 		return nullptr;
 	}
 
@@ -270,8 +270,7 @@ URef<Mesh> MeshLoader::Load(const String& path)
 	auto result = parser.loadGltf(&dataBuffer, fsPath.parent_path(), options);
 	if (result.error() != fastgltf::Error::None)
 	{
-		LOG_ERROR("MeshLoader: failed to parse glTF: " +
-				  String(fastgltf::getErrorMessage(result.error())));
+		LOG_ERROR("MeshLoader: failed to parse glTF: {}", fastgltf::getErrorMessage(result.error()));
 		return nullptr;
 	}
 
@@ -302,10 +301,8 @@ URef<Mesh> MeshLoader::Load(const String& path)
 		}
 	}
 
-	LOG_DEBUG("MeshLoader: loaded '" + mesh->name + "' — " +
-			  std::to_string(mesh->vertices.size()) + " verts, " +
-			  std::to_string(mesh->indices.size())  + " indices, " +
-			  std::to_string(mesh->submeshes.size()) + " submeshes");
+	LOG_DEBUG("MeshLoader: loaded '{}' — {} verts, {} indices, {} submeshes",
+			  mesh->name, mesh->vertices.size(), mesh->indices.size(), mesh->submeshes.size());
 
 	return mesh;
 }

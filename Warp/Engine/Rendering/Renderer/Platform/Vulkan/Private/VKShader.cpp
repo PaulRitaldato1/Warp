@@ -90,14 +90,14 @@ void VKShader::Initialize(const ShaderDesc& desc)
 
 	if (result.GetCompilationStatus() != shaderc_compilation_status_success)
 	{
-		LOG_ERROR("VKShader: HLSL compilation failed: " + String(result.GetErrorMessage()));
+		LOG_ERROR("VKShader: HLSL compilation failed: {}", result.GetErrorMessage());
 		FATAL_ASSERT(false, "VKShader: shader compilation failed");
 		return;
 	}
 
 	if (result.GetNumWarnings() > 0)
 	{
-		LOG_WARNING("VKShader: " + String(result.GetErrorMessage()));
+		LOG_WARNING("VKShader: {}", result.GetErrorMessage());
 	}
 
 	m_spirv.assign(result.cbegin(), result.cend());
@@ -110,8 +110,7 @@ void VKShader::Initialize(const ShaderDesc& desc)
 	VK_CHECK(vkCreateShaderModule(m_device, &moduleInfo, nullptr, &m_module),
 	         "VKShader: vkCreateShaderModule failed");
 
-	LOG_DEBUG("VKShader: compiled '" + sourceName + "' (" +
-	          std::to_string(m_spirv.size() * 4) + " bytes SPIR-V)");
+	LOG_DEBUG("VKShader: compiled '{}' ({} bytes SPIR-V)", sourceName, m_spirv.size() * 4);
 }
 
 void VKShader::Cleanup()

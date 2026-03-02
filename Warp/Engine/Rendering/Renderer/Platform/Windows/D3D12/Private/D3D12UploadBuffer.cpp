@@ -40,7 +40,7 @@ void D3D12UploadBuffer::InitializeWithDevice(ID3D12Device* device, u64 size, u32
 
 	m_ringBuffer.Create(framesInFlight, static_cast<u32>(size));
 
-	LOG_DEBUG("D3D12UploadBuffer initialized (" + std::to_string(size / (1024 * 1024)) + " MB)");
+	LOG_DEBUG("D3D12UploadBuffer initialized ({} MB)", size / (1024 * 1024));
 }
 
 void D3D12UploadBuffer::Initialize(u64 /*size*/, u32 /*framesInFlight*/)

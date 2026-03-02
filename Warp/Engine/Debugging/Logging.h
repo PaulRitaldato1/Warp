@@ -1,108 +1,108 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
-#include <iostream>
+#include <Threading/BufferedContainer.h>
+#include <format>
+#include <fstream>
+#include <thread>
+#include <condition_variable>
+#include <atomic>
 
+// Compile-time log level gates.
 #define LOG_WARN_ENABLED 1
 #define LOG_INFO_ENABLED 1
 #define LOG_DEBUG_ENABLED 1
 
 #ifdef WARP_RELEASE
+#undef LOG_DEBUG_ENABLED
 #define LOG_DEBUG_ENABLED 0
 #endif
 
-enum LOG_LEVEL
+enum class LogLevel : u8
 {
-	LOG_DEBUG = 0,
-	LOG_INFO,
-	LOG_WARNING,
-	LOG_ERROR,
+	Debug = 0,
+	Info,
+	Warning,
+	Error,
 
-	LOG_LEVEL_COUNT
+	Count
 };
 
 class Logger
 {
-
 public:
-	inline void ConsoleLog(const String& outStr, LOG_LEVEL level)
+	static Logger& Get();
+
+	// Call from WarpEngine::Init / Shutdown.
+	void Init(const String& logFilePath = "warp.log");
+	void Shutdown();
+
+	// Core log function — formats and dispatches to console + file.
+	void Log(LogLevel level, const char* file, int32 line, const String& message);
+
+	// Format overload — builds the message string via std::format, then calls core Log.
+	template<typename... Args>
+	void Log(LogLevel level, const char* file, int32 line,
+	         std::format_string<Args...> fmt, Args&&... args)
 	{
-		ConsoleLogInternal(outStr, level);
+		String message = std::format(fmt, std::forward<Args>(args)...);
+		Log(level, file, line, message);
 	}
 
-	inline void ConsoleLog(const String&& outStr, LOG_LEVEL level)
-	{
-		ConsoleLogInternal(static_cast<const String&>(outStr), level);
-	}
-
-	inline void FileLog(const String& outStr, LOG_LEVEL level)
-	{
-		ConsoleLogInternal(outStr, level);
-	}
-
-	inline void FileLog(const String&& outStr, LOG_LEVEL level)
-	{
-		ConsoleLogInternal(static_cast<const String&>(outStr), level);
-	}
-
-	// Both File and Console log
-	inline void Log(const String& outStr, LOG_LEVEL level)
-	{
-		ConsoleLogInternal(outStr, level);
-	}
-
-	inline void Log(const String&& outStr, LOG_LEVEL level)
-	{
-		ConsoleLogInternal(static_cast<const String&>(outStr), level);
-	}
-
-	static Logger& Get()
-	{
-		static Logger Instance;
-		return Instance;
-	}
+	void EnableFileLogging(bool enabled)    { m_fileEnabled = enabled; }
+	void EnableConsoleLogging(bool enabled) { m_consoleEnabled = enabled; }
 
 private:
-	inline void ConsoleLogInternal(const String& outStr, LOG_LEVEL level)
-	{
-		std::clog << logLevelColors[level] << logLevelStrings[level] << ": " << outStr << "\033[0m\n";
-	}
+	Logger() = default;
+	~Logger();
 
-	const Array<String, LOG_LEVEL_COUNT> logLevelStrings = { "LOG_DEBUG", "LOG_INFO", "LOG_WARNING", "LOG_ERROR" };
-	const Array<String, LOG_LEVEL_COUNT> logLevelColors	 = { "\033[0m", "\033[35m", "\033[33m", "\033[31m" };
+	void ConsoleWrite(LogLevel level, const String& formatted);
+	void FileWriterThread();
+	String FormatTimestamp() const;
+	static const char* StripPath(const char* path);
 
-	// TODO: File bullshit here
+	bool m_consoleEnabled = true;
+	bool m_fileEnabled    = false;
+	bool m_initialized    = false;
+
+	// Async file writer.
+	// BufferedContainer handles data synchronization via Futex.
+	// The CV is used only to wake the writer thread — not for data protection.
+	BufferedContainer<String, Vector<String>> m_fileBuffer;
+	URef<std::thread>       m_writerThread;
+	std::mutex              m_writerWakeMutex;  // Paired with CV for wake signaling only.
+	std::condition_variable m_writerWakeCV;
+	std::atomic<bool>       m_shutdownWriter{false};
+	std::ofstream           m_logFile;
+
+	static constexpr const char* k_levelStrings[] = { "DEBUG", "INFO", "WARNING", "ERROR" };
+	static constexpr const char* k_levelColors[]  = { "\033[0m", "\033[35m", "\033[33m", "\033[31m" };
 };
 
-// Error Log
-#define LOG_ERROR(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_ERROR);
+// ---------------------------------------------------------------------------
+// Macros
+// ---------------------------------------------------------------------------
 
-// warning log
-#if LOG_WARN_ENABLED > 0
-#define LOG_WARNING(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_WARNING);
+#define LOG_ERROR(fmt, ...) \
+	Logger::Get().Log(LogLevel::Error, __FILE__, __LINE__, fmt __VA_OPT__(,) __VA_ARGS__)
+
+#if LOG_WARN_ENABLED
+#define LOG_WARNING(fmt, ...) \
+	Logger::Get().Log(LogLevel::Warning, __FILE__, __LINE__, fmt __VA_OPT__(,) __VA_ARGS__)
 #else
-#define LOG_WARNING(message)                                                                                           \
-	do                                                                                                                 \
-	{                                                                                                                  \
-	} while (0);
+#define LOG_WARNING(fmt, ...) do {} while(0)
 #endif
 
-// info log
-#if LOG_INFO_ENABLED > 0
-#define LOG_INFO(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_INFO);
+#if LOG_INFO_ENABLED
+#define LOG_INFO(fmt, ...) \
+	Logger::Get().Log(LogLevel::Info, __FILE__, __LINE__, fmt __VA_OPT__(,) __VA_ARGS__)
 #else
-#define LOG_INFO(message)                                                                                              \
-	do                                                                                                                 \
-	{                                                                                                                  \
-	} while (0);
+#define LOG_INFO(fmt, ...) do {} while(0)
 #endif
 
-// debug log
-#if LOG_DEBUG_ENABLED > 0
-#define LOG_DEBUG(message) Logger::Get().ConsoleLog(message, LOG_LEVEL::LOG_DEBUG);
+#if LOG_DEBUG_ENABLED
+#define LOG_DEBUG(fmt, ...) \
+	Logger::Get().Log(LogLevel::Debug, __FILE__, __LINE__, fmt __VA_OPT__(,) __VA_ARGS__)
 #else
-#define LOG_DEBUG(message)                                                                                             \
-	do                                                                                                                 \
-	{                                                                                                                  \
-	} while (0);
+#define LOG_DEBUG(fmt, ...) do {} while(0)
 #endif

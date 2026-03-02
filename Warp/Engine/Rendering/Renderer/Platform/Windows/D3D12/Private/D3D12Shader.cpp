@@ -95,7 +95,7 @@ void D3D12Shader::Initialize(const ShaderDesc& desc)
 	result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr);
 	if (errors && errors->GetStringLength() > 0)
 	{
-		LOG_WARNING("D3D12Shader compile output: " + String(errors->GetStringPointer()));
+		LOG_WARNING("D3D12Shader compile output: {}", errors->GetStringPointer());
 	}
 
 	HRESULT hr;
@@ -112,8 +112,7 @@ void D3D12Shader::Initialize(const ShaderDesc& desc)
 	std::memcpy(m_bytecode.data(), shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize());
 
 	String targetStr(targetW.begin(), targetW.end());
-	LOG_DEBUG("D3D12Shader compiled: " + desc.entryPoint + " (" + targetStr + ", " +
-			  std::to_string(m_bytecode.size()) + " bytes)");
+	LOG_DEBUG("D3D12Shader compiled: {} ({}, {} bytes)", desc.entryPoint, targetStr, m_bytecode.size());
 }
 
 void D3D12Shader::Cleanup()

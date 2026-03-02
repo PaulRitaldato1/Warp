@@ -1,0 +1,79 @@
+[23:10:42.745] [DEBUG] [WarpEngine.cpp:15] Engine Init Started
+[23:10:42.746] [DEBUG] [LinuxWindow.cpp:139] Linux Window Created
+[23:10:42.803] [DEBUG] [VKDevice.cpp:192] VKDevice: selected GPU — NVIDIA GeForce RTX 5080
+[23:10:42.917] [DEBUG] [VKDevice.cpp:165] VKDevice initialized
+[23:10:42.959] [DEBUG] [VKSwapChain.cpp:70] VKSwapChain initialized (1920x1080, 3 images)
+[23:10:42.959] [DEBUG] [VKCommandList.cpp:54] VKCommandList initialized
+[23:10:42.959] [DEBUG] [VKCommandList.cpp:54] VKCommandList initialized
+[23:10:42.959] [DEBUG] [VKCommandList.cpp:54] VKCommandList initialized
+[23:10:42.959] [DEBUG] [VKCommandList.cpp:54] VKCommandList initialized
+[23:10:42.975] [DEBUG] [VKShader.cpp:113] VKShader: compiled 'embedded' (676 bytes SPIR-V)
+[23:10:42.988] [DEBUG] [VKShader.cpp:113] VKShader: compiled 'embedded' (320 bytes SPIR-V)
+[23:10:42.989] [DEBUG] [VKPipeline.cpp:213] VKPipeline: graphics PSO created
+[23:10:42.989] [DEBUG] [Renderer.cpp:248] Renderer: test triangle PSO ready
+[23:10:42.989] [DEBUG] [VKRenderer.cpp:87] VKRenderer initialized
+[23:10:42.989] [DEBUG] [WarpEngine.cpp:29] Render backend initialized (renderer ready)
+[23:10:42.989] [DEBUG] [WarpEngine.cpp:49] Engine Run Started
+[23:10:47.113] [DEBUG] [Input.cpp:22] Mouse Button and bPressed true
+[23:10:47.224] [DEBUG] [Input.cpp:22] Mouse Button and bPressed false
+[23:10:49.532] [DEBUG] [Input.cpp:22] Mouse Button and bPressed true
+[23:10:49.697] [DEBUG] [Input.cpp:22] Mouse Button and bPressed false
+[23:10:53.050] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:53.199] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:55.487] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.091] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.091] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.127] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.127] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.166] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.166] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.206] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.206] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.244] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.244] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.287] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.287] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.323] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.323] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.364] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.364] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.402] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.402] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.444] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.444] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.497] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.497] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.523] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.523] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.564] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.564] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.602] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:56.602] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:56.642] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:58.346] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:58.461] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:10:59.061] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:10:59.221] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:11:00.383] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:11:00.512] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:11:01.747] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:11:01.874] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:11:02.092] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:11:02.219] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:11:02.426] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:11:02.559] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:11:02.949] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:11:03.084] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:11:03.325] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:11:03.480] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:11:03.786] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:11:03.937] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:11:04.410] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:11:04.543] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:11:06.592] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:11:06.750] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:11:06.902] [DEBUG] [Input.cpp:48] Key SPACE, bPressed true
+[23:11:07.029] [DEBUG] [Input.cpp:48] Key SPACE, bPressed false
+[23:11:07.397] [DEBUG] [Input.cpp:48] Key ESCAPE, bPressed true
+[23:11:07.397] [DEBUG] [WarpEngine.cpp:42] Shutting down
+[23:11:07.420] [DEBUG] [VKRenderer.cpp:124] VKRenderer shut down

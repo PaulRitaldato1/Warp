@@ -142,7 +142,7 @@ void VKRenderer::OnResize(u32 width, u32 height)
 	m_depthHandle = {};
 	CreateDepthBuffer(width, height);
 
-	LOG_DEBUG("VKRenderer resized: " + std::to_string(width) + "x" + std::to_string(height));
+	LOG_DEBUG("VKRenderer resized: {}x{}", width, height);
 }
 
 #endif // WARP_BUILD_VK

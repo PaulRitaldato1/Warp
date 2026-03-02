@@ -26,15 +26,15 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
 {
 	if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
 	{
-		LOG_ERROR(String("[Vulkan] ") + data->pMessage);
+		LOG_ERROR("[Vulkan] {}", data->pMessage);
 	}
 	else if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
 	{
-		LOG_WARNING(String("[Vulkan] ") + data->pMessage);
+		LOG_WARNING("[Vulkan] {}", data->pMessage);
 	}
 	else
 	{
-		LOG_DEBUG(String("[Vulkan] ") + data->pMessage);
+		LOG_DEBUG("[Vulkan] {}", data->pMessage);
 	}
 	return VK_FALSE;
 }
@@ -189,7 +189,7 @@ void VKDevice::PickPhysicalDevice()
 
 	VkPhysicalDeviceProperties chosen = {};
 	vkGetPhysicalDeviceProperties(m_physDevice, &chosen);
-	LOG_DEBUG(String("VKDevice: selected GPU — ") + chosen.deviceName);
+	LOG_DEBUG("VKDevice: selected GPU — {}", chosen.deviceName);
 }
 
 void VKDevice::CreateLogicalDevice(bool enableValidation)
