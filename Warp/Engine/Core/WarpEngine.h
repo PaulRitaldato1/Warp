@@ -2,8 +2,10 @@
 
 #include <Common/CommonTypes.h>
 #include <Core/GameTimer.h>
+#include <Core/ECS/World.h>
 #include <Input/Input.h>
 #include <Rendering/RenderBackend.h>
+#include <Rendering/Resource/ResourceManager.h>
 
 class IWindow;
 class Renderer;
@@ -39,9 +41,14 @@ private:
 	f64 m_lastTime;
 	GameTimer m_timer;
 
-	URef<RenderBackend> m_backend;
-	URef<IWindow>       m_window;
-	URef<Renderer>      m_renderer;
+	URef<RenderBackend>     m_backend;
+	URef<IWindow>           m_window;
+	URef<Renderer>          m_renderer;
+	URef<World>             m_world;
+	URef<ResourceManager>   m_resourceManager;
 
 	URef<UserApplicationBase> m_app;
+
+public:
+	World& GetWorld() { return *m_world; }
 };

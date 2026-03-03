@@ -61,7 +61,8 @@ void VKBuffer::CreateBuffer(const BufferDesc& desc)
 	m_deviceAddress = vkGetBufferDeviceAddress(m_device, &addrInfo);
 }
 
-URef<VKBuffer> VKBuffer::CreateStagingBuffer(VmaAllocator allocator, VkDevice device, u64 size)
+URef<VKBuffer> VKBuffer::CreateStagingBuffer(VmaAllocator allocator, VkDevice device, u64 size,
+                                              VkBufferUsageFlags extraUsageFlags)
 {
 	URef<VKBuffer> staging = std::make_unique<VKBuffer>();
 	staging->m_allocator      = allocator;
@@ -69,7 +70,7 @@ URef<VKBuffer> VKBuffer::CreateStagingBuffer(VmaAllocator allocator, VkDevice de
 	staging->m_size           = size;
 	staging->m_isStagingBuffer = true;
 
-	VkBufferUsageFlags usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	VkBufferUsageFlags usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | extraUsageFlags;
 
 	VmaAllocationCreateInfo allocInfo = {};
 	allocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
@@ -86,8 +87,19 @@ URef<VKBuffer> VKBuffer::CreateStagingBuffer(VmaAllocator allocator, VkDevice de
 	                         &staging->m_buffer, &staging->m_allocation, &allocationInfo),
 	         "VKBuffer: staging vmaCreateBuffer failed");
 
-	staging->m_mappedPtr     = allocationInfo.pMappedData;
-	staging->m_deviceAddress = 0;
+	staging->m_mappedPtr = allocationInfo.pMappedData;
+
+	if (usageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
+	{
+		VkBufferDeviceAddressInfo addrInfo = {};
+		addrInfo.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		addrInfo.buffer = staging->m_buffer;
+		staging->m_deviceAddress = vkGetBufferDeviceAddress(device, &addrInfo);
+	}
+	else
+	{
+		staging->m_deviceAddress = 0;
+	}
 
 	return staging;
 }

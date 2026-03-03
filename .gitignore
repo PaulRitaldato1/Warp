@@ -69,3 +69,5 @@ out/
 compile_commands.json
 
 CLAUDE.md
+
+warp.log

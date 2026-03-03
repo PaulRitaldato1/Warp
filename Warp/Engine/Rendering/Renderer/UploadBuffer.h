@@ -3,6 +3,8 @@
 #include <Common/CommonTypes.h>
 #include <Memory/RingBuffer.h>
 
+class Buffer;
+
 struct UploadAllocation
 {
 	void* cpuPtr;  // write your data here
@@ -20,6 +22,10 @@ public:
 	virtual UploadAllocation Alloc(u64 size, u64 alignment = 256)     = 0;
 	virtual void             OnBeginFrame()                           = 0;
 	virtual void             Cleanup()                                = 0;
+
+	// Returns the underlying Buffer so it can be used as a source for CopyBuffer.
+	// Use with UploadAllocation::offset as the source offset for re-uploads.
+	virtual Buffer* GetBackingBuffer() = 0;
 
 	u64 GetTotalSize() const { return m_size; }
 

@@ -21,29 +21,16 @@ void VKUploadBuffer::Initialize(u64 size, u32 framesInFlight)
 	m_size = size;
 	m_ringBuffer.Create(framesInFlight, static_cast<u32>(size));
 
-	VkBufferCreateInfo bufferInfo = {};
-	bufferInfo.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferInfo.size        = size;
-	bufferInfo.usage       = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
-	                         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	VkBufferUsageFlags extraFlags =
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
-	VmaAllocationCreateInfo allocInfo = {};
-	allocInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
-	allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+	m_backingBuffer = VKBuffer::CreateStagingBuffer(m_allocator, m_device, size, extraFlags);
 
-	VmaAllocationInfo allocationInfo = {};
-	VK_CHECK(vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo,
-	                         &m_buffer, &m_allocation, &allocationInfo),
-	         "VKUploadBuffer: vmaCreateBuffer failed");
+	m_mapped  = static_cast<u8*>(m_backingBuffer->Map());
+	m_gpuBase = m_backingBuffer->GetDeviceAddress();
 
-	m_mapped = static_cast<u8*>(allocationInfo.pMappedData);
-	DYNAMIC_ASSERT(m_mapped, "VKUploadBuffer: failed to map upload buffer");
-
-	VkBufferDeviceAddressInfo addrInfo = {};
-	addrInfo.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-	addrInfo.buffer = m_buffer;
-	m_gpuBase = vkGetBufferDeviceAddress(m_device, &addrInfo);
+	DYNAMIC_ASSERT(m_mapped, "VKUploadBuffer: failed to map backing buffer");
 }
 
 UploadAllocation VKUploadBuffer::Alloc(u64 size, u64 alignment)
@@ -70,13 +57,14 @@ void VKUploadBuffer::OnBeginFrame()
 
 void VKUploadBuffer::Cleanup()
 {
-	if (m_buffer != VK_NULL_HANDLE)
-	{
-		vmaDestroyBuffer(m_allocator, m_buffer, m_allocation);
-		m_buffer     = VK_NULL_HANDLE;
-		m_allocation = VK_NULL_HANDLE;
-		m_mapped     = nullptr;
-	}
+	m_backingBuffer.reset();
+	m_mapped  = nullptr;
+	m_gpuBase = 0;
+}
+
+Buffer* VKUploadBuffer::GetBackingBuffer()
+{
+	return m_backingBuffer.get();
 }
 
 #endif // WARP_BUILD_VK

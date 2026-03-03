@@ -18,6 +18,8 @@
 #include <future>
 
 class IWindow;
+class World;
+class ResourceManager;
 
 enum class RenderPath
 {
@@ -55,6 +57,15 @@ public:
 	void SetRenderPath(RenderPath path) { m_renderPath = path; }
 	RenderPath GetRenderPath() const    { return m_renderPath; }
 
+	void   SetWorld(World* world)                       { m_world = world; }
+	World* GetWorld() const                              { return m_world; }
+
+	void             SetResourceManager(ResourceManager* manager) { m_resourceManager = manager; }
+	ResourceManager* GetResourceManager() const                   { return m_resourceManager; }
+
+	Device*     GetDevice()     { return m_device.get(); }
+	ThreadPool* GetThreadPool() { return m_workerPool.get(); }
+
 protected:
 	// Render path implementations — filled out as the engine matures.
 	// Both live in Renderer.cpp and use only abstract CommandList/Queue types.
@@ -72,8 +83,6 @@ protected:
 	static constexpr u32 k_framesInFlight  = 3;
 
 	// Swap chain back buffers — independent of k_framesInFlight.
-	// 2 is standard (double-buffering). The GPU renders into one while the
-	// monitor displays the other.
 	static constexpr u32 k_backBufferCount = 2;
 
 	static constexpr u64 k_uploadHeapSize  = 32 * 1024 * 1024; // 32 MB
@@ -119,6 +128,8 @@ float4 PSMain() : SV_Target
 }
 )hlsl";
 
+	World*              m_world            = nullptr; // non-owning — set by WarpEngine
+	ResourceManager*    m_resourceManager  = nullptr; // non-owning — set by WarpEngine
 	RenderPath          m_renderPath = RenderPath::Deferred;
 
 	Array<FrameSyncPoint, k_framesInFlight> m_frameSyncPoints;

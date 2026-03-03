@@ -14,7 +14,8 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 	Logger::Get().Init();
 	LOG_DEBUG("Engine Init Started");
 
-	m_app = std::unique_ptr<UserApplicationBase>(App);
+	m_app   = std::unique_ptr<UserApplicationBase>(App);
+	m_world = std::make_unique<World>();
 
 	m_backend  = RenderBackend::Create();
 	m_window   = m_backend->CreateWindow(App->EngineInitDesc.Name,
@@ -24,6 +25,11 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 	if (m_renderer)
 	{
 		m_renderer->Init(m_window.get());
+		m_renderer->SetWorld(m_world.get());
+
+		m_resourceManager = std::make_unique<ResourceManager>();
+		m_resourceManager->Initialize(m_renderer->GetDevice(), m_renderer->GetThreadPool());
+		m_renderer->SetResourceManager(m_resourceManager.get());
 	}
 
 	LOG_DEBUG("Render backend initialized ({})", m_renderer ? "renderer ready" : "no renderer");
@@ -40,6 +46,7 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 WarpEngine::~WarpEngine()
 {
 	LOG_DEBUG("Shutting down");
+	if (m_resourceManager) { m_resourceManager->Shutdown(); }
 	if (m_renderer) { m_renderer->Shutdown(); }
 	Logger::Get().Shutdown();
 }

@@ -1,4 +1,10 @@
 #include <Rendering/Renderer/Renderer.h>
+#include <Rendering/Resource/ResourceManager.h>
+#include <Rendering/Resource/MeshResource.h>
+#include <Core/ECS/World.h>
+#include <Core/ECS/Components/TransformComponent.h>
+#include <Core/ECS/Components/MeshComponent.h>
+#include <Rendering/Mesh/Mesh.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 #include <algorithm>
@@ -48,6 +54,17 @@ void Renderer::BeginFrame()
 	for (URef<CommandList>& list : m_computeLists)  { list->Begin(m_frameIndex); }
 	m_copyList->Begin(m_frameIndex);
 	m_urgentCopyList->Begin(m_frameIndex);
+
+	// Process ResourceManager: check async loads, create GPU buffers, drain staging uploads.
+	if (m_resourceManager)
+	{
+		m_resourceManager->ProcessPendingUploads();
+		Vector<PendingStagingUpload> uploads = m_resourceManager->DrainStagingUploads();
+		for (PendingStagingUpload& upload : uploads)
+		{
+			QueueStagingUpload(upload);
+		}
+	}
 }
 
 void Renderer::Draw()
@@ -181,6 +198,38 @@ void Renderer::DrawDeferred()
 		cmd.SetPipelineState(m_testTriPSO.get());
 		cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 		cmd.Draw(3);
+	}
+
+	// Draw mesh entities from ECS.
+	// Each<T...> iterates all entities that have AT LEAST the queried components.
+	// Entities with additional components beyond Transform + Mesh are still included.
+	if (m_world && m_resourceManager)
+	{
+		m_world->Each<TransformComponent, MeshComponent>(
+			[&cmd, this](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
+		{
+			if (meshComp.path[0] == '\0')
+			{
+				return; // No path set
+			}
+
+			MeshResource* resource = m_resourceManager->GetMeshResource(meshComp.path);
+			if (!resource || resource->state != AssetState::Ready)
+			{
+				return; // Still loading or uploading — skip this frame
+			}
+
+			// TODO: upload transform to per-object constant buffer via m_uploadBuffer
+			// TODO: set material / texture bindings per submesh
+
+			cmd.SetVertexBuffer(resource->vertexBuffer.get());
+			cmd.SetIndexBuffer(resource->indexBuffer.get());
+
+			for (const Submesh& submesh : resource->mesh->submeshes)
+			{
+				cmd.DrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, 0);
+			}
+		});
 	}
 
 	// TODO: G-buffer pass, lighting pass, post-process

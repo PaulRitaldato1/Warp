@@ -137,8 +137,7 @@ static void ExtractPrimitive(const fastgltf::Asset& asset,
 	Submesh submesh;
 	submesh.vertexOffset  = static_cast<u32>(out.vertices.size());
 	submesh.indexOffset   = static_cast<u32>(out.indices.size());
-	submesh.materialIndex = prim.materialIndex.has_value()
-		? static_cast<int32>(prim.materialIndex.value()) : -1;
+	submesh.materialIndex = prim.materialIndex.has_value() ? static_cast<int32>(prim.materialIndex.value()) : -1;
 
 	const auto& posAccessor = asset.accessors[posIt->second];
 	const u32   vertexCount = static_cast<u32>(posAccessor.count);

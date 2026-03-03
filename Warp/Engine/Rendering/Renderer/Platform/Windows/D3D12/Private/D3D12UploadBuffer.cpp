@@ -6,39 +6,18 @@
 
 void D3D12UploadBuffer::InitializeWithDevice(ID3D12Device* device, u64 size, u32 framesInFlight)
 {
-	DYNAMIC_ASSERT(device,           "D3D12UploadBuffer::InitializeWithDevice: device is null");
-	DYNAMIC_ASSERT(size > 0,         "D3D12UploadBuffer::InitializeWithDevice: size must be > 0");
+	DYNAMIC_ASSERT(device,             "D3D12UploadBuffer::InitializeWithDevice: device is null");
+	DYNAMIC_ASSERT(size > 0,           "D3D12UploadBuffer::InitializeWithDevice: size must be > 0");
 	DYNAMIC_ASSERT(framesInFlight > 0, "D3D12UploadBuffer::InitializeWithDevice: framesInFlight must be > 0");
 
-	D3D12_HEAP_PROPERTIES heapProps = {};
-	heapProps.Type                  = D3D12_HEAP_TYPE_UPLOAD;
+	m_size = size;
+	m_ringBuffer.Create(framesInFlight, static_cast<u32>(size));
 
-	D3D12_RESOURCE_DESC resourceDesc = {};
-	resourceDesc.Dimension          = D3D12_RESOURCE_DIMENSION_BUFFER;
-	resourceDesc.Width              = size;
-	resourceDesc.Height             = 1;
-	resourceDesc.DepthOrArraySize   = 1;
-	resourceDesc.MipLevels          = 1;
-	resourceDesc.Format             = DXGI_FORMAT_UNKNOWN;
-	resourceDesc.SampleDesc.Count   = 1;
-	resourceDesc.Layout             = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-
-	ThrowIfFailed(device->CreateCommittedResource(
-		&heapProps,
-		D3D12_HEAP_FLAG_NONE,
-		&resourceDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&m_resource)));
+	m_backingBuffer = D3D12Buffer::CreateStagingBuffer(device, size);
 
 	// Persistently map — upload heaps stay mapped for their entire lifetime.
-	D3D12_RANGE readRange = { 0, 0 }; // CPU never reads back from this buffer
-	ThrowIfFailed(m_resource->Map(0, &readRange, &m_mappedPtr));
-
-	m_gpuBase = m_resource->GetGPUVirtualAddress();
-	m_size    = size;
-
-	m_ringBuffer.Create(framesInFlight, static_cast<u32>(size));
+	m_mappedPtr = m_backingBuffer->Map();
+	m_gpuBase   = m_backingBuffer->GetGPUAddress();
 
 	LOG_DEBUG("D3D12UploadBuffer initialized ({} MB)", size / (1024 * 1024));
 }
@@ -74,12 +53,17 @@ void D3D12UploadBuffer::OnBeginFrame()
 
 void D3D12UploadBuffer::Cleanup()
 {
-	if (m_resource && m_mappedPtr)
+	if (m_backingBuffer && m_mappedPtr)
 	{
-		m_resource->Unmap(0, nullptr);
+		m_backingBuffer->Unmap();
 		m_mappedPtr = nullptr;
 	}
-	m_resource.Reset();
+	m_backingBuffer.reset();
+}
+
+Buffer* D3D12UploadBuffer::GetBackingBuffer()
+{
+	return m_backingBuffer.get();
 }
 
 #endif

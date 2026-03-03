@@ -32,10 +32,11 @@ public:
 	void                  SetCurrentState(D3D12_RESOURCE_STATES s) { m_currentState = s; }
 	bool                  IsUploadHeap()      const { return m_isStagingBuffer; }
 
-private:
 	// Creates a staging-only buffer on D3D12_HEAP_TYPE_UPLOAD.
-	// Used internally by UploadData() to create the temporary staging resource.
+	// Used by UploadData() and D3D12UploadBuffer for the backing resource.
 	static URef<D3D12Buffer> CreateStagingBuffer(ID3D12Device* device, u64 size);
+
+private:
 
 	ComRef<ID3D12Resource>    m_resource;
 	D3D12_GPU_VIRTUAL_ADDRESS m_gpuAddr       = 0;

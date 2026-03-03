@@ -35,10 +35,13 @@ public:
 
 	bool IsStagingBuffer() const { return m_isStagingBuffer; }
 
-private:
 	// Creates a staging-only buffer on CPU-visible memory.
-	// Used internally by UploadData() to create the temporary staging resource.
-	static URef<VKBuffer> CreateStagingBuffer(VmaAllocator allocator, VkDevice device, u64 size);
+	// Used by UploadData() and VKUploadBuffer for the backing resource.
+	// extraUsageFlags allows adding UNIFORM_BUFFER etc. for upload buffer backing.
+	static URef<VKBuffer> CreateStagingBuffer(VmaAllocator allocator, VkDevice device, u64 size,
+	                                          VkBufferUsageFlags extraUsageFlags = 0);
+
+private:
 
 	VmaAllocator    m_allocator     = VK_NULL_HANDLE;
 	VkDevice        m_device        = VK_NULL_HANDLE;
