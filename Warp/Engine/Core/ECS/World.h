@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/ECS/Archetype.h>
+#include <Core/ECS/System.h>
 #include <Debugging/Assert.h>
 
 class WARP_API World
@@ -151,6 +152,25 @@ public:
 		}
 	}
 
+	// --- System management ---
+
+	// Register a system. Calls Init() immediately. Systems run in registration order.
+	template <IsSystem T, typename... Args>
+	T& RegisterSystem(Args&&... args)
+	{
+		URef<System> system = std::make_unique<T>(std::forward<Args>(args)...);
+		T& ref = static_cast<T&>(*system);
+		system->Init(*this);
+		m_systems.push_back(std::move(system));
+		return ref;
+	}
+
+	// Update all registered systems in registration order.
+	void UpdateSystems(f32 deltaTime);
+
+	// Shutdown and remove all systems.
+	void ShutdownSystems();
+
 private:
 	struct EntityRecord
 	{
@@ -174,4 +194,7 @@ private:
 	std::unordered_map<ComponentMask, URef<Archetype>, ComponentMaskHash> m_archetypes;
 
 	u32 m_nextId = 1; // 0 is reserved for k_nullEntity
+
+	// Systems — executed in registration order.
+	Vector<URef<System>> m_systems;
 };

@@ -46,6 +46,7 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 WarpEngine::~WarpEngine()
 {
 	LOG_DEBUG("Shutting down");
+	if (m_world) { m_world->ShutdownSystems(); }
 	if (m_resourceManager) { m_resourceManager->Shutdown(); }
 	if (m_renderer) { m_renderer->Shutdown(); }
 	Logger::Get().Shutdown();
@@ -74,12 +75,16 @@ bool WarpEngine::Run()
 
 		if (!m_bIsSuspended)
 		{
-			if (!m_app->Update(m_timer.DeltaTime()))
+			f32 deltaTime = m_timer.DeltaTime();
+
+			if (!m_app->Update(deltaTime))
 			{
 				LOG_ERROR("App update failed.");
 				m_bIsRunning = false;
 				break;
 			}
+
+			m_world->UpdateSystems(deltaTime);
 
 			if (m_renderer)
 			{

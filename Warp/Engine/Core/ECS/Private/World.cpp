@@ -135,6 +135,23 @@ void World::MoveEntity(Entity entity, Archetype* from, u32 fromRow, Archetype* t
 	record.row = newRow;
 }
 
+void World::UpdateSystems(f32 deltaTime)
+{
+	for (URef<System>& system : m_systems)
+	{
+		system->Update(*this, deltaTime);
+	}
+}
+
+void World::ShutdownSystems()
+{
+	for (URef<System>& system : m_systems)
+	{
+		system->Shutdown();
+	}
+	m_systems.clear();
+}
+
 void World::FixupSwappedEntity(Entity swappedEntity, u32 newRow)
 {
 	DYNAMIC_ASSERT(swappedEntity.id < m_entities.size(),

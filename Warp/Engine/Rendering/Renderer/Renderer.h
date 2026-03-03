@@ -130,7 +130,7 @@ float4 PSMain() : SV_Target
 
 	World*              m_world            = nullptr; // non-owning — set by WarpEngine
 	ResourceManager*    m_resourceManager  = nullptr; // non-owning — set by WarpEngine
-	RenderPath          m_renderPath = RenderPath::Deferred;
+	RenderPath          m_renderPath 	   = RenderPath::Deferred;
 
 	Array<FrameSyncPoint, k_framesInFlight> m_frameSyncPoints;
 	u32                                     m_frameIndex = 0;
