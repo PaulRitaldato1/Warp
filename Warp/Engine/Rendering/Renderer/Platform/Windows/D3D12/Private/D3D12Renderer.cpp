@@ -5,6 +5,7 @@
 #include <Rendering/Renderer/Platform/Windows/D3D12/D3D12Texture.h>
 #include <Rendering/Renderer/Platform/Windows/D3D12/D3D12SwapChain.h>
 #include <Rendering/Renderer/Platform/Windows/D3D12/D3D12CommandList.h>
+#include <Rendering/Renderer/Platform/Windows/D3D12/D3D12CommandQueue.h>
 #include <Rendering/Renderer/Device.h>
 #include <Rendering/Window/Window.h>
 #include <Debugging/Assert.h>
@@ -24,6 +25,7 @@ void D3D12Renderer::Init(IWindow* window)
 	auto d3dDevice = std::make_unique<D3D12Device>();
 	d3dDevice->Initialize(deviceDesc);
 	m_device = std::move(d3dDevice);
+	D3D12Device* rawDevice = static_cast<D3D12Device*>(m_device.get());
 
 	// -------------------------------------------------------------------------
 	// Command queues
@@ -36,12 +38,13 @@ void D3D12Renderer::Init(IWindow* window)
 	// Swap chain
 	// -------------------------------------------------------------------------
 	SwapChainDesc scDesc;
-	scDesc.Window      = window;
-	scDesc.Width       = static_cast<u32>(window->GetWidth());
-	scDesc.Height      = static_cast<u32>(window->GetHeight());
-	scDesc.BufferCount = k_backBufferCount;
-	scDesc.Format      = SwapChainFormat::BGRA8;
-	scDesc.bUseVsync   = false;
+	scDesc.Window             = window;
+	scDesc.Width              = static_cast<u32>(window->GetWidth());
+	scDesc.Height             = static_cast<u32>(window->GetHeight());
+	scDesc.BufferCount        = k_backBufferCount;
+	scDesc.Format             = SwapChainFormat::BGRA8;
+	scDesc.bUseVsync          = false;
+	scDesc.nativeCommandQueue = static_cast<D3D12CommandQueue*>(m_graphicsQueue.get())->GetNative();
 	m_swapChain = m_device->CreateSwapChain(scDesc);
 
 	// -------------------------------------------------------------------------
@@ -56,7 +59,8 @@ void D3D12Renderer::Init(IWindow* window)
 		m_device->CreateCommandList(CommandQueueType::Graphics, k_framesInFlight));
 	m_computeLists.push_back(
 		m_device->CreateCommandList(CommandQueueType::Compute, k_framesInFlight));
-	m_copyList = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
+	m_copyList        = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
+	m_urgentCopyList  = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
 
 	// -------------------------------------------------------------------------
 	// Upload buffer (GPU-visible ring buffer for per-frame constant data)
@@ -67,14 +71,14 @@ void D3D12Renderer::Init(IWindow* window)
 	// Shader-visible descriptor heap (CBV/SRV/UAV)
 	// -------------------------------------------------------------------------
 	// 4096 descriptors gives ample room for per-frame dynamic SRVs and CBVs.
-	m_srvHeap.Initialize(d3dDevice->GetNativeDevice(), 4096);
+	m_srvHeap.Initialize(rawDevice->GetNativeDevice(), 4096);
 
 	// Wire the device + heap into every graphics command list so they can bind
 	// descriptors and create inline SRVs without knowing about D3D12Device.
 	for (auto& list : m_graphicsLists)
 	{
 		D3D12CommandList* d3dList = static_cast<D3D12CommandList*>(list.get());
-		d3dList->SetDevice(d3dDevice->GetNativeDevice());
+		d3dList->SetDevice(rawDevice->GetNativeDevice());
 		d3dList->SetSRVHeap(&m_srvHeap);
 	}
 

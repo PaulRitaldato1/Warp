@@ -8,7 +8,7 @@
 class LinuxRenderBackend : public RenderBackend
 {
 public:
-	URef<IWindow> CreateWindow(const String& name, int width, int height) override
+	URef<IWindow> MakeWindow(const String& name, int width, int height) override
 	{
 		return std::make_unique<LinuxWindow>(name, width, height);
 	}

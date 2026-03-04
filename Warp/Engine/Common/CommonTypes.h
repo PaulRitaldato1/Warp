@@ -14,20 +14,19 @@
 #if defined(_WIN64)
 #include <wrl/client.h>
 
-template <typename T>
-using ComRef = Microsoft::WRL::ComPtr<T>;
+template <typename T> using ComRef = Microsoft::WRL::ComPtr<T>;
 #endif
 
-//These are all just set to their std equivalents. The point of this is so that I can swap out certain types for custom ones if I need to without issue.
-//ex: Custom unordered_map for faster lookups
-using u8 = std::uint8_t;
-using u16 = std::uint16_t;
-using u32 = std::uint32_t;
-using u64 = std::uint64_t;
+// These are all just set to their std equivalents. The point of this is so that I can swap out certain types for custom
+// ones if I need to without issue. ex: Custom unordered_map for faster lookups
+using u8   = std::uint8_t;
+using u16  = std::uint16_t;
+using u32  = std::uint32_t;
+using u64  = std::uint64_t;
 using uint = unsigned int;
 using byte = unsigned char;
 
-using int8 = std::int8_t;
+using int8	= std::int8_t;
 using int16 = std::int16_t;
 using int32 = std::int32_t;
 using int64 = std::int64_t;
@@ -35,49 +34,56 @@ using int64 = std::int64_t;
 using f32 = float;
 using f64 = double;
 
-using String = std::string;
+using String  = std::string;
 using WString = std::wstring;
 
-template <typename T, typename J>
-using Pair = std::pair<T, J>;
+template <typename T, typename J> using Pair = std::pair<T, J>;
 
-template <typename T, size_t J>
-using Array = std::array<T, J>;
+template <typename T, size_t J> using Array = std::array<T, J>;
 
-template <typename T>
-using Vector = std::vector<T>;
+template <typename T> using Vector = std::vector<T>;
 
-template <typename T>
-using Ref = std::shared_ptr<T>;
+template <typename T> using Ref = std::shared_ptr<T>;
 
-template <typename T>
-using URef = std::unique_ptr<T>;
+template <typename T> using URef = std::unique_ptr<T>;
 
-template <typename T>
-using WRef = std::weak_ptr<T>;
+template <typename T> using WRef = std::weak_ptr<T>;
 
-template <typename T, typename J>
-using HashMap = std::unordered_map<T, J>;
+template <typename T, typename J> using HashMap = std::unordered_map<T, J>;
 
-template <typename T, typename J>
-using Map = std::map<T, J>;
+template <typename T, typename J> using Map = std::map<T, J>;
 
-template <typename T>
-using Stack = std::stack<T>;
+template <typename T> using Stack = std::stack<T>;
 
-template <typename T>
-using Queue = std::queue<T>;
+template <typename T> using Queue = std::queue<T>;
 
 using Mutex = std::mutex;
 
 #if defined(_WIN64)
-inline void ThrowIfFailed(HRESULT hr)
+[[noreturn]] inline void ThrowHRESULT(HRESULT hr, const char* file, int line)
 {
-	if (FAILED(hr))
-	{
-		throw std::exception();
-	}
+	char desc[512] = {};
+	FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, static_cast<DWORD>(hr), 0, desc,
+				   static_cast<DWORD>(sizeof(desc)), nullptr);
+
+	// Strip trailing whitespace/newline that FormatMessage appends.
+	for (int i = static_cast<int>(strlen(desc)) - 1; i >= 0 && (desc[i] == '\r' || desc[i] == '\n' || desc[i] == ' ');
+		 --i)
+		desc[i] = '\0';
+
+	char buf[768];
+	snprintf(buf, sizeof(buf), "HRESULT 0x%08X (%s) at %s:%d", static_cast<unsigned int>(hr), desc, file, line);
+
+	throw std::runtime_error(buf);
 }
+
+#define ThrowIfFailed(hr)                                                                                              \
+	do                                                                                                                 \
+	{                                                                                                                  \
+		HRESULT _hr_ = (hr);                                                                                           \
+		if (FAILED(_hr_))                                                                                              \
+			ThrowHRESULT(_hr_, __FILE__, __LINE__);                                                                    \
+	} while (0)
 #endif
 
 inline WString StringToWString(const char* string)
@@ -91,40 +97,42 @@ inline WString StringToWString(const String& string)
 	return WString(string.begin(), string.end());
 }
 
-template<class T>
-inline T AlignOffset(const T& uOffset, const T& uAlign) { return ((uOffset + (uAlign - 1)) & ~(uAlign - 1)); }
+template <class T> inline T AlignOffset(const T& uOffset, const T& uAlign)
+{
+	return ((uOffset + (uAlign - 1)) & ~(uAlign - 1));
+}
 
 #include <Math/Math.h>
 
-//Platform
+// Platform
 #if defined(_WIN32) || defined(WIN32) || defined(__WIN32__)
-	#define WARP_WINDOWS 1
-	#define WARP_BUILD_DX12 1
-	#define WARP_BUILD_VK 1
+#define WARP_WINDOWS 1
+#define WARP_BUILD_DX12 1
+#define WARP_BUILD_VK 1
 #elif defined(__linux__) || defined(__gnu_linux__)
-	#define WARP_LINUX 1
-	#define WARP_BUILD_VK 1
+#define WARP_LINUX 1
+#define WARP_BUILD_VK 1
 #elif defined(__APPLE__)
-	#define WARP_APPLE 1
-	#define WARP_BUILD_METAL 1
-	#define WARP_BUILD_MOLTENVK 1
+#define WARP_APPLE 1
+#define WARP_BUILD_METAL 1
+#define WARP_BUILD_MOLTENVK 1
 #endif
 
 #ifdef WARP_EXPORT
 
-	//export
-	#ifdef  _MSC_VER
-		#define WARP_API __declspec(dllexport)
-	#else
-		#define WARP_API __attribute__((visibility("default")))
-	#endif
+// export
+#ifdef _MSC_VER
+#define WARP_API __declspec(dllexport)
+#else
+#define WARP_API __attribute__((visibility("default")))
+#endif
 
 #else
-	//import
-	#ifdef _MSC_VER
-		#define WARP_API __declspec(dllimport)
-	#else
-		#define WARP_API
-	#endif
+// import
+#ifdef _MSC_VER
+#define WARP_API __declspec(dllimport)
+#else
+#define WARP_API
+#endif
 
 #endif

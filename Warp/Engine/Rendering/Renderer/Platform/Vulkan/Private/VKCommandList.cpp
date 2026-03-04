@@ -168,11 +168,14 @@ void VKCommandList::SetPrimitiveTopology(PrimitiveTopology /*topo*/)
 void VKCommandList::SetViewport(f32 x, f32 y, f32 width, f32 height,
                                 f32 minDepth, f32 maxDepth)
 {
+	// Vulkan clip space has Y increasing downward; D3D12 has Y increasing upward.
+	// VK_KHR_maintenance1 (core since Vulkan 1.1) allows a negative viewport height
+	// to flip Y, making both APIs use the same NDC convention without shader changes.
 	VkViewport vp = {};
 	vp.x        = x;
-	vp.y        = y;
+	vp.y        = y + height; // origin at bottom-left
 	vp.width    = width;
-	vp.height   = height;
+	vp.height   = -height;   // negative flips Y
 	vp.minDepth = minDepth;
 	vp.maxDepth = maxDepth;
 	vkCmdSetViewport(m_cmdBuf, 0, 1, &vp);

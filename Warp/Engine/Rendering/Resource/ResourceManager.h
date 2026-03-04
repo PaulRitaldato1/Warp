@@ -13,6 +13,10 @@ class ThreadPool;
 class WARP_API ResourceManager
 {
 public:
+	ResourceManager()                                    = default;
+	ResourceManager(const ResourceManager&)              = delete;
+	ResourceManager& operator=(const ResourceManager&)   = delete;
+
 	void Initialize(Device* device, ThreadPool* threadPool);
 	void Shutdown();
 

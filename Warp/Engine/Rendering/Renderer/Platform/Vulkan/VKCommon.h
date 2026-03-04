@@ -2,13 +2,15 @@
 
 #ifdef WARP_BUILD_VK
 
-// On Linux with X11, enable the xlib surface extension before including vulkan.h.
-// Xlib.h pollutes the global namespace with macros that conflict with our enums
-// (None, True, False, Status, Bool) — undef them immediately after inclusion.
+// Enable the platform-specific Vulkan surface extension before including vulkan.h.
+#ifdef WARP_WINDOWS
+#   define VK_USE_PLATFORM_WIN32_KHR
+#endif
 #ifdef WARP_LINUX
+    // Xlib.h pollutes the global namespace with macros that conflict with our enums
+    // (None, True, False, Status, Bool) — undef them immediately after inclusion.
 #   include <X11/Xlib.h>
 #   define VK_USE_PLATFORM_XLIB_KHR
-    // Clean up X11 macro pollution
 #   undef None
 #   undef True
 #   undef False

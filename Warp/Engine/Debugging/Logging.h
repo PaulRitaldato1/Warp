@@ -28,9 +28,12 @@ enum class LogLevel : u8
 	Count
 };
 
-class Logger
+class WARP_API Logger
 {
 public:
+	Logger(const Logger&)            = delete;
+	Logger& operator=(const Logger&) = delete;
+
 	static Logger& Get();
 
 	// Call from WarpEngine::Init / Shutdown.

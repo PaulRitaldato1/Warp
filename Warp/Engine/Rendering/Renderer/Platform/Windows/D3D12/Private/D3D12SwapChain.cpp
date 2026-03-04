@@ -102,7 +102,22 @@ void D3D12SwapChain::Present()
 {
 	DYNAMIC_ASSERT(m_swapChain, "D3D12SwapChain::Present: swap chain not initialized");
 	UINT syncInterval = m_vsync ? 1 : 0;
-	ThrowIfFailed(m_swapChain->Present(syncInterval, 0));
+	HRESULT hr = m_swapChain->Present(syncInterval, 0);
+
+	if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
+	{
+		// Present just surfaces the symptom. Query the device for the real cause.
+		ComRef<ID3D12Device> device;
+		if (!m_backBuffers.empty() &&
+		    SUCCEEDED(m_backBuffers[0]->GetDevice(IID_PPV_ARGS(&device))))
+		{
+			HRESULT reason = device->GetDeviceRemovedReason();
+			LOG_ERROR("Device removed — reason: 0x{:08X}", static_cast<unsigned>(reason));
+			ThrowIfFailed(reason);
+		}
+	}
+
+	ThrowIfFailed(hr);
 }
 
 void D3D12SwapChain::Resize(u32 width, u32 height)

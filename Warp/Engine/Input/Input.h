@@ -264,6 +264,8 @@ class WARP_API InputEventManager
 {
 public:
 	InputEventManager();
+	InputEventManager(const InputEventManager&)            = delete;
+	InputEventManager& operator=(const InputEventManager&) = delete;
 
 	void SubscribeToKeyUp(WarpKeyCode Code, void (*Func)(void));
 	void SubscribeToKeyDown(WarpKeyCode Code, void (*Func)(void));

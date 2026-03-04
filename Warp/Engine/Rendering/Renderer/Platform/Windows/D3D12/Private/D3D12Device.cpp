@@ -116,14 +116,13 @@ URef<SwapChain> D3D12Device::CreateSwapChain(const SwapChainDesc& desc)
 	DYNAMIC_ASSERT(m_device, "D3D12Device::CreateSwapChain: device not initialized");
 	DYNAMIC_ASSERT(m_factory, "D3D12Device::CreateSwapChain: factory not initialized");
 
-	// The swap chain creation requires an existing graphics queue.
-	// Caller is expected to have created one already; we use a temporary here
-	// until the renderer wires in its own queue.
-	URef<D3D12CommandQueue> d3dQueue = std::make_unique<D3D12CommandQueue>();
-	d3dQueue->InitializeWithDevice(m_device.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT);
+	DYNAMIC_ASSERT(desc.nativeCommandQueue,
+	               "D3D12Device::CreateSwapChain: nativeCommandQueue must be the "
+	               "ID3D12CommandQueue* used for rendering — DXGI binds to it permanently");
 
+	auto* queue = static_cast<ID3D12CommandQueue*>(desc.nativeCommandQueue);
 	URef<D3D12SwapChain> swapChain = std::make_unique<D3D12SwapChain>();
-	swapChain->InitializeWithFactory(m_device.Get(), m_factory.Get(), d3dQueue->GetNative(), desc);
+	swapChain->InitializeWithFactory(m_device.Get(), m_factory.Get(), queue, desc);
 	return swapChain;
 }
 

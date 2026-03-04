@@ -15,7 +15,6 @@ if(MSVC)
     message("Adding MSVC /MP and /W4")
 else()
     add_definitions(
-        -c
         -Wall
         -msse2
     )
@@ -152,7 +151,14 @@ target_include_directories(WarpEngine PUBLIC  ${directxmath_SOURCE_DIR}/Inc)
 target_include_directories(WarpEngine SYSTEM PRIVATE ${tinyddsloader_SOURCE_DIR})
 
 if(WIN32)
-    target_link_libraries(WarpEngine PRIVATE "d3d12.lib" "dxgi.lib" "dxcompiler.lib" "Gdi32.lib")
+    find_package(Vulkan REQUIRED)
+    # Suppress Windows min/max macros and reduce header bloat.
+    add_compile_definitions(WIN32_LEAN_AND_MEAN NOMINMAX)
+    # Derive the Vulkan SDK lib directory from the found vulkan-1.lib path.
+    get_filename_component(_VK_LIB_DIR "${Vulkan_LIBRARY}" DIRECTORY)
+    target_link_libraries(WarpEngine PRIVATE "d3d12.lib" "dxgi.lib" "dxcompiler.lib" "Gdi32.lib" "synchronization.lib" Vulkan::Vulkan)
+    # shaderc — use the combined static lib so no extra DLLs are needed.
+    target_link_libraries(WarpEngine PRIVATE "$<IF:$<CONFIG:Debug>,${_VK_LIB_DIR}/shaderc_combinedd.lib,${_VK_LIB_DIR}/shaderc_combined.lib>")
     target_link_libraries(Warp PUBLIC WarpEngine)
 #Linux
 elseif(UNIX AND NOT APPLE)

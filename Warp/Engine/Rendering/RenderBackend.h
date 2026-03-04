@@ -13,6 +13,6 @@ public:
 	// No #ifdef chains anywhere else in the engine.
 	static URef<RenderBackend> Create();
 
-	virtual URef<IWindow>  CreateWindow(const String& name, int width, int height) = 0;
+	virtual URef<IWindow>  MakeWindow(const String& name, int width, int height) = 0;
 	virtual URef<Renderer> CreateRenderer()                                        = 0;
 };
