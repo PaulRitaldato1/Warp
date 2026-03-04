@@ -14,9 +14,6 @@
 #include <Rendering/Renderer/Shader.h>
 #include <Rendering/Renderer/Pipeline.h>
 
-#include <thread>
-#include <future>
-
 class IWindow;
 class World;
 class ResourceManager;
@@ -34,7 +31,7 @@ struct FrameSyncPoint
 {
 	u64 graphicsFenceValue = 0;
 	u64 computeFenceValue  = 0;
-	u64 copyFenceValue     = 0;
+	u64 copyFenceValue	   = 0;
 };
 
 class Renderer
@@ -44,8 +41,8 @@ public:
 
 	// window is non-owning — WarpEngine retains ownership
 	// Platform-specific — implemented per API (D3D12, Vulkan, Metal)
-	virtual void Init(IWindow* window)           = 0;
-	virtual void Shutdown()                      = 0;
+	virtual void Init(IWindow* window)			 = 0;
+	virtual void Shutdown()						 = 0;
 	virtual void OnResize(u32 width, u32 height) = 0;
 
 	// Frame loop — implemented once in Renderer.cpp using abstract types.
@@ -54,17 +51,41 @@ public:
 	void Draw();
 	void EndFrame();
 
-	void SetRenderPath(RenderPath path) { m_renderPath = path; }
-	RenderPath GetRenderPath() const    { return m_renderPath; }
+	void SetRenderPath(RenderPath path)
+	{
+		m_renderPath = path;
+	}
+	RenderPath GetRenderPath() const
+	{
+		return m_renderPath;
+	}
 
-	void   SetWorld(World* world)                       { m_world = world; }
-	World* GetWorld() const                              { return m_world; }
+	void SetWorld(World* world)
+	{
+		m_world = world;
+	}
+	World* GetWorld() const
+	{
+		return m_world;
+	}
 
-	void             SetResourceManager(ResourceManager* manager) { m_resourceManager = manager; }
-	ResourceManager* GetResourceManager() const                   { return m_resourceManager; }
+	void SetResourceManager(ResourceManager* manager)
+	{
+		m_resourceManager = manager;
+	}
+	ResourceManager* GetResourceManager() const
+	{
+		return m_resourceManager;
+	}
 
-	Device*     GetDevice()     { return m_device.get(); }
-	ThreadPool* GetThreadPool() { return m_workerPool.get(); }
+	Device* GetDevice()
+	{
+		return m_device.get();
+	}
+	ThreadPool* GetThreadPool()
+	{
+		return m_workerPool.get();
+	}
 
 protected:
 	// Render path implementations — filled out as the engine matures.
@@ -80,29 +101,29 @@ protected:
 	// How many frames the CPU is allowed to run ahead of the GPU.
 	// Controls the number of command allocator slots, upload buffer slices,
 	// and FrameSyncPoints — NOT the swap chain back buffer count.
-	static constexpr u32 k_framesInFlight  = 3;
+	static constexpr u32 k_framesInFlight = 3;
 
 	// Swap chain back buffers — independent of k_framesInFlight.
 	static constexpr u32 k_backBufferCount = 2;
 
-	static constexpr u64 k_uploadHeapSize  = 32 * 1024 * 1024; // 32 MB
-	static constexpr u64 k_frameArenaSize  =  4 * 1024 * 1024; //  4 MB
+	static constexpr u64 k_uploadHeapSize = 32 * 1024 * 1024; // 32 MB
+	static constexpr u64 k_frameArenaSize = 4 * 1024 * 1024;  //  4 MB
 
-	URef<Device>        m_device;
-	URef<CommandQueue>  m_graphicsQueue;
-	URef<CommandQueue>  m_computeQueue;
-	URef<CommandQueue>  m_copyQueue;
-	URef<SwapChain>     m_swapChain;
+	URef<Device> m_device;
+	URef<CommandQueue> m_graphicsQueue;
+	URef<CommandQueue> m_computeQueue;
+	URef<CommandQueue> m_copyQueue;
+	URef<SwapChain> m_swapChain;
 
 	// Depth buffer shared across all render paths.
 	// Created by the platform Init(); handle stored here for use in DrawXxx().
-	URef<Texture>    m_depthTexture;
+	URef<Texture> m_depthTexture;
 	DescriptorHandle m_depthHandle;
 
 	// Test triangle — filled by CreateTestTriangle(), drawn in DrawDeferred().
 	// Replace with a proper scene submission system once the pipeline is proven.
-	URef<Shader>        m_testTriVS;
-	URef<Shader>        m_testTriPS;
+	URef<Shader> m_testTriVS;
+	URef<Shader> m_testTriPS;
 	URef<PipelineState> m_testTriPSO;
 
 	// Shared HLSL source for the test triangle.
@@ -128,29 +149,29 @@ float4 PSMain() : SV_Target
 }
 )hlsl";
 
-	World*              m_world            = nullptr; // non-owning — set by WarpEngine
-	ResourceManager*    m_resourceManager  = nullptr; // non-owning — set by WarpEngine
-	RenderPath          m_renderPath 	   = RenderPath::Deferred;
+	World* m_world					   = nullptr; // non-owning — set by WarpEngine
+	ResourceManager* m_resourceManager = nullptr; // non-owning — set by WarpEngine
+	RenderPath m_renderPath			   = RenderPath::Deferred;
 
 	Array<FrameSyncPoint, k_framesInFlight> m_frameSyncPoints;
-	u32                                     m_frameIndex = 0;
+	u32 m_frameIndex = 0;
 
 	// Per-worker command lists — long-lived, reset each frame via Begin(frameIndex).
 	// Indexed by worker thread index.
 	Vector<URef<CommandList>> m_graphicsLists;
 	Vector<URef<CommandList>> m_computeLists;
-	URef<CommandList>         m_copyList;
-	URef<CommandList>         m_urgentCopyList;  // Separate list for same-frame copies.
+	URef<CommandList> m_copyList;
+	URef<CommandList> m_urgentCopyList; // Separate list for same-frame copies.
 
 	// CPU-side bump allocator: Reset() at the start of every frame.
 	// Use for transient per-frame structures (draw lists, sort keys, etc.).
-	Arena             m_frameArena{k_frameArenaSize};
+	Arena m_frameArena{ k_frameArenaSize };
 
 	// GPU-visible ring buffer: OnBeginFrame() retires the oldest frame's slice.
 	// Use for constant buffer data (transforms, material params, light data).
 	URef<UploadBuffer> m_uploadBuffer;
 
-	URef<ThreadPool>  m_workerPool;
+	URef<ThreadPool> m_workerPool;
 
 	// ---------------------------------------------------------------------------
 	// Staging upload lifecycle
@@ -167,7 +188,7 @@ float4 PSMain() : SV_Target
 	struct InFlightStaging
 	{
 		URef<Buffer> stagingBuffer;
-		u64          fenceValue;
+		u64 fenceValue;
 	};
 	Vector<InFlightStaging> m_inFlightStagingBuffers;
 
