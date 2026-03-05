@@ -1,3 +1,4 @@
+#include <d3d12.h>
 #ifdef WARP_BUILD_DX12
 
 #include <Rendering/Renderer/Platform/Windows/D3D12/D3D12SwapChain.h>
@@ -10,10 +11,14 @@ DXGI_FORMAT D3D12SwapChain::ToDXGIFormat(SwapChainFormat format)
 {
 	switch (format)
 	{
-		case SwapChainFormat::RGBA8: return DXGI_FORMAT_R8G8B8A8_UNORM;
-		case SwapChainFormat::BGRA8: return DXGI_FORMAT_B8G8R8A8_UNORM;
-		case SwapChainFormat::HDR10: return DXGI_FORMAT_R10G10B10A2_UNORM;
-		default:					 return DXGI_FORMAT_R8G8B8A8_UNORM;
+		case SwapChainFormat::RGBA8:
+			return DXGI_FORMAT_R8G8B8A8_UNORM;
+		case SwapChainFormat::BGRA8:
+			return DXGI_FORMAT_B8G8R8A8_UNORM;
+		case SwapChainFormat::HDR10:
+			return DXGI_FORMAT_R10G10B10A2_UNORM;
+		default:
+			return DXGI_FORMAT_R8G8B8A8_UNORM;
 	}
 }
 
@@ -23,9 +28,9 @@ void D3D12SwapChain::CreateRTVs(ID3D12Device* device)
 
 	// (Re)create the RTV descriptor heap sized for the current buffer count.
 	D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-	heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-	heapDesc.NumDescriptors = m_bufferCount;
-	heapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	heapDesc.Type						= D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	heapDesc.NumDescriptors				= m_bufferCount;
+	heapDesc.Flags						= D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_rtvHeap)));
 
 	m_rtvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
@@ -38,12 +43,12 @@ void D3D12SwapChain::CreateRTVs(ID3D12Device* device)
 	}
 }
 
-void D3D12SwapChain::InitializeWithFactory(ID3D12Device* device, IDXGIFactory4* factory,
-                                            ID3D12CommandQueue* queue, const SwapChainDesc& desc)
+void D3D12SwapChain::InitializeWithFactory(ID3D12Device* device, IDXGIFactory4* factory, ID3D12CommandQueue* queue,
+										   const SwapChainDesc& desc)
 {
-	DYNAMIC_ASSERT(device,		 "D3D12SwapChain: device is null");
-	DYNAMIC_ASSERT(factory,		 "D3D12SwapChain: factory is null");
-	DYNAMIC_ASSERT(queue,		 "D3D12SwapChain: queue is null");
+	DYNAMIC_ASSERT(device, "D3D12SwapChain: device is null");
+	DYNAMIC_ASSERT(factory, "D3D12SwapChain: factory is null");
+	DYNAMIC_ASSERT(queue, "D3D12SwapChain: queue is null");
 	DYNAMIC_ASSERT(desc.Window, "D3D12SwapChain: window is null");
 
 	m_width		   = desc.Width;
@@ -57,22 +62,21 @@ void D3D12SwapChain::InitializeWithFactory(ID3D12Device* device, IDXGIFactory4* 
 	DYNAMIC_ASSERT(hwnd, "D3D12SwapChain: window native handle is null");
 
 	DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
-	swapChainDesc.Width              = desc.Width;
-	swapChainDesc.Height             = desc.Height;
-	swapChainDesc.Format             = m_format;
-	swapChainDesc.Stereo             = FALSE;
-	swapChainDesc.SampleDesc.Count   = 1;
-	swapChainDesc.SampleDesc.Quality = 0;
-	swapChainDesc.BufferUsage        = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	swapChainDesc.BufferCount        = desc.BufferCount;
-	swapChainDesc.Scaling            = DXGI_SCALING_STRETCH;
-	swapChainDesc.SwapEffect         = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-	swapChainDesc.AlphaMode          = DXGI_ALPHA_MODE_UNSPECIFIED;
-	swapChainDesc.Flags              = 0;
+	swapChainDesc.Width					= desc.Width;
+	swapChainDesc.Height				= desc.Height;
+	swapChainDesc.Format				= m_format;
+	swapChainDesc.Stereo				= FALSE;
+	swapChainDesc.SampleDesc.Count		= 1;
+	swapChainDesc.SampleDesc.Quality	= 0;
+	swapChainDesc.BufferUsage			= DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	swapChainDesc.BufferCount			= desc.BufferCount;
+	swapChainDesc.Scaling				= DXGI_SCALING_STRETCH;
+	swapChainDesc.SwapEffect			= DXGI_SWAP_EFFECT_FLIP_DISCARD;
+	swapChainDesc.AlphaMode				= DXGI_ALPHA_MODE_UNSPECIFIED;
+	swapChainDesc.Flags					= 0;
 
 	ComRef<IDXGISwapChain1> swapChain1;
-	ThrowIfFailed(factory->CreateSwapChainForHwnd(
-		queue, hwnd, &swapChainDesc, nullptr, nullptr, &swapChain1));
+	ThrowIfFailed(factory->CreateSwapChainForHwnd(queue, hwnd, &swapChainDesc, nullptr, nullptr, &swapChain1));
 
 	// Disable Alt+Enter fullscreen toggle — engine handles this explicitly.
 	ThrowIfFailed(factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER));
@@ -102,14 +106,13 @@ void D3D12SwapChain::Present()
 {
 	DYNAMIC_ASSERT(m_swapChain, "D3D12SwapChain::Present: swap chain not initialized");
 	UINT syncInterval = m_vsync ? 1 : 0;
-	HRESULT hr = m_swapChain->Present(syncInterval, 0);
+	HRESULT hr		  = m_swapChain->Present(syncInterval, 0);
 
 	if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
 	{
 		// Present just surfaces the symptom. Query the device for the real cause.
 		ComRef<ID3D12Device> device;
-		if (!m_backBuffers.empty() &&
-		    SUCCEEDED(m_backBuffers[0]->GetDevice(IID_PPV_ARGS(&device))))
+		if (!m_backBuffers.empty() && SUCCEEDED(m_backBuffers[0]->GetDevice(IID_PPV_ARGS(&device))))
 		{
 			HRESULT reason = device->GetDeviceRemovedReason();
 			LOG_ERROR("Device removed — reason: 0x{:08X}", static_cast<unsigned>(reason));
@@ -126,11 +129,14 @@ void D3D12SwapChain::Resize(u32 width, u32 height)
 
 	// Release all back-buffer and RTV references before resizing.
 	m_rtvHeap.Reset();
-	for (auto& buf : m_backBuffers) { buf.Reset(); }
+	for (ComRef<ID3D12Resource>& buf : m_backBuffers)
+	{
+		buf.Reset();
+	}
 
 	ThrowIfFailed(m_swapChain->ResizeBuffers(m_bufferCount, width, height, m_format, 0));
 
-	m_width  = width;
+	m_width	 = width;
 	m_height = height;
 
 	// Re-acquire back-buffer pointers and reset state tracking.
@@ -166,32 +172,44 @@ DescriptorHandle D3D12SwapChain::GetCurrentRTV() const
 
 void D3D12SwapChain::TransitionToRenderTarget(CommandList& cmd)
 {
-	u32 index = m_swapChain->GetCurrentBackBufferIndex();
+	u32 index				 = m_swapChain->GetCurrentBackBufferIndex();
 	D3D12CommandList& d3dCmd = static_cast<D3D12CommandList&>(cmd);
-	d3dCmd.TransitionResource(m_backBuffers[index].Get(),
-	                          m_backBufferStates[index],
-	                          D3D12_RESOURCE_STATE_RENDER_TARGET);
+	d3dCmd.TransitionResource(m_backBuffers[index].Get(), m_backBufferStates[index],
+							  D3D12_RESOURCE_STATE_RENDER_TARGET);
 	m_backBufferStates[index] = D3D12_RESOURCE_STATE_RENDER_TARGET;
 }
 
 void D3D12SwapChain::TransitionToPresent(CommandList& cmd)
 {
-	u32 index = m_swapChain->GetCurrentBackBufferIndex();
+	u32 index				 = m_swapChain->GetCurrentBackBufferIndex();
 	D3D12CommandList& d3dCmd = static_cast<D3D12CommandList&>(cmd);
-	d3dCmd.TransitionResource(m_backBuffers[index].Get(),
-	                          m_backBufferStates[index],
-	                          D3D12_RESOURCE_STATE_PRESENT);
+	d3dCmd.TransitionResource(m_backBuffers[index].Get(), m_backBufferStates[index], D3D12_RESOURCE_STATE_PRESENT);
 	m_backBufferStates[index] = D3D12_RESOURCE_STATE_PRESENT;
 }
 
-SwapChainFormat D3D12SwapChain::GetFormat()  const { return m_engineFormat; }
-u32             D3D12SwapChain::GetWidth()   const { return m_width; }
-u32             D3D12SwapChain::GetHeight()  const { return m_height; }
+SwapChainFormat D3D12SwapChain::GetFormat() const
+{
+	return m_engineFormat;
+}
+
+u32 D3D12SwapChain::GetWidth() const
+{
+	return m_width;
+}
+
+u32 D3D12SwapChain::GetHeight() const
+{
+	return m_height;
+}
 
 void D3D12SwapChain::Cleanup()
 {
 	m_rtvHeap.Reset();
-	for (auto& buf : m_backBuffers) { buf.Reset(); }
+	for (ComRef<ID3D12Resource>& buf : m_backBuffers)
+	{
+		buf.Reset();
+	}
+
 	m_backBuffers.clear();
 	m_backBufferStates.clear();
 	m_swapChain.Reset();

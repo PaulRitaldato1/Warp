@@ -87,8 +87,9 @@ public:
 	// Resource binding (stubs — descriptor / push-constant system is future work)
 	// ---------------------------------------------------------------------------
 
-	void SetConstantBuffer(u32 rootIndex, Buffer* buffer)   override;
-	void SetShaderResource(u32 rootIndex, Texture* texture) override;
+	void SetConstantBuffer(u32 rootIndex, Buffer* buffer)                    override;
+	void SetShaderResource(u32 rootIndex, Texture* texture)                  override;
+	void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures) override;
 
 	// ---------------------------------------------------------------------------
 	// Draw / dispatch

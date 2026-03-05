@@ -25,7 +25,7 @@ void VKRenderer::Init(IWindow* window)
 	deviceDesc.bEnableDebugLayer = true;
 #endif
 
-	auto vkDevice = std::make_unique<VKDevice>();
+	URef<VKDevice> vkDevice = std::make_unique<VKDevice>();
 	vkDevice->Initialize(deviceDesc);
 	m_device = std::move(vkDevice);
 
@@ -34,21 +34,21 @@ void VKRenderer::Init(IWindow* window)
 	// -------------------------------------------------------------------------
 
 	m_graphicsQueue = m_device->CreateCommandQueue(CommandQueueType::Graphics);
-	m_computeQueue  = m_device->CreateCommandQueue(CommandQueueType::Compute);
-	m_copyQueue     = m_device->CreateCommandQueue(CommandQueueType::Copy);
+	m_computeQueue	= m_device->CreateCommandQueue(CommandQueueType::Compute);
+	m_copyQueue		= m_device->CreateCommandQueue(CommandQueueType::Copy);
 
 	// -------------------------------------------------------------------------
 	// Swap chain
 	// -------------------------------------------------------------------------
 
 	SwapChainDesc scDesc;
-	scDesc.Window      = window;
-	scDesc.Width       = static_cast<u32>(window->GetWidth());
-	scDesc.Height      = static_cast<u32>(window->GetHeight());
+	scDesc.Window	   = window;
+	scDesc.Width	   = static_cast<u32>(window->GetWidth());
+	scDesc.Height	   = static_cast<u32>(window->GetHeight());
 	scDesc.BufferCount = k_backBufferCount;
-	scDesc.Format      = SwapChainFormat::BGRA8;
+	scDesc.Format	   = SwapChainFormat::BGRA8;
 	scDesc.bUseVsync   = false;
-	m_swapChain = m_device->CreateSwapChain(scDesc);
+	m_swapChain		   = m_device->CreateSwapChain(scDesc);
 
 	// -------------------------------------------------------------------------
 	// Depth buffer
@@ -60,11 +60,9 @@ void VKRenderer::Init(IWindow* window)
 	// Command lists
 	// -------------------------------------------------------------------------
 
-	m_graphicsLists.push_back(
-		m_device->CreateCommandList(CommandQueueType::Graphics, k_framesInFlight));
-	m_computeLists.push_back(
-		m_device->CreateCommandList(CommandQueueType::Compute, k_framesInFlight));
-	m_copyList = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
+	m_graphicsLists.push_back(m_device->CreateCommandList(CommandQueueType::Graphics, k_framesInFlight));
+	m_computeLists.push_back(m_device->CreateCommandList(CommandQueueType::Compute, k_framesInFlight));
+	m_copyList		 = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
 	m_urgentCopyList = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
 	// -------------------------------------------------------------------------
 	// Upload buffer
@@ -90,16 +88,16 @@ void VKRenderer::Init(IWindow* window)
 void VKRenderer::CreateDepthBuffer(u32 width, u32 height)
 {
 	TextureDesc depthDesc;
-	depthDesc.type   = TextureType::Texture2D;
-	depthDesc.width  = width;
+	depthDesc.type	 = TextureType::Texture2D;
+	depthDesc.width	 = width;
 	depthDesc.height = height;
 	depthDesc.format = TextureFormat::Depth32F;
-	depthDesc.usage  = TextureUsage::DepthStencil;
-	m_depthTexture = m_device->CreateTexture(depthDesc);
+	depthDesc.usage	 = TextureUsage::DepthStencil;
+	m_depthTexture	 = m_device->CreateTexture(depthDesc);
 
 	// Store the image view as the depth descriptor handle.
 	VKTexture* vkDepth = static_cast<VKTexture*>(m_depthTexture.get());
-	m_depthHandle = vkDepth->GetDescriptorHandle();
+	m_depthHandle	   = vkDepth->GetDescriptorHandle();
 }
 
 void VKRenderer::Shutdown()

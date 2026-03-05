@@ -29,6 +29,12 @@ public:
 	u32   GetMipLevels()          const override { return m_mipLevels; }
 	TextureFormat GetFormat()     const override { return m_format; }
 
+	// Texture interface — all three return the same VkImageView; usage is
+	// determined by the pipeline/render pass, not by separate view types.
+	DescriptorHandle GetRTV() const override { return GetDescriptorHandle(); }
+	DescriptorHandle GetSRV() const override { return GetDescriptorHandle(); }
+	DescriptorHandle GetDSV() const override { return GetDescriptorHandle(); }
+
 	VkImage     GetNativeImage() const { return m_image; }
 	VkImageView GetNativeView()  const { return m_view;  }
 

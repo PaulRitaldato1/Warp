@@ -435,6 +435,11 @@ void VKCommandList::SetShaderResource(u32 /*rootIndex*/, Texture* /*texture*/)
 	// TODO: vkCmdPushDescriptorSetKHR once push-descriptor layout is set up
 }
 
+void VKCommandList::SetShaderResources(u32 /*rootIndex*/, const Vector<Texture*>& /*textures*/)
+{
+	// TODO: vkCmdPushDescriptorSetKHR — allocate contiguous descriptor set entries for all textures
+}
+
 // ---------------------------------------------------------------------------
 // Draw / dispatch
 // ---------------------------------------------------------------------------

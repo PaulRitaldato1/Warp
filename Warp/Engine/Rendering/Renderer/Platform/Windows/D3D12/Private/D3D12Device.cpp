@@ -1,4 +1,6 @@
 #include "Common/CommonTypes.h"
+#include "Renderer/CommandQueue.h"
+#include <d3d12.h>
 #ifdef WARP_BUILD_DX12
 
 #include <Rendering/Renderer/Platform/Windows/D3D12/D3D12Device.h>
@@ -88,8 +90,22 @@ URef<CommandQueue> D3D12Device::CreateCommandQueue(CommandQueueType type)
 {
 	DYNAMIC_ASSERT(m_device, "D3D12Device::CreateCommandQueue: device not initialized");
 
+	if (type == CommandQueueType::Graphics && m_graphicsQueue != nullptr)
+	{
+		LOG_WARNING(
+			"D3D12Device::CreateCommandQueue: graphics queue already exists, cannot create another one. You must "
+			"recreate the swapchain with this new graphics queue");
+	}
+
 	URef<D3D12CommandQueue> queue = std::make_unique<D3D12CommandQueue>();
 	queue->InitializeWithDevice(m_device.Get(), ToD3D12QueueType(type));
+
+	// We need to know the graphics queue for swapchain creation
+	if (type == CommandQueueType::Graphics)
+	{
+		m_graphicsQueue = queue->GetNative();
+	}
+
 	return queue;
 }
 
@@ -115,12 +131,10 @@ URef<SwapChain> D3D12Device::CreateSwapChain(const SwapChainDesc& desc)
 {
 	DYNAMIC_ASSERT(m_device, "D3D12Device::CreateSwapChain: device not initialized");
 	DYNAMIC_ASSERT(m_factory, "D3D12Device::CreateSwapChain: factory not initialized");
+	DYNAMIC_ASSERT(m_graphicsQueue, "D3D12Device::CreateSwapChain: graphics queue not initialized, D3D12 requires a "
+									"graphics queue for swapchain creation");
 
-	DYNAMIC_ASSERT(desc.nativeCommandQueue,
-	               "D3D12Device::CreateSwapChain: nativeCommandQueue must be the "
-	               "ID3D12CommandQueue* used for rendering — DXGI binds to it permanently");
-
-	auto* queue = static_cast<ID3D12CommandQueue*>(desc.nativeCommandQueue);
+	ID3D12CommandQueue* queue	   = static_cast<ID3D12CommandQueue*>(m_graphicsQueue.Get());
 	URef<D3D12SwapChain> swapChain = std::make_unique<D3D12SwapChain>();
 	swapChain->InitializeWithFactory(m_device.Get(), m_factory.Get(), queue, desc);
 	return swapChain;

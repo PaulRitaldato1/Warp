@@ -77,7 +77,14 @@ public:
 	// SetShaderResource: binds a Texture as an SRV (t register).
 	// NOTE: full bindless/descriptor-heap management is a future feature.
 	virtual void SetConstantBuffer(u32 rootIndex, Buffer* buffer)   = 0;
+
+	// Bind a single texture as an SRV at rootIndex.
 	virtual void SetShaderResource(u32 rootIndex, Texture* texture) = 0;
+
+	// Bind a group of textures as a contiguous descriptor table at rootIndex.
+	// All descriptors are copied into consecutive slots in the frame's shader-visible
+	// heap so the GPU sees them as a single table (t0..tN in HLSL).
+	virtual void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures) = 0;
 
 	// ---------------------------------------------------------------------------
 	// Copy / transfer

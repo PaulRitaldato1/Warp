@@ -18,11 +18,9 @@
 // Debug messenger callback
 // ---------------------------------------------------------------------------
 
-static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
-	VkDebugUtilsMessageSeverityFlagBitsEXT      severity,
-	VkDebugUtilsMessageTypeFlagsEXT             /*type*/,
-	const VkDebugUtilsMessengerCallbackDataEXT* data,
-	void*                                       /*pUser*/)
+static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+													VkDebugUtilsMessageTypeFlagsEXT /*type*/,
+													const VkDebugUtilsMessengerCallbackDataEXT* data, void* /*pUser*/)
 {
 	if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
 	{
@@ -78,13 +76,13 @@ void VKDevice::Initialize(const DeviceDesc& desc)
 	// Instance
 	// -------------------------------------------------------------------------
 
-	VkApplicationInfo appInfo = {};
-	appInfo.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+	VkApplicationInfo appInfo  = {};
+	appInfo.sType			   = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	appInfo.pApplicationName   = "Warp";
 	appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-	appInfo.pEngineName        = "WarpEngine";
-	appInfo.engineVersion      = VK_MAKE_VERSION(1, 0, 0);
-	appInfo.apiVersion         = VK_API_VERSION_1_3;
+	appInfo.pEngineName		   = "WarpEngine";
+	appInfo.engineVersion	   = VK_MAKE_VERSION(1, 0, 0);
+	appInfo.apiVersion		   = VK_API_VERSION_1_3;
 
 	std::vector<const char*> instExtensions = {
 		VK_KHR_SURFACE_EXTENSION_NAME,
@@ -102,28 +100,25 @@ void VKDevice::Initialize(const DeviceDesc& desc)
 		instExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		layers.push_back("VK_LAYER_KHRONOS_validation");
 
-		messengerInfo.sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+		messengerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
 		messengerInfo.messageSeverity =
-			VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-			VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-		messengerInfo.messageType     =
-			VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT     |
-			VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT  |
-			VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+			VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+		messengerInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+									VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+									VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
 		messengerInfo.pfnUserCallback = DebugCallback;
 	}
 
-	VkInstanceCreateInfo instInfo = {};
-	instInfo.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-	instInfo.pNext                   = desc.bEnableDebugLayer ? &messengerInfo : nullptr;
-	instInfo.pApplicationInfo        = &appInfo;
-	instInfo.enabledExtensionCount   = static_cast<u32>(instExtensions.size());
+	VkInstanceCreateInfo instInfo	 = {};
+	instInfo.sType					 = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+	instInfo.pNext					 = desc.bEnableDebugLayer ? &messengerInfo : nullptr;
+	instInfo.pApplicationInfo		 = &appInfo;
+	instInfo.enabledExtensionCount	 = static_cast<u32>(instExtensions.size());
 	instInfo.ppEnabledExtensionNames = instExtensions.data();
-	instInfo.enabledLayerCount       = static_cast<u32>(layers.size());
-	instInfo.ppEnabledLayerNames     = layers.data();
+	instInfo.enabledLayerCount		 = static_cast<u32>(layers.size());
+	instInfo.ppEnabledLayerNames	 = layers.data();
 
-	VK_CHECK(vkCreateInstance(&instInfo, nullptr, &m_instance),
-	         "VKDevice: vkCreateInstance failed");
+	VK_CHECK(vkCreateInstance(&instInfo, nullptr, &m_instance), "VKDevice: vkCreateInstance failed");
 
 	// -------------------------------------------------------------------------
 	// Debug messenger
@@ -176,7 +171,7 @@ void VKDevice::PickPhysicalDevice()
 
 	// Prefer discrete GPU; otherwise take the first available.
 	m_physDevice = devices[0];
-	for (auto dev : devices)
+	for (VkPhysicalDevice_T* dev : devices)
 	{
 		VkPhysicalDeviceProperties props = {};
 		vkGetPhysicalDeviceProperties(dev, &props);
@@ -215,13 +210,12 @@ void VKDevice::CreateLogicalDevice(bool enableValidation)
 		{
 			m_graphicsFamilyIndex = i;
 		}
-		if ((flags & VK_QUEUE_COMPUTE_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) &&
-		    m_computeFamilyIndex == UINT32_MAX)
+		if ((flags & VK_QUEUE_COMPUTE_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) && m_computeFamilyIndex == UINT32_MAX)
 		{
 			m_computeFamilyIndex = i;
 		}
-		if ((flags & VK_QUEUE_TRANSFER_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) &&
-		    !(flags & VK_QUEUE_COMPUTE_BIT) && m_transferFamilyIndex == UINT32_MAX)
+		if ((flags & VK_QUEUE_TRANSFER_BIT) && !(flags & VK_QUEUE_GRAPHICS_BIT) && !(flags & VK_QUEUE_COMPUTE_BIT) &&
+			m_transferFamilyIndex == UINT32_MAX)
 		{
 			m_transferFamilyIndex = i;
 		}
@@ -256,10 +250,10 @@ void VKDevice::CreateLogicalDevice(bool enableValidation)
 		uniqueFamilies.push_back(idx);
 
 		VkDeviceQueueCreateInfo qi = {};
-		qi.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-		qi.queueFamilyIndex = idx;
-		qi.queueCount       = 1;
-		qi.pQueuePriorities = &priority;
+		qi.sType				   = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		qi.queueFamilyIndex		   = idx;
+		qi.queueCount			   = 1;
+		qi.pQueuePriorities		   = &priority;
 		queueInfos.push_back(qi);
 	};
 
@@ -272,19 +266,19 @@ void VKDevice::CreateLogicalDevice(bool enableValidation)
 	// -------------------------------------------------------------------------
 
 	VkPhysicalDeviceVulkan13Features features13 = {};
-	features13.sType            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-	features13.dynamicRendering = VK_TRUE;
-	features13.synchronization2 = VK_TRUE;
+	features13.sType							= VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+	features13.dynamicRendering					= VK_TRUE;
+	features13.synchronization2					= VK_TRUE;
 
 	VkPhysicalDeviceVulkan12Features features12 = {};
-	features12.sType                = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-	features12.pNext                = &features13;
-	features12.timelineSemaphore    = VK_TRUE;
-	features12.bufferDeviceAddress  = VK_TRUE;
+	features12.sType							= VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+	features12.pNext							= &features13;
+	features12.timelineSemaphore				= VK_TRUE;
+	features12.bufferDeviceAddress				= VK_TRUE;
 
 	VkPhysicalDeviceFeatures2 features2 = {};
-	features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-	features2.pNext = &features12;
+	features2.sType						= VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	features2.pNext						= &features12;
 
 	// -------------------------------------------------------------------------
 	// Device extensions
@@ -300,35 +294,33 @@ void VKDevice::CreateLogicalDevice(bool enableValidation)
 		devLayers.push_back("VK_LAYER_KHRONOS_validation");
 	}
 
-	VkDeviceCreateInfo deviceInfo = {};
-	deviceInfo.sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-	deviceInfo.pNext                   = &features2;
-	deviceInfo.queueCreateInfoCount    = static_cast<u32>(queueInfos.size());
-	deviceInfo.pQueueCreateInfos       = queueInfos.data();
+	VkDeviceCreateInfo deviceInfo	   = {};
+	deviceInfo.sType				   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	deviceInfo.pNext				   = &features2;
+	deviceInfo.queueCreateInfoCount	   = static_cast<u32>(queueInfos.size());
+	deviceInfo.pQueueCreateInfos	   = queueInfos.data();
 	deviceInfo.enabledExtensionCount   = static_cast<u32>(devExtensions.size());
 	deviceInfo.ppEnabledExtensionNames = devExtensions.data();
-	deviceInfo.enabledLayerCount       = static_cast<u32>(devLayers.size());
-	deviceInfo.ppEnabledLayerNames     = devLayers.data();
+	deviceInfo.enabledLayerCount	   = static_cast<u32>(devLayers.size());
+	deviceInfo.ppEnabledLayerNames	   = devLayers.data();
 
-	VK_CHECK(vkCreateDevice(m_physDevice, &deviceInfo, nullptr, &m_device),
-	         "VKDevice: vkCreateDevice failed");
+	VK_CHECK(vkCreateDevice(m_physDevice, &deviceInfo, nullptr, &m_device), "VKDevice: vkCreateDevice failed");
 
 	vkGetDeviceQueue(m_device, m_graphicsFamilyIndex, 0, &m_graphicsQueue);
-	vkGetDeviceQueue(m_device, m_computeFamilyIndex,  0, &m_computeQueue);
+	vkGetDeviceQueue(m_device, m_computeFamilyIndex, 0, &m_computeQueue);
 	vkGetDeviceQueue(m_device, m_transferFamilyIndex, 0, &m_transferQueue);
 }
 
 void VKDevice::CreateAllocator()
 {
 	VmaAllocatorCreateInfo allocatorInfo = {};
-	allocatorInfo.physicalDevice   = m_physDevice;
-	allocatorInfo.device           = m_device;
-	allocatorInfo.instance         = m_instance;
-	allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
-	allocatorInfo.flags            = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+	allocatorInfo.physicalDevice		 = m_physDevice;
+	allocatorInfo.device				 = m_device;
+	allocatorInfo.instance				 = m_instance;
+	allocatorInfo.vulkanApiVersion		 = VK_API_VERSION_1_3;
+	allocatorInfo.flags					 = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
-	VK_CHECK(vmaCreateAllocator(&allocatorInfo, &m_allocator),
-	         "VKDevice: vmaCreateAllocator failed");
+	VK_CHECK(vmaCreateAllocator(&allocatorInfo, &m_allocator), "VKDevice: vmaCreateAllocator failed");
 }
 
 // ---------------------------------------------------------------------------
@@ -337,26 +329,26 @@ void VKDevice::CreateAllocator()
 
 URef<CommandQueue> VKDevice::CreateCommandQueue(CommandQueueType type)
 {
-	VkQueue queue       = VK_NULL_HANDLE;
-	u32     familyIndex = 0;
+	VkQueue queue	= VK_NULL_HANDLE;
+	u32 familyIndex = 0;
 
 	switch (type)
 	{
 		case CommandQueueType::Graphics:
-			queue       = m_graphicsQueue;
+			queue		= m_graphicsQueue;
 			familyIndex = m_graphicsFamilyIndex;
 			break;
 		case CommandQueueType::Compute:
-			queue       = m_computeQueue;
+			queue		= m_computeQueue;
 			familyIndex = m_computeFamilyIndex;
 			break;
 		case CommandQueueType::Copy:
-			queue       = m_transferQueue;
+			queue		= m_transferQueue;
 			familyIndex = m_transferFamilyIndex;
 			break;
 	}
 
-	auto vkQueue = std::make_unique<VKCommandQueue>();
+	URef<VKCommandQueue> vkQueue = std::make_unique<VKCommandQueue>();
 	vkQueue->InitializeWithDevice(m_device, queue, familyIndex);
 	return vkQueue;
 }
@@ -366,19 +358,25 @@ URef<CommandList> VKDevice::CreateCommandList(CommandQueueType type, u32 framesI
 	u32 familyIndex = 0;
 	switch (type)
 	{
-		case CommandQueueType::Graphics: familyIndex = m_graphicsFamilyIndex; break;
-		case CommandQueueType::Compute:  familyIndex = m_computeFamilyIndex;  break;
-		case CommandQueueType::Copy:     familyIndex = m_transferFamilyIndex; break;
+		case CommandQueueType::Graphics:
+			familyIndex = m_graphicsFamilyIndex;
+			break;
+		case CommandQueueType::Compute:
+			familyIndex = m_computeFamilyIndex;
+			break;
+		case CommandQueueType::Copy:
+			familyIndex = m_transferFamilyIndex;
+			break;
 	}
 
-	auto list = std::make_unique<VKCommandList>();
+	URef<VKCommandList> list = std::make_unique<VKCommandList>();
 	list->InitializeWithDevice(m_device, familyIndex, framesInFlight);
 	return list;
 }
 
 URef<UploadBuffer> VKDevice::CreateUploadBuffer(u64 size, u32 framesInFlight)
 {
-	auto buf = std::make_unique<VKUploadBuffer>();
+	URef<VKUploadBuffer> buf = std::make_unique<VKUploadBuffer>();
 	buf->InitializeWithAllocator(m_allocator, m_device);
 	buf->Initialize(size, framesInFlight);
 	return buf;
@@ -386,16 +384,15 @@ URef<UploadBuffer> VKDevice::CreateUploadBuffer(u64 size, u32 framesInFlight)
 
 URef<SwapChain> VKDevice::CreateSwapChain(const SwapChainDesc& desc)
 {
-	auto sc = std::make_unique<VKSwapChain>();
-	sc->InitializeWithContext(m_instance, m_physDevice, m_device,
-	                          m_graphicsQueue, m_graphicsFamilyIndex);
+	URef<VKSwapChain> sc = std::make_unique<VKSwapChain>();
+	sc->InitializeWithContext(m_instance, m_physDevice, m_device, m_graphicsQueue, m_graphicsFamilyIndex);
 	sc->Initialize(desc);
 	return sc;
 }
 
 URef<PipelineState> VKDevice::CreatePipelineState(const PipelineDesc& desc)
 {
-	auto pso = std::make_unique<VKPipeline>();
+	URef<VKPipeline> pso = std::make_unique<VKPipeline>();
 	pso->InitializeWithDevice(m_device);
 	pso->Initialize(desc);
 	return pso;
@@ -403,7 +400,7 @@ URef<PipelineState> VKDevice::CreatePipelineState(const PipelineDesc& desc)
 
 URef<ComputePipelineState> VKDevice::CreateComputePipelineState(const ComputePipelineDesc& desc)
 {
-	auto pso = std::make_unique<VKComputePipeline>();
+	URef<VKComputePipeline> pso = std::make_unique<VKComputePipeline>();
 	pso->InitializeWithDevice(m_device);
 	pso->Initialize(desc);
 	return pso;
@@ -411,7 +408,7 @@ URef<ComputePipelineState> VKDevice::CreateComputePipelineState(const ComputePip
 
 URef<Buffer> VKDevice::CreateBuffer(const BufferDesc& desc)
 {
-	auto buf = std::make_unique<VKBuffer>();
+	URef<VKBuffer> buf = std::make_unique<VKBuffer>();
 	buf->InitializeWithAllocator(m_allocator, m_device);
 	buf->CreateBuffer(desc);
 	return buf;
@@ -419,7 +416,7 @@ URef<Buffer> VKDevice::CreateBuffer(const BufferDesc& desc)
 
 URef<Texture> VKDevice::CreateTexture(const TextureDesc& desc)
 {
-	auto tex = std::make_unique<VKTexture>();
+	URef<VKTexture> tex = std::make_unique<VKTexture>();
 	tex->InitializeWithAllocator(m_allocator, m_device);
 	tex->Init(desc);
 	return tex;
@@ -427,7 +424,7 @@ URef<Texture> VKDevice::CreateTexture(const TextureDesc& desc)
 
 URef<Shader> VKDevice::CreateShader(const ShaderDesc& desc)
 {
-	auto shader = std::make_unique<VKShader>();
+	URef<VKShader> shader = std::make_unique<VKShader>();
 	shader->InitializeWithDevice(m_device);
 	shader->Initialize(desc);
 	return shader;

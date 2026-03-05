@@ -21,10 +21,6 @@ struct SwapChainDesc
 	u32 BufferCount = 2;
 	SwapChainFormat Format;
 	bool bUseVsync = false;
-	// D3D12: must point to the ID3D12CommandQueue* used for rendering.
-	// DXGI binds the swap chain to this queue permanently — presents only
-	// synchronise against it. Vulkan ignores this field (queue is per-present).
-	void* nativeCommandQueue = nullptr;
 };
 
 class SwapChain
@@ -61,7 +57,7 @@ public:
 	// from its present state to render-target and vice-versa.
 	// Both must be called within an open command list.
 	virtual void TransitionToRenderTarget(CommandList& cmd) = 0;
-	virtual void TransitionToPresent(CommandList& cmd)      = 0;
+	virtual void TransitionToPresent(CommandList& cmd)		= 0;
 
 	virtual ~SwapChain() = default;
 

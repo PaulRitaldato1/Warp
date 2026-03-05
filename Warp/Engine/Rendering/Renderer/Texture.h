@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
+#include <Rendering/Renderer/DescriptorHandle.h>
 
 enum class TextureType
 {
@@ -77,4 +78,12 @@ public:
 	virtual u32           GetDepth()     const = 0;
 	virtual u32           GetMipLevels() const = 0;
 	virtual TextureFormat GetFormat()    const = 0;
+
+	// Descriptor handles — only valid for the matching usage:
+	//   GetRTV() — RenderTarget usage
+	//   GetDSV() — DepthStencil usage
+	//   GetSRV() — Sampled or RenderTarget usage (G-buffer read-back)
+	virtual DescriptorHandle GetRTV() const = 0;
+	virtual DescriptorHandle GetSRV() const = 0;
+	virtual DescriptorHandle GetDSV() const = 0;
 };

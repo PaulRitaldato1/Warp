@@ -22,30 +22,29 @@ void D3D12Renderer::Init(IWindow* window)
 #if defined(WARP_DEBUG)
 	deviceDesc.bEnableDebugLayer = true;
 #endif
-	auto d3dDevice = std::make_unique<D3D12Device>();
+	URef<D3D12Device> d3dDevice = std::make_unique<D3D12Device>();
 	d3dDevice->Initialize(deviceDesc);
-	m_device = std::move(d3dDevice);
+	m_device			   = std::move(d3dDevice);
 	D3D12Device* rawDevice = static_cast<D3D12Device*>(m_device.get());
 
 	// -------------------------------------------------------------------------
 	// Command queues
 	// -------------------------------------------------------------------------
 	m_graphicsQueue = m_device->CreateCommandQueue(CommandQueueType::Graphics);
-	m_computeQueue  = m_device->CreateCommandQueue(CommandQueueType::Compute);
-	m_copyQueue     = m_device->CreateCommandQueue(CommandQueueType::Copy);
+	m_computeQueue	= m_device->CreateCommandQueue(CommandQueueType::Compute);
+	m_copyQueue		= m_device->CreateCommandQueue(CommandQueueType::Copy);
 
 	// -------------------------------------------------------------------------
 	// Swap chain
 	// -------------------------------------------------------------------------
 	SwapChainDesc scDesc;
-	scDesc.Window             = window;
-	scDesc.Width              = static_cast<u32>(window->GetWidth());
-	scDesc.Height             = static_cast<u32>(window->GetHeight());
-	scDesc.BufferCount        = k_backBufferCount;
-	scDesc.Format             = SwapChainFormat::BGRA8;
-	scDesc.bUseVsync          = false;
-	scDesc.nativeCommandQueue = static_cast<D3D12CommandQueue*>(m_graphicsQueue.get())->GetNative();
-	m_swapChain = m_device->CreateSwapChain(scDesc);
+	scDesc.Window	   = window;
+	scDesc.Width	   = static_cast<u32>(window->GetWidth());
+	scDesc.Height	   = static_cast<u32>(window->GetHeight());
+	scDesc.BufferCount = k_backBufferCount;
+	scDesc.Format	   = SwapChainFormat::BGRA8;
+	scDesc.bUseVsync   = false;
+	m_swapChain		   = m_device->CreateSwapChain(scDesc);
 
 	// -------------------------------------------------------------------------
 	// Depth buffer
@@ -55,12 +54,10 @@ void D3D12Renderer::Init(IWindow* window)
 	// -------------------------------------------------------------------------
 	// Command lists  (one graphics + one compute worker, one copy list)
 	// -------------------------------------------------------------------------
-	m_graphicsLists.push_back(
-		m_device->CreateCommandList(CommandQueueType::Graphics, k_framesInFlight));
-	m_computeLists.push_back(
-		m_device->CreateCommandList(CommandQueueType::Compute, k_framesInFlight));
-	m_copyList        = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
-	m_urgentCopyList  = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
+	m_graphicsLists.push_back(m_device->CreateCommandList(CommandQueueType::Graphics, k_framesInFlight));
+	m_computeLists.push_back(m_device->CreateCommandList(CommandQueueType::Compute, k_framesInFlight));
+	m_copyList		 = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
+	m_urgentCopyList = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
 
 	// -------------------------------------------------------------------------
 	// Upload buffer (GPU-visible ring buffer for per-frame constant data)
@@ -75,7 +72,7 @@ void D3D12Renderer::Init(IWindow* window)
 
 	// Wire the device + heap into every graphics command list so they can bind
 	// descriptors and create inline SRVs without knowing about D3D12Device.
-	for (auto& list : m_graphicsLists)
+	for (URef<CommandList>& list : m_graphicsLists)
 	{
 		D3D12CommandList* d3dList = static_cast<D3D12CommandList*>(list.get());
 		d3dList->SetDevice(rawDevice->GetNativeDevice());
@@ -101,31 +98,29 @@ void D3D12Renderer::CreateDepthBuffer(u32 width, u32 height)
 
 	// Create the depth texture via the abstract device.
 	TextureDesc depthDesc;
-	depthDesc.type   = TextureType::Texture2D;
-	depthDesc.width  = width;
+	depthDesc.type	 = TextureType::Texture2D;
+	depthDesc.width	 = width;
 	depthDesc.height = height;
 	depthDesc.format = TextureFormat::Depth32F;
-	depthDesc.usage  = TextureUsage::DepthStencil;
-	m_depthTexture = m_device->CreateTexture(depthDesc);
+	depthDesc.usage	 = TextureUsage::DepthStencil;
+	m_depthTexture	 = m_device->CreateTexture(depthDesc);
 
 	// Create a single-slot DSV descriptor heap.
 	D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-	heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-	heapDesc.NumDescriptors = 1;
-	heapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-	ThrowIfFailed(d3dDevice->GetNativeDevice()->CreateDescriptorHeap(
-		&heapDesc, IID_PPV_ARGS(&m_dsvHeap)));
+	heapDesc.Type						= D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+	heapDesc.NumDescriptors				= 1;
+	heapDesc.Flags						= D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	ThrowIfFailed(d3dDevice->GetNativeDevice()->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_dsvHeap)));
 
 	// Create the DSV — D32_FLOAT view into the Depth32F texture.
 	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
-	dsvDesc.Format        = DXGI_FORMAT_D32_FLOAT;
-	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-	dsvDesc.Flags         = D3D12_DSV_FLAG_NONE;
+	dsvDesc.Format						  = DXGI_FORMAT_D32_FLOAT;
+	dsvDesc.ViewDimension				  = D3D12_DSV_DIMENSION_TEXTURE2D;
+	dsvDesc.Flags						  = D3D12_DSV_FLAG_NONE;
 
 	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
 	d3dDevice->GetNativeDevice()->CreateDepthStencilView(
-		static_cast<D3D12Texture*>(m_depthTexture.get())->GetNativeResource(),
-		&dsvDesc, dsvHandle);
+		static_cast<D3D12Texture*>(m_depthTexture.get())->GetNativeResource(), &dsvDesc, dsvHandle);
 
 	m_depthHandle = DescriptorHandle{ static_cast<u64>(dsvHandle.ptr) };
 }
@@ -133,9 +128,12 @@ void D3D12Renderer::CreateDepthBuffer(u32 width, u32 height)
 void D3D12Renderer::Shutdown()
 {
 	// Drain all queues before releasing GPU resources.
-	if (m_graphicsQueue) m_graphicsQueue->Reset();
-	if (m_computeQueue)  m_computeQueue->Reset();
-	if (m_copyQueue)     m_copyQueue->Reset();
+	if (m_graphicsQueue)
+		m_graphicsQueue->Reset();
+	if (m_computeQueue)
+		m_computeQueue->Reset();
+	if (m_copyQueue)
+		m_copyQueue->Reset();
 
 	m_testTriPSO.reset();
 	m_testTriVS.reset();
@@ -145,7 +143,8 @@ void D3D12Renderer::Shutdown()
 	m_depthTexture.reset();
 	m_depthHandle = {};
 
-	if (m_swapChain) m_swapChain->Cleanup();
+	if (m_swapChain)
+		m_swapChain->Cleanup();
 
 	LOG_DEBUG("D3D12Renderer shut down");
 }
@@ -156,9 +155,12 @@ void D3D12Renderer::OnResize(u32 width, u32 height)
 		return;
 
 	// Drain queues so no GPU work references the old resources.
-	if (m_graphicsQueue) m_graphicsQueue->Reset();
-	if (m_computeQueue)  m_computeQueue->Reset();
-	if (m_copyQueue)     m_copyQueue->Reset();
+	if (m_graphicsQueue)
+		m_graphicsQueue->Reset();
+	if (m_computeQueue)
+		m_computeQueue->Reset();
+	if (m_copyQueue)
+		m_copyQueue->Reset();
 
 	// Resize the swap chain back buffers.
 	m_swapChain->Resize(width, height);

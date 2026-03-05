@@ -11,12 +11,14 @@ if(MSVC)
         /Zc:preprocessor
         /MP
         /W4
+        /wd4100  # unreferenced formal parameter — suppress until engine is complete
     )
     message("Adding MSVC /MP and /W4")
 else()
     add_definitions(
         -Wall
         -msse2
+        -Wno-unused-parameter  # suppress until engine is complete
     )
     message("Adding Unix -c, -Wall, -msse2")
 endif()

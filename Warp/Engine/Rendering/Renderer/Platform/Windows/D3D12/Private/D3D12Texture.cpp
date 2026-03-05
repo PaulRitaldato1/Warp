@@ -71,6 +71,68 @@ void D3D12Texture::InitializeWithDevice(ID3D12Device* device, const TextureDesc&
 
 	m_currentState = initState;
 
+	// ---- Descriptor creation ----
+
+	// RTV — RenderTarget textures
+	if (desc.usage == TextureUsage::RenderTarget)
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+		heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+		heapDesc.NumDescriptors = 1;
+		heapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_rtvHeap)));
+
+		D3D12_CPU_DESCRIPTOR_HANDLE handle = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+		device->CreateRenderTargetView(m_resource.Get(), nullptr, handle);
+		m_rtvHandle = { static_cast<u64>(handle.ptr), desc.width, desc.height };
+	}
+
+	// DSV — DepthStencil textures
+	if (desc.usage == TextureUsage::DepthStencil)
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+		heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+		heapDesc.NumDescriptors = 1;
+		heapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_dsvHeap)));
+
+		D3D12_CPU_DESCRIPTOR_HANDLE handle = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
+		device->CreateDepthStencilView(m_resource.Get(), nullptr, handle);
+		m_dsvHandle = { static_cast<u64>(handle.ptr), desc.width, desc.height };
+	}
+
+	// SRV — Sampled textures, and RenderTarget textures (G-buffer read-back in lighting pass).
+	// CPU-only staging heap; copy into the frame's shader-visible heap when binding to a root signature.
+	if (desc.usage == TextureUsage::Sampled || desc.usage == TextureUsage::RenderTarget)
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+		heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		heapDesc.NumDescriptors = 1;
+		heapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_NONE; // CPU-only staging
+		ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_srvHeap)));
+
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format                    = resourceDesc.Format;
+		srvDesc.Shader4ComponentMapping   = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+		if (desc.type == TextureType::CubeMap)
+		{
+			srvDesc.ViewDimension               = D3D12_SRV_DIMENSION_TEXTURECUBE;
+			srvDesc.TextureCube.MipLevels       = desc.mipLevels;
+			srvDesc.TextureCube.MostDetailedMip = 0;
+		}
+		else
+		{
+			srvDesc.ViewDimension             = D3D12_SRV_DIMENSION_TEXTURE2D;
+			srvDesc.Texture2D.MipLevels       = desc.mipLevels;
+			srvDesc.Texture2D.MostDetailedMip = 0;
+		}
+
+		D3D12_CPU_DESCRIPTOR_HANDLE handle = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
+		device->CreateShaderResourceView(m_resource.Get(), &srvDesc, handle);
+		m_srvHandle = { static_cast<u64>(handle.ptr), desc.width, desc.height };
+	}
+
 	LOG_DEBUG("D3D12Texture created: {}x{}, mips={}", desc.width, desc.height, desc.mipLevels);
 }
 
@@ -81,6 +143,9 @@ void D3D12Texture::Init(const TextureDesc& /*desc*/)
 
 void D3D12Texture::Cleanup()
 {
+	m_rtvHeap.Reset();
+	m_dsvHeap.Reset();
+	m_srvHeap.Reset();
 	m_resource.Reset();
 }
 

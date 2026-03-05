@@ -187,16 +187,40 @@ void D3D12CommandList::SetShaderResource(u32 rootIndex, Texture* texture)
 	DYNAMIC_ASSERT(m_srvHeap, "D3D12CommandList::SetShaderResource: no SRV heap — call SetSRVHeap() before recording");
 	DYNAMIC_ASSERT(m_device,  "D3D12CommandList::SetShaderResource: no device — call SetDevice() before recording");
 
-	D3D12Texture* d3dTex = static_cast<D3D12Texture*>(texture);
+	DescriptorHandle srcHandle = texture->GetSRV();
+	FATAL_ASSERT(srcHandle.IsValid(),
+	    "D3D12CommandList::SetShaderResource: texture has no SRV — use TextureUsage::Sampled or RenderTarget");
 
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Format                  = ToD3D12Format(d3dTex->GetFormat());
-	srvDesc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.Texture2D.MipLevels     = d3dTex->GetMipLevels();
-
+	D3D12_CPU_DESCRIPTOR_HANDLE src = { static_cast<SIZE_T>(srcHandle.ptr) };
 	D3D12DescriptorHeap::Allocation alloc = m_srvHeap->Alloc(1);
-	m_device->CreateShaderResourceView(d3dTex->GetNativeResource(), &srvDesc, alloc.cpu);
+	m_device->CopyDescriptorsSimple(1, alloc.cpu, src, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	m_list->SetGraphicsRootDescriptorTable(rootIndex, alloc.gpu);
+}
+
+void D3D12CommandList::SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures)
+{
+	DYNAMIC_ASSERT(!textures.empty(), "D3D12CommandList::SetShaderResources: textures is empty");
+	DYNAMIC_ASSERT(m_srvHeap, "D3D12CommandList::SetShaderResources: no SRV heap — call SetSRVHeap() before recording");
+	DYNAMIC_ASSERT(m_device,  "D3D12CommandList::SetShaderResources: no device — call SetDevice() before recording");
+
+	const u32 count = static_cast<u32>(textures.size());
+	D3D12DescriptorHeap::Allocation alloc = m_srvHeap->Alloc(count);
+	const u32 stride = m_srvHeap->GetDescriptorSize();
+
+	for (u32 i = 0; i < count; ++i)
+	{
+		FATAL_ASSERT(textures[i] != nullptr,
+		    "D3D12CommandList::SetShaderResources: null texture in list — cannot leave descriptor slot corrupt");
+
+		DescriptorHandle srcHandle = textures[i]->GetSRV();
+		FATAL_ASSERT(srcHandle.IsValid(),
+		    "D3D12CommandList::SetShaderResources: texture has no SRV — use TextureUsage::Sampled or RenderTarget");
+
+		D3D12_CPU_DESCRIPTOR_HANDLE dst = { alloc.cpu.ptr + static_cast<SIZE_T>(i) * stride };
+		D3D12_CPU_DESCRIPTOR_HANDLE src = { static_cast<SIZE_T>(srcHandle.ptr) };
+		m_device->CopyDescriptorsSimple(1, dst, src, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	}
+
 	m_list->SetGraphicsRootDescriptorTable(rootIndex, alloc.gpu);
 }
 
