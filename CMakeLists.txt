@@ -61,6 +61,7 @@ FetchContent_Declare(
     tinyddsloader
     GIT_REPOSITORY https://github.com/benikabocha/tinyddsloader.git
     GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  "_none"  # prevents MakeAvailable from processing its CMakeLists
 )
 
 FetchContent_Declare(
@@ -70,7 +71,7 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(DirectXMath fastgltf VulkanMemoryAllocator)
+FetchContent_MakeAvailable(DirectXMath fastgltf VulkanMemoryAllocator tinyddsloader)
 
 # DirectXMath includes sal.h which is a Windows-only SAL annotation header.
 # Provide a no-op stub for non-Windows builds. configure_file runs on every
@@ -82,9 +83,6 @@ if(NOT WIN32)
         COPYONLY
     )
 endif()
-
-# tinyddsloader is a single header — skip its outdated CMakeLists entirely
-FetchContent_Populate(tinyddsloader)
 
 #Engine headers
 file(GLOB_RECURSE ENGINE_HDRS CONFIGURE_DEPENDS
