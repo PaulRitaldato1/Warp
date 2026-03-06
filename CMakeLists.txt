@@ -177,23 +177,16 @@ target_link_libraries(WarpEngine PRIVATE GPUOpen::VulkanMemoryAllocator)
 get_target_property(VMA_INCLUDE_DIRS GPUOpen::VulkanMemoryAllocator INTERFACE_INCLUDE_DIRECTORIES)
 target_include_directories(WarpEngine SYSTEM PRIVATE ${VMA_INCLUDE_DIRS})
 
-if(WIN32)
-    string(REPLACE "/" "\\" source_path_windows "${Warp_SOURCE_DIR}/Resources")
-    string(REPLACE "/" "\\" build_path_windows "${Warp_BINARY_DIR}/Resources")
-    execute_process(COMMAND cmd.exe /c mklink /J "${build_path_windows}" "${source_path_windows}" RESULT_VARIABLE exitcode)
-else()
-    execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink ${WARP_SOURCE_DIR}/Resources ${WARP_BINARY_DIR}/Resources RESULT_VARIABLE exitcode)
+file(CREATE_LINK
+    "${Warp_SOURCE_DIR}/Resources"
+    "${Warp_BINARY_DIR}/Resources"
+    RESULT symlink_result
+    SYMBOLIC
+    COPY_ON_ERROR
+)
+if(NOT symlink_result EQUAL 0)
+    message(WARNING "Resources link/copy failed: ${symlink_result}")
 endif()
-
-if(NOT ${exitcode} EQUAL 0)
-    MESSAGE("SYMLINKING FAILED:  ${exitcode}")
-    MESSAGE("FALLING BACK TO COPYING")
-endif()
-
-file(GLOB_RECURSE RES RELATIVE ${WARP_SOURCE_DIR}/Resources ${WARP_SOURCE_DIR}/Resources/*.*)
-foreach(file IN LISTS RES)
-    configure_file(${WARP_SOURCE_DIR}/Resources/${file} ${WARP_BINARY_DIR}/Resources/${file} COPYONLY)
-endforeach(file IN LISTS RES)
 
 if(MSVC_IDE)
     #create virtual folders for VS because they still do this for some reason
