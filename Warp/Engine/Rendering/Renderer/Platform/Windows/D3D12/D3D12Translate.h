@@ -41,6 +41,47 @@ inline DXGI_FORMAT ToD3D12Format(TextureFormat fmt)
 }
 
 // ---------------------------------------------------------------------------
+// TextureFormat helpers — bytes per pixel (uncompressed) and BC block size
+// ---------------------------------------------------------------------------
+
+inline u32 BytesPerPixelForFormat(TextureFormat fmt)
+{
+	switch (fmt)
+	{
+		case TextureFormat::RGBA8:
+		case TextureFormat::RGBA8_SRGB:
+		case TextureFormat::BGRA8:       return 4;
+		case TextureFormat::RG8:         return 2;
+		case TextureFormat::R8:          return 1;
+		case TextureFormat::RGBA16F:     return 8;
+		case TextureFormat::RGBA32F:     return 16;
+		case TextureFormat::RGB32F:      return 12;
+		case TextureFormat::RG32F:       return 8;
+		case TextureFormat::R32F:        return 4;
+		default:                         return 0; // BC / depth — not applicable
+	}
+}
+
+// Returns the byte size of one 4x4 block for BC formats, 0 for non-BC.
+inline u32 BCBlockSizeForFormat(TextureFormat fmt)
+{
+	switch (fmt)
+	{
+		case TextureFormat::BC1:
+		case TextureFormat::BC4: return 8;
+		case TextureFormat::BC3:
+		case TextureFormat::BC5:
+		case TextureFormat::BC7: return 16;
+		default:                 return 0;
+	}
+}
+
+inline bool IsBlockCompressed(TextureFormat fmt)
+{
+	return BCBlockSizeForFormat(fmt) > 0;
+}
+
+// ---------------------------------------------------------------------------
 // ResourceState → D3D12_RESOURCE_STATES
 // ---------------------------------------------------------------------------
 

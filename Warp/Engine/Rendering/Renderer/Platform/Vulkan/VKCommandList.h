@@ -75,6 +75,8 @@ public:
 
 	void CopyBuffer(Buffer* src, Buffer* dst,
 	                u64 srcOffset, u64 dstOffset, u64 size) override;
+	void CopyBufferToTexture(Buffer* src, u64 srcOffset,
+	                         Texture* dst, u32 mipLevel, u32 arraySlice) override;
 
 	// ---------------------------------------------------------------------------
 	// Resource transitions

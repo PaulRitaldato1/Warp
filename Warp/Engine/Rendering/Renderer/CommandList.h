@@ -95,6 +95,12 @@ public:
 	virtual void CopyBuffer(Buffer* src, Buffer* dst,
 	                         u64 srcOffset, u64 dstOffset, u64 size) = 0;
 
+	// Copies data from a staging buffer into a specific mip level of a texture.
+	// The texture must be in CopyDest state. The caller is responsible for
+	// transitions before and after.
+	virtual void CopyBufferToTexture(Buffer* src, u64 srcOffset,
+	                                 Texture* dst, u32 mipLevel, u32 arraySlice) = 0;
+
 	// ---------------------------------------------------------------------------
 	// Draw / dispatch
 	// ---------------------------------------------------------------------------

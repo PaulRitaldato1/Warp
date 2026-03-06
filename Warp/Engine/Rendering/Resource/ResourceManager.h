@@ -4,6 +4,7 @@
 #include <Rendering/Resource/MeshResource.h>
 #include <Rendering/Resource/TextureResource.h>
 #include <Rendering/Renderer/Buffer.h>
+#include <Rendering/Renderer/TextureUpload.h>
 
 #include <future>
 
@@ -27,6 +28,10 @@ public:
 	// Drains completed staging uploads for the Renderer to queue.
 	// Renderer calls this in BeginFrame and passes each to QueueStagingUpload().
 	Vector<PendingStagingUpload> DrainStagingUploads();
+
+	// Drains completed texture uploads for the Renderer to queue.
+	// Renderer calls this in BeginFrame and passes each to QueueTextureUpload().
+	Vector<PendingTextureUpload> DrainTextureUploads();
 
 	// Returns a MeshResource if ready, nullptr if still loading/uploading.
 	// Automatically kicks off loading on first request.

@@ -7,7 +7,6 @@
 #include <Rendering/Renderer/Platform/Vulkan/VKTranslate.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
-#include <cstring>
 
 VKCommandList::~VKCommandList()
 {
@@ -324,6 +323,38 @@ void VKCommandList::CopyBuffer(Buffer* src, Buffer* dst,
 	region.size      = size;
 
 	vkCmdCopyBuffer(m_cmdBuf, vkSrc->GetNativeBuffer(), vkDst->GetNativeBuffer(), 1, &region);
+}
+
+void VKCommandList::CopyBufferToTexture(Buffer* src, u64 srcOffset,
+                                         Texture* dst, u32 mipLevel, u32 arraySlice)
+{
+	DYNAMIC_ASSERT(src, "VKCommandList::CopyBufferToTexture: src is null");
+	DYNAMIC_ASSERT(dst, "VKCommandList::CopyBufferToTexture: dst is null");
+
+	VKBuffer*  vkSrc = static_cast<VKBuffer*>(src);
+	VKTexture* vkDst = static_cast<VKTexture*>(dst);
+
+	const u32 fullWidth  = vkDst->GetWidth();
+	const u32 fullHeight = vkDst->GetHeight();
+	const u32 mipWidth   = (fullWidth  >> mipLevel) > 0 ? (fullWidth  >> mipLevel) : 1;
+	const u32 mipHeight  = (fullHeight >> mipLevel) > 0 ? (fullHeight >> mipLevel) : 1;
+
+	VkBufferImageCopy region = {};
+	region.bufferOffset      = srcOffset;
+	region.bufferRowLength   = 0; // tightly packed
+	region.bufferImageHeight = 0; // tightly packed
+	region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+	region.imageSubresource.mipLevel       = mipLevel;
+	region.imageSubresource.baseArrayLayer = arraySlice;
+	region.imageSubresource.layerCount     = 1;
+	region.imageOffset = { 0, 0, 0 };
+	region.imageExtent = { mipWidth, mipHeight, 1 };
+
+	vkCmdCopyBufferToImage(m_cmdBuf,
+	                       vkSrc->GetNativeBuffer(),
+	                       vkDst->GetNativeImage(),
+	                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+	                       1, &region);
 }
 
 // ---------------------------------------------------------------------------

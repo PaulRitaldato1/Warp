@@ -4,6 +4,15 @@
 #include <Rendering/Renderer/Texture.h>
 
 // ---------------------------------------------------------------------------
+// TextureColorSpace — tells the loader / GPU what transfer function to use.
+// ---------------------------------------------------------------------------
+enum class TextureColorSpace : u8
+{
+	sRGB,   // base color, emissive — stored as RGBA8_SRGB
+	Linear  // normal, roughness, AO — stored as RGBA8
+};
+
+// ---------------------------------------------------------------------------
 // MipData — one mip level's worth of raw bytes and layout info.
 // For BC formats the data is already compressed — upload directly to the GPU.
 // ---------------------------------------------------------------------------

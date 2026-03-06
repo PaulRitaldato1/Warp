@@ -73,6 +73,7 @@ public:
 	{
 		m_resourceManager = manager;
 	}
+
 	ResourceManager* GetResourceManager() const
 	{
 		return m_resourceManager;
@@ -82,6 +83,7 @@ public:
 	{
 		return m_device.get();
 	}
+	
 	ThreadPool* GetThreadPool()
 	{
 		return m_workerPool.get();

@@ -11,12 +11,15 @@ public:
 	// Synchronous load of a DDS file from disk.
 	// Parses all mip levels, array slices, and cubemap faces.
 	// Returns nullptr on failure.
-	static URef<TextureData> Load(const String& path);
+	static URef<TextureData> Load(const String& path,
+	                             TextureColorSpace colorSpace = TextureColorSpace::sRGB);
 
 	// Submit a single load to a thread pool.
-	static std::future<URef<TextureData>> LoadAsync(const String& path, ThreadPool& pool);
+	static std::future<URef<TextureData>> LoadAsync(const String& path, ThreadPool& pool,
+	                                                TextureColorSpace colorSpace = TextureColorSpace::sRGB);
 
 	// Submit N loads to a thread pool in one call.
 	// Returns one future per path, in the same order as the input.
-	static Vector<std::future<URef<TextureData>>> LoadBatch(const Vector<String>& paths, ThreadPool& pool);
+	static Vector<std::future<URef<TextureData>>> LoadBatch(const Vector<String>& paths, ThreadPool& pool,
+	                                                        TextureColorSpace colorSpace = TextureColorSpace::sRGB);
 };

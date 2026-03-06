@@ -241,6 +241,59 @@ void D3D12CommandList::CopyBuffer(Buffer* src, Buffer* dst,
 	                         d3dSrc->GetNativeResource(), srcOffset, size);
 }
 
+void D3D12CommandList::CopyBufferToTexture(Buffer* src, u64 srcOffset,
+                                            Texture* dst, u32 mipLevel, u32 arraySlice)
+{
+	DYNAMIC_ASSERT(src, "D3D12CommandList::CopyBufferToTexture: src is null");
+	DYNAMIC_ASSERT(dst, "D3D12CommandList::CopyBufferToTexture: dst is null");
+
+	D3D12Buffer*  d3dSrc = static_cast<D3D12Buffer*>(src);
+	D3D12Texture* d3dDst = static_cast<D3D12Texture*>(dst);
+
+	const u32 fullWidth  = d3dDst->GetWidth();
+	const u32 fullHeight = d3dDst->GetHeight();
+	const u32 mipWidth   = (fullWidth  >> mipLevel) > 0 ? (fullWidth  >> mipLevel) : 1;
+	const u32 mipHeight  = (fullHeight >> mipLevel) > 0 ? (fullHeight >> mipLevel) : 1;
+
+	const TextureFormat format = d3dDst->GetFormat();
+
+	// Build the row pitch, aligned to D3D12_TEXTURE_DATA_PITCH_ALIGNMENT (256).
+	u32 rowPitch = 0;
+	if (IsBlockCompressed(format))
+	{
+		const u32 blockSize   = BCBlockSizeForFormat(format);
+		const u32 blocksWide  = (mipWidth + 3) / 4;
+		rowPitch = blocksWide * blockSize;
+	}
+	else
+	{
+		const u32 bpp = BytesPerPixelForFormat(format);
+		DYNAMIC_ASSERT(bpp > 0, "D3D12CommandList::CopyBufferToTexture: unsupported format for copy");
+		rowPitch = mipWidth * bpp;
+	}
+	rowPitch = (rowPitch + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1)
+	         & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
+
+	// Source location: placed footprint in the staging buffer.
+	D3D12_TEXTURE_COPY_LOCATION srcLoc = {};
+	srcLoc.pResource                          = d3dSrc->GetNativeResource();
+	srcLoc.Type                               = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+	srcLoc.PlacedFootprint.Offset             = srcOffset;
+	srcLoc.PlacedFootprint.Footprint.Format   = ToD3D12Format(format);
+	srcLoc.PlacedFootprint.Footprint.Width    = mipWidth;
+	srcLoc.PlacedFootprint.Footprint.Height   = mipHeight;
+	srcLoc.PlacedFootprint.Footprint.Depth    = 1;
+	srcLoc.PlacedFootprint.Footprint.RowPitch = rowPitch;
+
+	// Destination location: subresource index.
+	D3D12_TEXTURE_COPY_LOCATION dstLoc = {};
+	dstLoc.pResource        = d3dDst->GetNativeResource();
+	dstLoc.Type             = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+	dstLoc.SubresourceIndex = mipLevel + (arraySlice * d3dDst->GetMipLevels());
+
+	m_list->CopyTextureRegion(&dstLoc, 0, 0, 0, &srcLoc, nullptr);
+}
+
 // ---------------------------------------------------------------------------
 // Resource transitions
 // ---------------------------------------------------------------------------

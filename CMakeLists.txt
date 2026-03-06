@@ -65,13 +65,20 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  "_none"
+)
+
+FetchContent_Declare(
     VulkanMemoryAllocator
     GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
     GIT_TAG        v3.1.0
     GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(DirectXMath fastgltf VulkanMemoryAllocator tinyddsloader)
+FetchContent_MakeAvailable(DirectXMath fastgltf VulkanMemoryAllocator tinyddsloader stb)
 
 # DirectXMath includes sal.h which is a Windows-only SAL annotation header.
 # Provide a no-op stub for non-Windows builds. configure_file runs on every
@@ -149,6 +156,7 @@ target_link_libraries(WarpEngine PUBLIC  DirectXMath)
 target_link_libraries(WarpEngine PRIVATE fastgltf::fastgltf)
 target_include_directories(WarpEngine PUBLIC  ${directxmath_SOURCE_DIR}/Inc)
 target_include_directories(WarpEngine SYSTEM PRIVATE ${tinyddsloader_SOURCE_DIR})
+target_include_directories(WarpEngine SYSTEM PRIVATE ${stb_SOURCE_DIR})
 
 if(WIN32)
     find_package(Vulkan REQUIRED)
