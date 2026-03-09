@@ -14,7 +14,7 @@ void ResourceManager::Initialize(Device* device, ThreadPool* threadPool)
 	FATAL_ASSERT(device, "ResourceManager::Initialize: device is null");
 	FATAL_ASSERT(threadPool, "ResourceManager::Initialize: threadPool is null");
 
-	m_device     = device;
+	m_device	 = device;
 	m_threadPool = threadPool;
 
 	LOG_DEBUG("ResourceManager initialized");
@@ -59,7 +59,7 @@ void ResourceManager::ProcessPendingUploads()
 			if (mesh)
 			{
 				MeshResource& resource = *m_meshCache[path];
-				resource.mesh = std::move(mesh);
+				resource.mesh		   = std::move(mesh);
 				FinalizeMeshUpload(path, resource);
 				LOG_DEBUG("Mesh loaded and upload queued: {}", path);
 			}
@@ -70,6 +70,7 @@ void ResourceManager::ProcessPendingUploads()
 			completedMeshLoads.push_back(path);
 		}
 	}
+
 	for (const String& path : completedMeshLoads)
 	{
 		m_pendingMeshLoads.erase(path);
@@ -85,7 +86,7 @@ void ResourceManager::ProcessPendingUploads()
 			if (textureData)
 			{
 				TextureResource& resource = *m_textureCache[path];
-				resource.textureData = std::move(textureData);
+				resource.textureData	  = std::move(textureData);
 				FinalizeTextureUpload(path, resource);
 				LOG_DEBUG("Texture loaded and upload queued: {}", path);
 			}
@@ -96,6 +97,7 @@ void ResourceManager::ProcessPendingUploads()
 			completedTextureLoads.push_back(path);
 		}
 	}
+
 	for (const String& path : completedTextureLoads)
 	{
 		m_pendingTextureLoads.erase(path);
@@ -114,6 +116,7 @@ void ResourceManager::ProcessPendingUploads()
 			}
 		}
 	}
+
 	for (auto& [path, resource] : m_textureCache)
 	{
 		if (resource->state == AssetState::Uploading)
@@ -175,8 +178,8 @@ TextureResource* ResourceManager::GetTextureResource(const char* path)
 void ResourceManager::BeginMeshLoad(const String& path)
 {
 	URef<MeshResource> resource = std::make_unique<MeshResource>();
-	resource->state = AssetState::Loading;
-	m_meshCache[path] = std::move(resource);
+	resource->state				= AssetState::Loading;
+	m_meshCache[path]			= std::move(resource);
 
 	m_pendingMeshLoads[path] = MeshLoader::LoadAsync(path, *m_threadPool);
 }
@@ -184,8 +187,8 @@ void ResourceManager::BeginMeshLoad(const String& path)
 void ResourceManager::BeginTextureLoad(const String& path)
 {
 	URef<TextureResource> resource = std::make_unique<TextureResource>();
-	resource->state = AssetState::Loading;
-	m_textureCache[path] = std::move(resource);
+	resource->state				   = AssetState::Loading;
+	m_textureCache[path]		   = std::move(resource);
 
 	m_pendingTextureLoads[path] = TextureLoader::LoadAsync(path, *m_threadPool);
 }
@@ -196,39 +199,37 @@ void ResourceManager::FinalizeMeshUpload(const String& path, MeshResource& resou
 
 	// Create vertex buffer.
 	BufferDesc vertexDesc;
-	vertexDesc.type        = BufferType::Vertex;
+	vertexDesc.type		   = BufferType::Vertex;
 	vertexDesc.numElements = static_cast<u32>(mesh.vertices.size());
-	vertexDesc.stride      = static_cast<u32>(sizeof(Vertex));
-	vertexDesc.name        = path + "_VB";
+	vertexDesc.stride	   = static_cast<u32>(sizeof(Vertex));
+	vertexDesc.name		   = path + "_VB";
 	resource.vertexBuffer  = m_device->CreateBuffer(vertexDesc);
 
 	// Create index buffer.
 	BufferDesc indexDesc;
-	indexDesc.type        = BufferType::Index;
+	indexDesc.type		  = BufferType::Index;
 	indexDesc.numElements = static_cast<u32>(mesh.indices.size());
-	indexDesc.stride      = static_cast<u32>(sizeof(u32));
-	indexDesc.name        = path + "_IB";
+	indexDesc.stride	  = static_cast<u32>(sizeof(u32));
+	indexDesc.name		  = path + "_IB";
 	resource.indexBuffer  = m_device->CreateBuffer(indexDesc);
 
 	// Upload vertex data.
-	PendingStagingUpload vertexUpload = resource.vertexBuffer->UploadData(
-		mesh.vertices.data(),
-		mesh.vertices.size() * sizeof(Vertex));
+	PendingStagingUpload vertexUpload =
+		resource.vertexBuffer->UploadData(mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
 	if (vertexUpload.IsValid())
 	{
 		m_readyStagingUploads.push_back(std::move(vertexUpload));
 	}
 
 	// Upload index data.
-	PendingStagingUpload indexUpload = resource.indexBuffer->UploadData(
-		mesh.indices.data(),
-		mesh.indices.size() * sizeof(u32));
+	PendingStagingUpload indexUpload =
+		resource.indexBuffer->UploadData(mesh.indices.data(), mesh.indices.size() * sizeof(u32));
 	if (indexUpload.IsValid())
 	{
 		m_readyStagingUploads.push_back(std::move(indexUpload));
 	}
 
-	resource.state = AssetState::Uploading;
+	resource.state				= AssetState::Uploading;
 	resource.uploadFrameCounter = 0;
 }
 
@@ -238,21 +239,21 @@ void ResourceManager::FinalizeTextureUpload(const String& path, TextureResource&
 
 	// Create GPU texture.
 	TextureDesc textureDesc;
-	textureDesc.type        = texData.type;
-	textureDesc.width       = texData.width;
-	textureDesc.height      = texData.height;
-	textureDesc.depth       = texData.depth;
-	textureDesc.mipLevels   = texData.mipLevels;
+	textureDesc.type		= texData.type;
+	textureDesc.width		= texData.width;
+	textureDesc.height		= texData.height;
+	textureDesc.depth		= texData.depth;
+	textureDesc.mipLevels	= texData.mipLevels;
 	textureDesc.arrayLayers = texData.arraySize;
-	textureDesc.format      = texData.format;
-	textureDesc.usage       = TextureUsage::Sampled;
-	resource.gpuTexture     = m_device->CreateTexture(textureDesc);
+	textureDesc.format		= texData.format;
+	textureDesc.usage		= TextureUsage::Sampled;
+	resource.gpuTexture		= m_device->CreateTexture(textureDesc);
 
 	// TODO: Upload texture data mip-by-mip via staging buffers.
 	// Texture upload requires per-mip CopyTextureRegion / vkCmdCopyBufferToImage,
 	// which is more involved than buffer copies. Leaving as a stub for now —
 	// the mesh pipeline is the priority.
 
-	resource.state = AssetState::Uploading;
+	resource.state				= AssetState::Uploading;
 	resource.uploadFrameCounter = 0;
 }

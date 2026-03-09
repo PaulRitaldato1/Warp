@@ -1,29 +1,30 @@
 #include <EntryPoint/EntryPoint.h>
 #include <Common/CommonTypes.h>
 #include <Input/Input.h>
+#include <Core/ECS/Components/TransformComponent.h>
+#include <Core/ECS/Components/MeshComponent.h>
 
 struct TempGame : public UserApplicationBase
 {
 	bool Initialize()
 	{
+		World& world = engine->GetWorld();
+
+		Entity avocado = world.CreateEntity();
+		world.AddComponent<TransformComponent>(avocado);
+		world.AddComponent<MeshComponent>(avocado);
+		world.GetComponent<MeshComponent>(avocado).SetPath("Resources/Avacado/Avocado.gltf");
+
 		return true;
 	}
 
 	bool Update(f32 DeltaTime)
 	{
-		if (DeltaTime > 0)
-		{
-		}
-		// LOG_DEBUG("DeltaTime: " + std::to_string(DeltaTime));
 		return true;
 	}
 
 	void OnResize(f32 DeltaTime)
 	{
-		if (DeltaTime > 1.0f)
-		{
-			// LOG_DEBUG("Whatever");
-		}
 	}
 };
 

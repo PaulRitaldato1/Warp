@@ -80,7 +80,7 @@ Archetype* World::FindOrCreateArchetype(ComponentMask mask)
 
 	// Collect ComponentInfo for each set bit from the global registry.
 	Vector<ComponentInfo> infos;
-	const Vector<ComponentInfo>& registry = detail::ComponentRegistry();
+	const Vector<ComponentInfo>& registry = GetComponentRegistry();
 
 	for (u32 bitIndex = 0; bitIndex < 64; ++bitIndex)
 	{
@@ -106,7 +106,7 @@ void World::MoveEntity(Entity entity, Archetype* from, u32 fromRow, Archetype* t
 
 	// Copy shared components from old archetype to new one.
 	ComponentMask sharedMask = from->GetMask() & to->GetMask();
-	const Vector<ComponentInfo>& registry = detail::ComponentRegistry();
+	const Vector<ComponentInfo>& registry = GetComponentRegistry();
 
 	for (u32 bitIndex = 0; bitIndex < 64; ++bitIndex)
 	{

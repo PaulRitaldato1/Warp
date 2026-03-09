@@ -100,6 +100,11 @@ protected:
 	// Uses only abstract Device / Shader / PipelineState types — no platform casts.
 	void CreateTestTriangle();
 
+	// Creates the mesh PSO used to draw ECS entities with a MeshComponent.
+	// Vertex layout matches the Vertex struct in Mesh.h.
+	// Lazily called on the first frame that reaches the mesh draw path.
+	void CreateMeshPipeline();
+
 	// How many frames the CPU is allowed to run ahead of the GPU.
 	// Controls the number of command allocator slots, upload buffer slices,
 	// and FrameSyncPoints — NOT the swap chain back buffer count.
@@ -128,28 +133,11 @@ protected:
 	URef<Shader> m_testTriPS;
 	URef<PipelineState> m_testTriPSO;
 
-	// Shared HLSL source for the test triangle.
-	// SV_VertexID-driven — no vertex buffer needed.
-	// Both D3D12 and Vulkan backends compile this via their respective
-	// shader compiler (DXC / shaderc).
-	static constexpr const char* k_triVSSrc = R"hlsl(
-float4 VSMain(uint vid : SV_VertexID) : SV_Position
-{
-    float2 pos[3] = {
-        float2( 0.0,  0.5),
-        float2( 0.5, -0.5),
-        float2(-0.5, -0.5)
-    };
-    return float4(pos[vid], 0.0, 1.0);
-}
-)hlsl";
+	// Mesh pipeline — used to draw ECS entities with MeshComponent.
+	URef<Shader> m_meshVS;
+	URef<Shader> m_meshPS;
+	URef<PipelineState> m_meshPSO;
 
-	static constexpr const char* k_triPSSrc = R"hlsl(
-float4 PSMain() : SV_Target
-{
-    return float4(1.0, 0.5, 0.0, 1.0);
-}
-)hlsl";
 
 	World* m_world					   = nullptr; // non-owning — set by WarpEngine
 	ResourceManager* m_resourceManager = nullptr; // non-owning — set by WarpEngine

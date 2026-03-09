@@ -1,7 +1,6 @@
 #include <Debugging/Logging.h>
 #include <chrono>
 #include <cstdio>
-#include <cstring>
 
 // ---------------------------------------------------------------------------
 // Singleton
@@ -64,8 +63,8 @@ void Logger::Shutdown()
 	m_logFile.flush();
 	m_logFile.close();
 
-	m_fileEnabled  = false;
-	m_initialized  = false;
+	m_fileEnabled = false;
+	m_initialized = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,13 +73,12 @@ void Logger::Shutdown()
 
 void Logger::Log(LogLevel level, const char* file, int32 line, const String& message)
 {
-	const char* fileName  = StripPath(file);
-	String      timestamp = FormatTimestamp();
-	u8          levelIdx  = static_cast<u8>(level);
+	const char* fileName = StripPath(file);
+	String timestamp	 = FormatTimestamp();
+	u8 levelIdx			 = static_cast<u8>(level);
 
-	String formatted = std::format("[{}] [{}] [{}:{}] {}",
-	                               timestamp, k_levelStrings[levelIdx],
-	                               fileName, line, message);
+	String formatted =
+		std::format("[{}] [{}] [{}:{}] {}", timestamp, k_levelStrings[levelIdx], fileName, line, message);
 
 	if (m_consoleEnabled)
 	{
@@ -147,15 +145,14 @@ void Logger::FileWriterThread()
 String Logger::FormatTimestamp() const
 {
 	std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
-	std::time_t                           tt  = std::chrono::system_clock::to_time_t(now);
-	std::tm                               tm  = *std::localtime(&tt);
+	std::time_t tt							  = std::chrono::system_clock::to_time_t(now);
+	std::tm tm								  = *std::localtime(&tt);
 
-	std::chrono::milliseconds ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-	    now.time_since_epoch()) % 1000;
+	std::chrono::milliseconds ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
 	char buf[16];
-	std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03d",
-	              tm.tm_hour, tm.tm_min, tm.tm_sec, static_cast<int>(ms.count()));
+	std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03d", tm.tm_hour, tm.tm_min, tm.tm_sec,
+				  static_cast<int>(ms.count()));
 	return String(buf);
 }
 

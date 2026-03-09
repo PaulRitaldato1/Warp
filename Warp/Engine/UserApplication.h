@@ -9,7 +9,8 @@ extern bool HookEngineFromApp(UserApplicationBase** outDesc);
 
 struct WARP_API UserApplicationBase
 {
-    EngineDesc EngineInitDesc;
+    EngineDesc   EngineInitDesc;
+    WarpEngine*  engine = nullptr; // Set by WarpEngine before Initialize() is called.
 
     virtual ~UserApplicationBase() = default;
 

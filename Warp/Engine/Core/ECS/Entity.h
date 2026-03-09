@@ -5,13 +5,19 @@
 
 using ComponentMask = std::bitset<64>;
 
-struct Entity
+struct WARP_API Entity
 {
-	u32 id         = 0;
+	u32 id		   = 0;
 	u32 generation = 0;
 };
 
-inline bool operator==(Entity a, Entity b) { return a.id == b.id && a.generation == b.generation; }
-inline bool operator!=(Entity a, Entity b) { return !(a == b); }
+inline bool operator==(Entity a, Entity b)
+{
+	return a.id == b.id && a.generation == b.generation;
+}
+inline bool operator!=(Entity a, Entity b)
+{
+	return !(a == b);
+}
 
-static constexpr Entity k_nullEntity = {0, 0};
+static constexpr Entity k_nullEntity = { 0, 0 };

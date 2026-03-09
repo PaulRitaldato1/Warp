@@ -40,6 +40,7 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 	m_bIsFullScreen = false;
 	m_lastTime		= 0.0f;
 
+	m_app->engine = this;
 	FATAL_ASSERT(App->Initialize(), "Application failed to initialize");
 }
 

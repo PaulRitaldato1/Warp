@@ -80,7 +80,7 @@ void VKRenderer::Init(IWindow* window)
 	// Worker thread pool
 	// -------------------------------------------------------------------------
 
-	m_workerPool = std::make_unique<ThreadPool>(1);
+	m_workerPool = std::make_unique<ThreadPool>(8);
 
 	LOG_DEBUG("VKRenderer initialized");
 }

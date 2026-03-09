@@ -2,6 +2,7 @@
 
 #include <Common/CommonTypes.h>
 #include <Core/ECS/Entity.h>
+#include <typeindex>
 
 // Per-component-type metadata needed by Archetype for type-erased storage.
 // Since IsComponent enforces trivially copyable + trivially destructible,
@@ -13,45 +14,24 @@ struct ComponentInfo
 	size_t alignment;
 };
 
-namespace detail
-{
-	inline u32& ComponentCounter()
-	{
-		static u32 counter = 0;
-		return counter;
-	}
+// Exported from WarpEngine.dll — single instance across all modules.
+// Returns the global component registry used by all archetypes.
+WARP_API Vector<ComponentInfo>& GetComponentRegistry();
 
-	inline Vector<ComponentInfo>& ComponentRegistry()
-	{
-		static Vector<ComponentInfo> registry;
-		return registry;
-	}
-}
+// Registers a component type by std::type_index and returns its stable ID.
+// Idempotent: calling multiple times (from EXE and DLL) always returns the same ID.
+// This avoids the DLL-boundary static duplication problem with inline functions.
+WARP_API u32 RegisterOrGetComponentId(std::type_index typeIndex, size_t size, size_t alignment);
 
 // Registration happens automatically when ComponentID<T>::Get() is first called.
-// This ensures the registry is populated before any archetype needs it.
+// Uses RegisterOrGetComponentId so the ID is consistent across the DLL boundary.
 template <typename T>
 struct ComponentID
 {
 	static u32 Get()
 	{
-		static u32 id = []() {
-			u32 newId = detail::ComponentCounter()++;
-
-			ComponentInfo componentInfo;
-			componentInfo.id        = newId;
-			componentInfo.size      = sizeof(T);
-			componentInfo.alignment = alignof(T);
-
-			Vector<ComponentInfo>& registry = detail::ComponentRegistry();
-			if (registry.size() <= newId)
-			{
-				registry.resize(newId + 1);
-			}
-			registry[newId] = componentInfo;
-
-			return newId;
-		}();
+		static u32 id = RegisterOrGetComponentId(
+			std::type_index(typeid(T)), sizeof(T), alignof(T));
 		return id;
 	}
 };

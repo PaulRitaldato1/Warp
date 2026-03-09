@@ -3,7 +3,7 @@
 #include <Common/CommonTypes.h>
 #include <cstring>
 
-struct MeshComponent
+struct WARP_API MeshComponent
 {
 	char path[256] = {}; // Asset path, null-terminated, fixed-size
 

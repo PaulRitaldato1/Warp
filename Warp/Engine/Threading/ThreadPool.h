@@ -8,6 +8,7 @@
 #include <functional>
 #include <future>
 #include <atomic>
+#include <tuple>
 #include <type_traits>
 #include <typeinfo>
 
@@ -48,7 +49,13 @@ public:
 		//get return type of the function
 		using RetType = std::invoke_result_t<Func, Args...>;
 
-		auto task = std::make_shared<std::packaged_task<RetType()>>([&f, &args...]() { return f(std::forward<Args>(args)...); });
+		// Capture by value — args must be copied/moved into the lambda because
+		// enqueue returns before the worker thread executes the task.
+		auto task = std::make_shared<std::packaged_task<RetType()>>(
+			[f = std::forward<Func>(f),
+			 boundArgs = std::make_tuple(std::forward<Args>(args)...)]() mutable {
+				return std::apply(std::move(f), std::move(boundArgs));
+			});
 
 		{
 			std::scoped_lock<std::mutex> lock(m_jobMutex);

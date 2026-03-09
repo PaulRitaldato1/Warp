@@ -185,16 +185,19 @@ target_link_libraries(WarpEngine PRIVATE GPUOpen::VulkanMemoryAllocator)
 get_target_property(VMA_INCLUDE_DIRS GPUOpen::VulkanMemoryAllocator INTERFACE_INCLUDE_DIRECTORIES)
 target_include_directories(WarpEngine SYSTEM PRIVATE ${VMA_INCLUDE_DIRS})
 
-file(CREATE_LINK
-    "${Warp_SOURCE_DIR}/Resources"
-    "${Warp_BINARY_DIR}/Resources"
-    RESULT symlink_result
-    SYMBOLIC
-    COPY_ON_ERROR
+# Copy Resources and Shaders next to the executable after every build.
+# $<TARGET_FILE_DIR:Warp> resolves to the correct config subdirectory
+# (e.g. build/Debug/ or build/Release/) so the paths are always valid
+# regardless of build configuration or platform.
+add_custom_command(TARGET Warp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${Warp_SOURCE_DIR}/Resources"
+        "$<TARGET_FILE_DIR:Warp>/Resources"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${Warp_SOURCE_DIR}/Warp/Shaders"
+        "$<TARGET_FILE_DIR:Warp>/Shaders"
+    COMMENT "Copying Resources and Shaders to output directory"
 )
-if(NOT symlink_result EQUAL 0)
-    message(WARNING "Resources link/copy failed: ${symlink_result}")
-endif()
 
 if(MSVC_IDE)
     #create virtual folders for VS because they still do this for some reason

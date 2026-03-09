@@ -6,6 +6,9 @@
 #include <tinyddsloader.h>
 
 #define STB_IMAGE_IMPLEMENTATION
+#ifdef _WIN32
+#define STBI_NO_SIMD  // __cpuid macro in cpuid.h conflicts with stb_image's SIMD detection
+#endif
 #include <stb_image.h>
 
 #include <filesystem>
