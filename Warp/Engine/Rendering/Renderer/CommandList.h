@@ -78,12 +78,23 @@ public:
 	// NOTE: full bindless/descriptor-heap management is a future feature.
 	virtual void SetConstantBuffer(u32 rootIndex, Buffer* buffer)   = 0;
 
+	// Bind a constant buffer by raw GPU virtual address.
+	// Use this when sub-allocating from a ring buffer (UploadAllocation::gpuAddr).
+	// D3D12: SetGraphicsRootConstantBufferView.  Vulkan: no-op (use PushConstants).
+	virtual void SetConstantBufferView(u32 rootIndex, u64 gpuAddress) = 0;
+
+	// Upload small per-draw data via push constants (Vulkan) or root 32-bit constants (future).
+	// D3D12: no-op (use SetConstantBufferView).  Vulkan: vkCmdPushConstants at offset 0.
+	// size must be a multiple of 4 and fit within the pipeline's push constant range.
+	virtual void PushConstants(u32 size, const void* data) = 0;
+
 	// Bind a single texture as an SRV at rootIndex.
 	virtual void SetShaderResource(u32 rootIndex, Texture* texture) = 0;
 
 	// Bind a group of textures as a contiguous descriptor table at rootIndex.
 	// All descriptors are copied into consecutive slots in the frame's shader-visible
 	// heap so the GPU sees them as a single table (t0..tN in HLSL).
+	// Null entries are allowed — a null SRV is written for that slot, which returns 0 when sampled.
 	virtual void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures) = 0;
 
 	// ---------------------------------------------------------------------------
@@ -96,9 +107,9 @@ public:
 	                         u64 srcOffset, u64 dstOffset, u64 size) = 0;
 
 	// Copies data from a staging buffer into a specific mip level of a texture.
-	// The texture must be in CopyDest state. The caller is responsible for
-	// transitions before and after.
-	virtual void CopyBufferToTexture(Buffer* src, u64 srcOffset,
+	// srcRowPitch: bytes per row in the staging buffer (must be 256-byte aligned for D3D12).
+	// The texture must be in CopyDest state. The caller is responsible for transitions.
+	virtual void CopyBufferToTexture(Buffer* src, u64 srcOffset, u32 srcRowPitch,
 	                                 Texture* dst, u32 mipLevel, u32 arraySlice) = 0;
 
 	// ---------------------------------------------------------------------------

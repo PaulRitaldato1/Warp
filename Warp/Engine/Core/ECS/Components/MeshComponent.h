@@ -9,7 +9,8 @@ struct WARP_API MeshComponent
 
 	void SetPath(const char* assetPath)
 	{
-		std::strncpy(path, assetPath, sizeof(path) - 1);
-		path[sizeof(path) - 1] = '\0';
+		const size_t len = std::min(std::strlen(assetPath), sizeof(path) - 1);
+		std::memcpy(path, assetPath, len);
+		path[len] = '\0';
 	}
 };

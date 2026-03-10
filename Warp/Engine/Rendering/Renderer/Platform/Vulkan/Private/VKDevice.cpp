@@ -43,6 +43,11 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(VkDebugUtilsMessageSeverityF
 
 VKDevice::~VKDevice()
 {
+	if (m_defaultSampler != VK_NULL_HANDLE)
+	{
+		vkDestroySampler(m_device, m_defaultSampler, nullptr);
+		m_defaultSampler = VK_NULL_HANDLE;
+	}
 	if (m_allocator)
 	{
 		vmaDestroyAllocator(m_allocator);
@@ -156,6 +161,12 @@ void VKDevice::Initialize(const DeviceDesc& desc)
 	// -------------------------------------------------------------------------
 
 	CreateAllocator();
+
+	// -------------------------------------------------------------------------
+	// Default linear sampler (used by VKCommandList::SetShaderResources)
+	// -------------------------------------------------------------------------
+
+	CreateDefaultSampler();
 
 	LOG_DEBUG("VKDevice initialized");
 }
@@ -286,6 +297,7 @@ void VKDevice::CreateLogicalDevice(bool enableValidation)
 
 	std::vector<const char*> devExtensions = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
 	};
 
 	std::vector<const char*> devLayers;
@@ -309,6 +321,22 @@ void VKDevice::CreateLogicalDevice(bool enableValidation)
 	vkGetDeviceQueue(m_device, m_graphicsFamilyIndex, 0, &m_graphicsQueue);
 	vkGetDeviceQueue(m_device, m_computeFamilyIndex, 0, &m_computeQueue);
 	vkGetDeviceQueue(m_device, m_transferFamilyIndex, 0, &m_transferQueue);
+}
+
+void VKDevice::CreateDefaultSampler()
+{
+	VkSamplerCreateInfo info = {};
+	info.sType        = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	info.magFilter    = VK_FILTER_LINEAR;
+	info.minFilter    = VK_FILTER_LINEAR;
+	info.mipmapMode   = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	info.maxLod       = VK_LOD_CLAMP_NONE;
+
+	VK_CHECK(vkCreateSampler(m_device, &info, nullptr, &m_defaultSampler),
+			 "VKDevice: vkCreateSampler failed");
 }
 
 void VKDevice::CreateAllocator()
@@ -370,7 +398,7 @@ URef<CommandList> VKDevice::CreateCommandList(CommandQueueType type, u32 framesI
 	}
 
 	URef<VKCommandList> list = std::make_unique<VKCommandList>();
-	list->InitializeWithDevice(m_device, familyIndex, framesInFlight);
+	list->InitializeWithDevice(m_device, familyIndex, framesInFlight, m_defaultSampler);
 	return list;
 }
 

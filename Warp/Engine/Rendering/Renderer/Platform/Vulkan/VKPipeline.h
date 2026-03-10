@@ -22,13 +22,15 @@ public:
 	void  Cleanup()                            override;
 	void* GetNativeHandle()              const override { return (void*)m_pipeline; }
 
-	VkPipeline       GetNativePipeline() const { return m_pipeline; }
-	VkPipelineLayout GetNativeLayout()   const { return m_layout; }
+	VkPipeline            GetNativePipeline()     const { return m_pipeline; }
+	VkPipelineLayout      GetNativeLayout()        const { return m_layout; }
+	VkDescriptorSetLayout GetDescriptorSetLayout() const { return m_descriptorSetLayout; }
 
 private:
-	VkDevice         m_device   = VK_NULL_HANDLE;
-	VkPipeline       m_pipeline = VK_NULL_HANDLE;
-	VkPipelineLayout m_layout   = VK_NULL_HANDLE;
+	VkDevice              m_device              = VK_NULL_HANDLE;
+	VkPipeline            m_pipeline            = VK_NULL_HANDLE;
+	VkPipelineLayout      m_layout              = VK_NULL_HANDLE;
+	VkDescriptorSetLayout m_descriptorSetLayout = VK_NULL_HANDLE;
 };
 
 // ---------------------------------------------------------------------------

@@ -28,6 +28,9 @@ public:
 
 	void* GetNativeHandle() const override { return (void*)m_wndHnd; }
 
+	void CaptureMouse() override;
+	void ReleaseMouse() override;
+
 private:
 	HWND m_wndHnd;
 	HINSTANCE m_appInst;

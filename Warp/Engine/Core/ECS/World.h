@@ -15,6 +15,7 @@ public:
 
 	// Entity lifecycle
 	Entity CreateEntity();
+	Entity DuplicateEntity(Entity source);
 	void   DestroyEntity(Entity entity);
 	bool   IsAlive(Entity entity) const;
 

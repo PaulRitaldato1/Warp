@@ -5,9 +5,11 @@
 #include <Rendering/Texture/TextureData.h>
 #include <Rendering/Renderer/Device.h>
 #include <Rendering/Renderer/Texture.h>
+#include <Rendering/Renderer/UploadBuffer.h>
 #include <Threading/ThreadPool.h>
 #include <Debugging/Logging.h>
 #include <Debugging/Assert.h>
+#include <cstring>
 
 void ResourceManager::Initialize(Device* device, ThreadPool* threadPool)
 {
@@ -125,6 +127,7 @@ void ResourceManager::ProcessPendingUploads()
 			if (resource->uploadFrameCounter >= k_uploadWaitFrames)
 			{
 				resource->state = AssetState::Ready;
+				m_pendingTextureBarriers.push_back(resource->gpuTexture.get());
 				LOG_DEBUG("Texture ready: {}", path);
 			}
 		}
@@ -136,6 +139,20 @@ Vector<PendingStagingUpload> ResourceManager::DrainStagingUploads()
 	Vector<PendingStagingUpload> uploads = std::move(m_readyStagingUploads);
 	m_readyStagingUploads.clear();
 	return uploads;
+}
+
+Vector<PendingTextureUpload> ResourceManager::DrainTextureUploads()
+{
+	Vector<PendingTextureUpload> uploads = std::move(m_readyTextureUploads);
+	m_readyTextureUploads.clear();
+	return uploads;
+}
+
+Vector<Texture*> ResourceManager::DrainTextureBarriers()
+{
+	Vector<Texture*> barriers = std::move(m_pendingTextureBarriers);
+	m_pendingTextureBarriers.clear();
+	return barriers;
 }
 
 MeshResource* ResourceManager::GetMeshResource(const char* path)
@@ -173,6 +190,44 @@ TextureResource* ResourceManager::GetTextureResource(const char* path)
 
 	BeginTextureLoad(pathStr);
 	return nullptr;
+}
+
+void ResourceManager::GetMaterialTextures(const char* meshPath, const Mesh& mesh,
+                                           const Material& mat, Vector<Texture*>& outTextures)
+{
+	outTextures.assign(k_materialTextureSlots, nullptr);
+
+	// Derive the directory that relative texture paths are resolved against.
+	String dir(meshPath);
+	size_t lastSlash = dir.find_last_of("/\\");
+	if (lastSlash != String::npos)
+	{
+		dir = dir.substr(0, lastSlash + 1);
+	}
+	else
+	{
+		dir.clear();
+	}
+
+	auto trySlot = [&](int32 texIdx, u32 slot)
+	{
+		if (texIdx < 0 || texIdx >= static_cast<int32>(mesh.texturePaths.size()))
+		{
+			return;
+		}
+		String fullPath         = dir + mesh.texturePaths[texIdx];
+		TextureResource* res    = GetTextureResource(fullPath.c_str());
+		if (res)
+		{
+			outTextures[slot] = res->gpuTexture.get();
+		}
+	};
+
+	trySlot(mat.baseColorTexture,         0);
+	trySlot(mat.normalTexture,            1);
+	trySlot(mat.metallicRoughnessTexture, 2);
+	trySlot(mat.occlusionTexture,         3);
+	trySlot(mat.emissiveTexture,          4);
 }
 
 void ResourceManager::BeginMeshLoad(const String& path)
@@ -237,23 +292,85 @@ void ResourceManager::FinalizeTextureUpload(const String& path, TextureResource&
 {
 	const TextureData& texData = *resource.textureData;
 
-	// Create GPU texture.
+	// Create GPU texture in initial CopyDest state.
 	TextureDesc textureDesc;
-	textureDesc.type		= texData.type;
-	textureDesc.width		= texData.width;
-	textureDesc.height		= texData.height;
-	textureDesc.depth		= texData.depth;
-	textureDesc.mipLevels	= texData.mipLevels;
+	textureDesc.type        = texData.type;
+	textureDesc.width       = texData.width;
+	textureDesc.height      = texData.height;
+	textureDesc.depth       = texData.depth;
+	textureDesc.mipLevels   = texData.mipLevels;
 	textureDesc.arrayLayers = texData.arraySize;
-	textureDesc.format		= texData.format;
-	textureDesc.usage		= TextureUsage::Sampled;
-	resource.gpuTexture		= m_device->CreateTexture(textureDesc);
+	textureDesc.format      = texData.format;
+	textureDesc.usage       = TextureUsage::Sampled;
+	resource.gpuTexture     = m_device->CreateTexture(textureDesc);
 
-	// TODO: Upload texture data mip-by-mip via staging buffers.
-	// Texture upload requires per-mip CopyTextureRegion / vkCmdCopyBufferToImage,
-	// which is more involved than buffer copies. Leaving as a stub for now —
-	// the mesh pipeline is the priority.
+	// D3D12 alignment requirements for texture staging data.
+	static constexpr u32 k_rowPitchAlign   = 256; // D3D12_TEXTURE_DATA_PITCH_ALIGNMENT
+	static constexpr u64 k_placementAlign  = 512; // D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT
 
-	resource.state				= AssetState::Uploading;
+	// Compute total staging size: each mip's rows are padded to k_rowPitchAlign,
+	// and each mip's base offset is aligned to k_placementAlign.
+	u64 totalBytes = 0;
+	for (const MipData& mip : texData.mips)
+	{
+		const u32 srcRowPitch     = static_cast<u32>(mip.rowPitch);
+		const u32 alignedRowPitch = (srcRowPitch + k_rowPitchAlign - 1) & ~(k_rowPitchAlign - 1);
+		const u32 numRows         = (srcRowPitch > 0 && mip.slicePitch > 0)
+		                              ? static_cast<u32>(mip.slicePitch / mip.rowPitch)
+		                              : mip.height;
+		totalBytes = (totalBytes + k_placementAlign - 1) & ~(k_placementAlign - 1);
+		totalBytes += static_cast<u64>(alignedRowPitch) * numRows;
+	}
+
+	if (totalBytes == 0)
+	{
+		LOG_ERROR("ResourceManager: zero staging size for texture '{}'", path);
+		return;
+	}
+
+	// Allocate the one-shot staging buffer.
+	URef<UploadBuffer> stagingBuffer = m_device->CreateUploadBuffer(totalBytes, 1);
+
+	PendingTextureUpload textureUpload;
+	textureUpload.stagingUploadBuffer = std::move(stagingBuffer);
+	textureUpload.destination         = resource.gpuTexture.get();
+
+	for (u32 slice = 0; slice < texData.arraySize; ++slice)
+	{
+		for (u32 mipIdx = 0; mipIdx < texData.mipLevels; ++mipIdx)
+		{
+			const MipData& mip = texData.mips[slice * texData.mipLevels + mipIdx];
+
+			const u32 srcRowPitch     = static_cast<u32>(mip.rowPitch);
+			const u32 alignedRowPitch = (srcRowPitch + k_rowPitchAlign - 1) & ~(k_rowPitchAlign - 1);
+			const u32 numRows         = (srcRowPitch > 0 && mip.slicePitch > 0)
+			                              ? static_cast<u32>(mip.slicePitch / mip.rowPitch)
+			                              : mip.height;
+			const u64 mipStagingSize  = static_cast<u64>(alignedRowPitch) * numRows;
+
+			UploadAllocation alloc = textureUpload.stagingUploadBuffer->Alloc(mipStagingSize, k_placementAlign);
+
+			// Copy row-by-row, inserting padding between rows to meet alignment.
+			u8*       dst = static_cast<u8*>(alloc.cpuPtr);
+			const u8* src = mip.data;
+			for (u32 row = 0; row < numRows; ++row)
+			{
+				memcpy(dst, src, srcRowPitch);
+				dst += alignedRowPitch;
+				src += srcRowPitch;
+			}
+
+			TextureMipUpload mipUpload;
+			mipUpload.srcOffset   = alloc.offset;
+			mipUpload.srcRowPitch = alignedRowPitch;
+			mipUpload.mipLevel    = mipIdx;
+			mipUpload.arraySlice  = slice;
+			textureUpload.mips.push_back(mipUpload);
+		}
+	}
+
+	m_readyTextureUploads.push_back(std::move(textureUpload));
+
+	resource.state              = AssetState::Uploading;
 	resource.uploadFrameCounter = 0;
 }

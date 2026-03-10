@@ -3,6 +3,8 @@
 #include <Common/CommonTypes.h>
 #include <Memory/Arena.h>
 #include <Threading/ThreadPool.h>
+#include <Debugging/RenderDocCapture.h>
+
 #include <Rendering/Renderer/Buffer.h>
 #include <Rendering/Renderer/CommandList.h>
 #include <Rendering/Renderer/CommandQueue.h>
@@ -13,10 +15,12 @@
 #include <Rendering/Renderer/DescriptorHandle.h>
 #include <Rendering/Renderer/Shader.h>
 #include <Rendering/Renderer/Pipeline.h>
+#include <Rendering/Renderer/TextureUpload.h>
 
 class IWindow;
 class World;
 class ResourceManager;
+class RenderDocCapture;
 
 enum class RenderPath
 {
@@ -37,7 +41,7 @@ struct FrameSyncPoint
 class Renderer
 {
 public:
-	virtual ~Renderer() = default;
+	virtual ~Renderer();
 
 	// window is non-owning — WarpEngine retains ownership
 	// Platform-specific — implemented per API (D3D12, Vulkan, Metal)
@@ -74,6 +78,14 @@ public:
 		m_resourceManager = manager;
 	}
 
+	// Set the view-projection matrix to use for the current frame.
+	// Call this from user code (e.g. TestBed Update) after updating the camera.
+	// The matrix must be pre-transposed for HLSL column-major layout.
+	void SetViewProjectionMatrix(const Mat4& viewProj)
+	{
+		m_viewProj = viewProj;
+	}
+
 	ResourceManager* GetResourceManager() const
 	{
 		return m_resourceManager;
@@ -83,7 +95,7 @@ public:
 	{
 		return m_device.get();
 	}
-	
+
 	ThreadPool* GetThreadPool()
 	{
 		return m_workerPool.get();
@@ -138,6 +150,7 @@ protected:
 	URef<Shader> m_meshPS;
 	URef<PipelineState> m_meshPSO;
 
+	Mat4 m_viewProj = {};
 
 	World* m_world					   = nullptr; // non-owning — set by WarpEngine
 	ResourceManager* m_resourceManager = nullptr; // non-owning — set by WarpEngine
@@ -182,9 +195,23 @@ protected:
 	};
 	Vector<InFlightStaging> m_inFlightStagingBuffers;
 
+	// Texture uploads queued this frame — recorded onto m_copyList in EndFrame.
+	Vector<PendingTextureUpload> m_deferredTextureUploads;
+
+	// Texture staging buffers in-flight on the GPU copy queue.
+	// Freed once the copy queue fence value is reached.
+	struct InFlightTextureUpload
+	{
+		URef<UploadBuffer> stagingBuffer;
+		u64 fenceValue;
+	};
+	Vector<InFlightTextureUpload> m_inFlightTextureUploads;
+
 	// Cross-queue wait flags — set by QueueCopyForThisFrame, consumed by EndFrame.
 	bool m_graphicsWaitOnCopy = false;
 	bool m_computeWaitOnCopy  = false;
+
+	URef<RenderDocCapture> m_renderDoc = std::make_unique<RenderDocCapture>();
 
 public:
 	// Queue a staging upload for the Renderer to process.
@@ -195,4 +222,8 @@ public:
 	// Inserts a cross-queue GPU wait on the specified queue so it won't
 	// execute until the copy completes.
 	void QueueCopyForThisFrame(PendingStagingUpload& upload, CommandQueueType queueType);
+
+	// Queue a texture upload for this frame's copy list.
+	// All mips are recorded onto m_copyList in EndFrame.
+	void QueueTextureUpload(PendingTextureUpload& upload);
 };

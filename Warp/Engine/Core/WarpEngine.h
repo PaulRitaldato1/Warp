@@ -4,11 +4,12 @@
 #include <Core/GameTimer.h>
 #include <Core/ECS/World.h>
 #include <Input/Input.h>
-#include <Rendering/RenderBackend.h>
-#include <Rendering/Resource/ResourceManager.h>
 
 class IWindow;
 class Renderer;
+class Camera;
+class RenderBackend;
+class ResourceManager;
 struct UserApplicationBase;
 
 struct EngineDesc
@@ -41,14 +42,25 @@ private:
 	f64 m_lastTime;
 	GameTimer m_timer;
 
-	URef<RenderBackend>     m_backend;
-	URef<IWindow>           m_window;
-	URef<Renderer>          m_renderer;
-	URef<World>             m_world;
-	URef<ResourceManager>   m_resourceManager;
+	URef<RenderBackend> m_backend;
+	URef<IWindow> m_window;
+	URef<Renderer> m_renderer;
+	URef<World> m_world;
+	URef<ResourceManager> m_resourceManager;
 
 	URef<UserApplicationBase> m_app;
 
+	Camera* m_activeCamera = nullptr; // non-owning
+
 public:
-	World& GetWorld() { return *m_world; }
+	World& GetWorld()
+	{
+		return *m_world;
+	}
+
+	// Set the active camera. The engine calls Update() and reads GetViewProjectionMatrix()
+	// each frame automatically — user code only needs to call this once.
+	// Hides and confines the cursor for first-person look.
+	void SetActiveCamera(Camera* camera);
+	void ClearActiveCamera();
 };

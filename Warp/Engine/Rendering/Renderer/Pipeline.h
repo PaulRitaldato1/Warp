@@ -99,6 +99,15 @@ struct PipelineDesc
 
 	BlendState     blend;
 	RasterizerState rasterState;
+
+	// Size in bytes of push-constant data for this pipeline (Vulkan).
+	// Derived from sizeof(your per-draw struct). 0 = no push constants.
+	// Must not exceed the device minimum guarantee (128 bytes).
+	u32 pushConstantSize = 0;
+
+	// Number of combined-image-sampler texture slots this pipeline binds (Vulkan).
+	// Used to build a push-descriptor descriptor set layout. 0 = no textures.
+	u32 textureSlotCount = 0;
 };
 
 // ---------------------------------------------------------------------------

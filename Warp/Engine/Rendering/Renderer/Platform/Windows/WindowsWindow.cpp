@@ -138,8 +138,29 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		case WM_RBUTTONUP:
 			g_InputEventManager.BroadcastMouseButton(MouseCode::BUTTON_RIGHT, false);
 			return 0;
+		case WM_INPUT:
+		{
+			// Read raw mouse data and broadcast relative (dx, dy) deltas.
+			// This avoids the WM_MOUSEMOVE limitation where deltas go to zero
+			// when the cursor hits the window edge.
+			BYTE buffer[sizeof(RAWINPUT)];
+			UINT size = sizeof(buffer);
+			if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT,
+			                    buffer, &size, sizeof(RAWINPUTHEADER)) != static_cast<UINT>(-1))
+			{
+				const RAWINPUT* raw = reinterpret_cast<const RAWINPUT*>(buffer);
+				if (raw->header.dwType == RIM_TYPEMOUSE &&
+				    !(raw->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE))
+				{
+					g_InputEventManager.BroadcastMouseMove(
+					    static_cast<int32>(raw->data.mouse.lLastX),
+					    static_cast<int32>(raw->data.mouse.lLastY));
+				}
+			}
+			return 0;
+		}
 		case WM_MOUSEMOVE:
-			g_InputEventManager.BroadcastMouseMove(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+			// Absolute position is handled by WM_INPUT above; nothing to do here.
 			return 0;
 		case WM_KEYDOWN:
 			g_InputEventManager.BroadcastKey(static_cast<WarpKeyCode>(wParam), true);
@@ -197,6 +218,15 @@ bool WindowsWindow::Create(String AppName, int width, int height)
 	ShowWindow(m_wndHnd, SW_SHOW);
 	UpdateWindow(m_wndHnd);
 
+	// Register for raw mouse input so mouse-move events deliver relative deltas
+	// regardless of cursor position — prevents yaw from stopping at window edges.
+	RAWINPUTDEVICE rid = {};
+	rid.usUsagePage = 0x01; // HID_USAGE_PAGE_GENERIC
+	rid.usUsage     = 0x02; // HID_USAGE_GENERIC_MOUSE
+	rid.dwFlags     = 0;
+	rid.hwndTarget  = m_wndHnd;
+	RegisterRawInputDevices(&rid, 1, sizeof(rid));
+
 	return true;
 }
 
@@ -225,6 +255,22 @@ bool WindowsWindow::PumpMessages()
 	}
 
 	return true;
+}
+
+void WindowsWindow::CaptureMouse()
+{
+	ShowCursor(FALSE);
+
+	RECT rect;
+	GetClientRect(m_wndHnd, &rect);
+	MapWindowPoints(m_wndHnd, nullptr, reinterpret_cast<POINT*>(&rect), 2);
+	ClipCursor(&rect);
+}
+
+void WindowsWindow::ReleaseMouse()
+{
+	ShowCursor(TRUE);
+	ClipCursor(nullptr);
 }
 
 #endif

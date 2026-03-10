@@ -42,12 +42,14 @@ public:
 	                       f32 depth = 1.f, u8 stencil = 0)            override;
 
 	void SetConstantBuffer(u32 rootIndex, Buffer* buffer)                          override;
+	void SetConstantBufferView(u32 rootIndex, u64 gpuAddress)                      override;
+	void PushConstants(u32 size, const void* data)                                 override {}
 	void SetShaderResource(u32 rootIndex, Texture* texture)                        override;
 	void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures)       override;
 
 	void CopyBuffer(Buffer* src, Buffer* dst,
 	                u64 srcOffset, u64 dstOffset, u64 size) override;
-	void CopyBufferToTexture(Buffer* src, u64 srcOffset,
+	void CopyBufferToTexture(Buffer* src, u64 srcOffset, u32 srcRowPitch,
 	                         Texture* dst, u32 mipLevel, u32 arraySlice) override;
 
 	void TransitionTexture(Texture* texture, ResourceState newState) override;

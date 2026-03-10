@@ -31,17 +31,16 @@ UploadAllocation D3D12UploadBuffer::Alloc(u64 size, u64 alignment)
 {
 	DYNAMIC_ASSERT(m_mappedPtr, "D3D12UploadBuffer::Alloc: buffer not initialized");
 
+	// The ring buffer inserts alignment padding internally so offset is already
+	// aligned on return — no post-hoc rounding needed here.
 	u32 offset = 0;
-	const bool ok = m_ringBuffer.Alloc(static_cast<u32>(size), &offset);
+	const bool ok = m_ringBuffer.Alloc(static_cast<u32>(size), &offset, static_cast<u32>(alignment));
 	DYNAMIC_ASSERT(ok, "D3D12UploadBuffer::Alloc: upload heap out of space");
 
-	// Align the offset up to the requested alignment.
-	const u64 aligned = (static_cast<u64>(offset) + alignment - 1) & ~(alignment - 1);
-
 	UploadAllocation alloc;
-	alloc.cpuPtr  = static_cast<u8*>(m_mappedPtr) + aligned;
-	alloc.gpuAddr = m_gpuBase + aligned;
-	alloc.offset  = aligned;
+	alloc.cpuPtr  = static_cast<u8*>(m_mappedPtr) + offset;
+	alloc.gpuAddr = m_gpuBase + static_cast<u64>(offset);
+	alloc.offset  = static_cast<u64>(offset);
 	alloc.size    = size;
 	return alloc;
 }

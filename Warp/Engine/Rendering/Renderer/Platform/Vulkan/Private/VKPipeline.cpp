@@ -46,12 +46,59 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	stages[1].pName	 = desc.pixelShader ? "PSMain" : "main";
 
 	// -------------------------------------------------------------------------
-	// Vertex input — empty when no InputLayout is specified (SV_VertexID)
+	// Vertex input — derived from desc.inputLayout; empty = SV_VertexID path
 	// -------------------------------------------------------------------------
 
+	Vector<VkVertexInputBindingDescription>   bindings;
+	Vector<VkVertexInputAttributeDescription> attributes;
+
+	if (!desc.inputLayout.empty())
+	{
+		attributes.reserve(desc.inputLayout.size());
+
+		// Per-slot running byte offset for AppendAligned computation.
+		u32  slotOffset[16] = {};
+		bool slotUsed[16]   = {};
+
+		for (u32 loc = 0; loc < static_cast<u32>(desc.inputLayout.size()); ++loc)
+		{
+			const InputElement& elem     = desc.inputLayout[loc];
+			const u32           slot     = elem.inputSlot;
+			const u32           byteSize = FormatByteSize(elem.format);
+			const u32           byteOffset =
+				(elem.alignedByteOffset == InputElement::AppendAligned) ? slotOffset[slot] : elem.alignedByteOffset;
+
+			VkVertexInputAttributeDescription attr = {};
+			attr.location = loc;
+			attr.binding  = slot;
+			attr.format   = ToVkFormat(elem.format);
+			attr.offset   = byteOffset;
+			attributes.push_back(attr);
+
+			slotOffset[slot] = byteOffset + byteSize;
+			slotUsed[slot]   = true;
+		}
+
+		// One binding per referenced slot; stride = accumulated element sizes.
+		for (u32 s = 0; s < 16; ++s)
+		{
+			if (!slotUsed[s])
+				continue;
+
+			VkVertexInputBindingDescription binding = {};
+			binding.binding   = s;
+			binding.stride    = slotOffset[s];
+			binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+			bindings.push_back(binding);
+		}
+	}
+
 	VkPipelineVertexInputStateCreateInfo vertexInput = {};
-	vertexInput.sType								 = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	// TODO: populate from desc.inputLayout when vertex buffers are needed
+	vertexInput.sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	vertexInput.vertexBindingDescriptionCount   = static_cast<u32>(bindings.size());
+	vertexInput.pVertexBindingDescriptions      = bindings.data();
+	vertexInput.vertexAttributeDescriptionCount = static_cast<u32>(attributes.size());
+	vertexInput.pVertexAttributeDescriptions    = attributes.data();
 
 	// -------------------------------------------------------------------------
 	// Input assembly
@@ -161,12 +208,47 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	dynamicState.pDynamicStates					  = dynamicStates;
 
 	// -------------------------------------------------------------------------
-	// Pipeline layout — empty for the test triangle
-	// TODO: add push-constant ranges and descriptor set layouts
+	// Descriptor set layout for push descriptors (texture slots)
 	// -------------------------------------------------------------------------
 
+	if (desc.textureSlotCount > 0)
+	{
+		Vector<VkDescriptorSetLayoutBinding> texBindings(desc.textureSlotCount);
+		for (u32 i = 0; i < desc.textureSlotCount; ++i)
+		{
+			texBindings[i]                 = {};
+			texBindings[i].binding         = i;
+			texBindings[i].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			texBindings[i].descriptorCount = 1;
+			texBindings[i].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+		}
+
+		VkDescriptorSetLayoutCreateInfo setLayoutInfo = {};
+		setLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		setLayoutInfo.flags        = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+		setLayoutInfo.bindingCount = desc.textureSlotCount;
+		setLayoutInfo.pBindings    = texBindings.data();
+
+		VK_CHECK(vkCreateDescriptorSetLayout(m_device, &setLayoutInfo, nullptr, &m_descriptorSetLayout),
+				 "VKPipeline: vkCreateDescriptorSetLayout failed");
+	}
+
+	// -------------------------------------------------------------------------
+	// Pipeline layout
+	// -------------------------------------------------------------------------
+
+	// Push constant range derived from the caller's per-draw struct size.
+	VkPushConstantRange pushRange = {};
+	pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	pushRange.offset     = 0;
+	pushRange.size       = desc.pushConstantSize;
+
 	VkPipelineLayoutCreateInfo layoutInfo = {};
-	layoutInfo.sType					  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	layoutInfo.pushConstantRangeCount = (desc.pushConstantSize > 0) ? 1 : 0;
+	layoutInfo.pPushConstantRanges    = (desc.pushConstantSize > 0) ? &pushRange : nullptr;
+	layoutInfo.setLayoutCount         = (m_descriptorSetLayout != VK_NULL_HANDLE) ? 1 : 0;
+	layoutInfo.pSetLayouts            = (m_descriptorSetLayout != VK_NULL_HANDLE) ? &m_descriptorSetLayout : nullptr;
 
 	VK_CHECK(vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_layout),
 			 "VKPipeline: vkCreatePipelineLayout failed");
@@ -228,6 +310,11 @@ void VKPipeline::Cleanup()
 	{
 		vkDestroyPipelineLayout(m_device, m_layout, nullptr);
 		m_layout = VK_NULL_HANDLE;
+	}
+	if (m_descriptorSetLayout != VK_NULL_HANDLE)
+	{
+		vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
+		m_descriptorSetLayout = VK_NULL_HANDLE;
 	}
 }
 

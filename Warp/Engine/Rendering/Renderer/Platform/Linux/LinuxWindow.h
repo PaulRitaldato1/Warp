@@ -26,10 +26,14 @@ public:
 	void* GetNativeHandle()  const override { return (void*)(uintptr_t)m_window; }
 	void* GetNativeDisplay() const override { return (void*)m_display; }
 
+	void CaptureMouse() override;
+	void ReleaseMouse() override;
+
 private:
-	Display* m_display		  = nullptr;
-	::Window  m_window		  = 0;
-	Atom	  m_wmDeleteMessage = 0;
+	Display* m_display          = nullptr;
+	::Window  m_window          = 0;
+	Atom      m_wmDeleteMessage = 0;
+	Cursor    m_invisibleCursor = 0;
 };
 
 #endif

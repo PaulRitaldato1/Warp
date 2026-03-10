@@ -133,6 +133,25 @@ inline VkAccessFlags2 ToVkBufferAccess(ResourceState state)
 	}
 }
 
+// Vertex element format → byte size (for stride / offset computation)
+inline u32 FormatByteSize(TextureFormat fmt)
+{
+	switch (fmt)
+	{
+		case TextureFormat::RGBA8:
+		case TextureFormat::RGBA8_SRGB:
+		case TextureFormat::BGRA8:    return 4;
+		case TextureFormat::RG8:      return 2;
+		case TextureFormat::R8:       return 1;
+		case TextureFormat::RGBA16F:  return 8;
+		case TextureFormat::RGBA32F:  return 16;
+		case TextureFormat::RGB32F:   return 12;
+		case TextureFormat::RG32F:    return 8;
+		case TextureFormat::R32F:     return 4;
+		default:                      return 0;
+	}
+}
+
 // Primitive topology → VkPrimitiveTopology
 inline VkPrimitiveTopology ToVkTopology(PrimitiveTopology topo)
 {

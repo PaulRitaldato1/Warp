@@ -75,16 +75,32 @@ void RingBufferTabbed::Destroy()
 	m_ringBuffer.Free(m_ringBuffer.Size());
 }
 
-bool RingBufferTabbed::Alloc(const uint32_t size, uint32_t* outData)
+bool RingBufferTabbed::Alloc(const uint32_t size, uint32_t* outData, uint32_t alignment)
 {
-	u32 padding = m_ringBuffer.PaddingToBufferEnd(size);
-	if (padding > 0)
+	// Insert silent padding so the returned offset satisfies the requested alignment.
+	// This must happen before the wrap check so the padding bytes are tracked by the
+	// ring buffer; without it the aligned address can fall outside the allocated
+	// region and get overwritten by a subsequent frame's allocation.
+	if (alignment > 1)
 	{
-		m_memAllocatedInFrame += padding;
-		if (m_ringBuffer.Alloc(padding, nullptr) == false)
+		const u32 tail        = m_ringBuffer.Tail();
+		const u32 alignedTail = (tail + alignment - 1) & ~(alignment - 1);
+		const u32 alignPad    = alignedTail - tail;
+		if (alignPad > 0)
 		{
-			return false;
+			m_memAllocatedInFrame += alignPad;
+			if (!m_ringBuffer.Alloc(alignPad, nullptr))
+				return false;
 		}
+	}
+
+	// Handle wrap-around for the data itself.
+	u32 wrapPadding = m_ringBuffer.PaddingToBufferEnd(size);
+	if (wrapPadding > 0)
+	{
+		m_memAllocatedInFrame += wrapPadding;
+		if (!m_ringBuffer.Alloc(wrapPadding, nullptr))
+			return false;
 	}
 
 	if (m_ringBuffer.Alloc(size, outData))

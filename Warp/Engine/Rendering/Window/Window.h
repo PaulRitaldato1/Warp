@@ -24,7 +24,11 @@ public:
         return r;
     }
 
-    virtual void* GetNativeHandle()   const = 0;
+    virtual void* GetNativeHandle() const = 0;
+
+    // Hide the cursor and confine it to the window (e.g. for first-person camera).
+    virtual void CaptureMouse() {}
+    virtual void ReleaseMouse() {}
 
     // Returns the platform display/connection handle needed for Vulkan surface creation.
     // D3D12 / non-Vulkan backends return nullptr.

@@ -18,7 +18,8 @@ class VKCommandList : public CommandList
 public:
 	~VKCommandList() override;
 
-	void InitializeWithDevice(VkDevice device, u32 familyIndex, u32 framesInFlight);
+	void InitializeWithDevice(VkDevice device, u32 familyIndex, u32 framesInFlight,
+	                          VkSampler defaultSampler = VK_NULL_HANDLE);
 
 	// ---------------------------------------------------------------------------
 	// Frame lifecycle
@@ -75,7 +76,7 @@ public:
 
 	void CopyBuffer(Buffer* src, Buffer* dst,
 	                u64 srcOffset, u64 dstOffset, u64 size) override;
-	void CopyBufferToTexture(Buffer* src, u64 srcOffset,
+	void CopyBufferToTexture(Buffer* src, u64 srcOffset, u32 srcRowPitch,
 	                         Texture* dst, u32 mipLevel, u32 arraySlice) override;
 
 	// ---------------------------------------------------------------------------
@@ -90,6 +91,8 @@ public:
 	// ---------------------------------------------------------------------------
 
 	void SetConstantBuffer(u32 rootIndex, Buffer* buffer)                    override;
+	void SetConstantBufferView(u32 rootIndex, u64 gpuAddress)                override {}
+	void PushConstants(u32 size, const void* data)                           override;
 	void SetShaderResource(u32 rootIndex, Texture* texture)                  override;
 	void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures) override;
 
@@ -107,9 +110,14 @@ public:
 	VkCommandBuffer GetNative() const { return m_cmdBuf; }
 
 private:
-	VkDevice               m_device      = VK_NULL_HANDLE;
-	Vector<VkCommandPool>  m_pools;        // one per frame slot
-	VkCommandBuffer        m_cmdBuf      = VK_NULL_HANDLE;
+	VkDevice               m_device        = VK_NULL_HANDLE;
+	Vector<VkCommandPool>  m_pools;          // one per frame slot
+	VkCommandBuffer        m_cmdBuf        = VK_NULL_HANDLE;
+	VkPipelineLayout       m_currentLayout = VK_NULL_HANDLE; // cached from last SetPipelineState
+
+	// Push descriptor support
+	PFN_vkCmdPushDescriptorSetKHR m_pushDescriptorFn = nullptr;
+	VkSampler                     m_defaultSampler    = VK_NULL_HANDLE;
 
 	// Current render-pass state (dynamic rendering)
 	static constexpr u32 k_maxRTVs = 8;

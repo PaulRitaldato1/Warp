@@ -20,12 +20,20 @@ VKCommandList::~VKCommandList()
 	m_pools.clear();
 }
 
-void VKCommandList::InitializeWithDevice(VkDevice device, u32 familyIndex, u32 framesInFlight)
+void VKCommandList::InitializeWithDevice(VkDevice device, u32 familyIndex, u32 framesInFlight,
+                                          VkSampler defaultSampler)
 {
 	DYNAMIC_ASSERT(device,          "VKCommandList: device is null");
 	DYNAMIC_ASSERT(framesInFlight > 0, "VKCommandList: framesInFlight must be > 0");
 
-	m_device = device;
+	m_device         = device;
+	m_defaultSampler = defaultSampler;
+	m_pushDescriptorFn = reinterpret_cast<PFN_vkCmdPushDescriptorSetKHR>(
+		vkGetDeviceProcAddr(device, "vkCmdPushDescriptorSetKHR"));
+	if (!m_pushDescriptorFn)
+	{
+		LOG_WARNING("VKCommandList: vkCmdPushDescriptorSetKHR not available — texture binding disabled");
+	}
 	m_pools.resize(framesInFlight, VK_NULL_HANDLE);
 
 	for (u32 i = 0; i < framesInFlight; ++i)
@@ -125,6 +133,7 @@ void VKCommandList::SetPipelineState(PipelineState* state)
 {
 	DYNAMIC_ASSERT(state, "VKCommandList::SetPipelineState: state is null");
 	VKPipeline* vkPipeline = static_cast<VKPipeline*>(state);
+	m_currentLayout = vkPipeline->GetNativeLayout();
 	vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline->GetNativePipeline());
 }
 
@@ -325,7 +334,7 @@ void VKCommandList::CopyBuffer(Buffer* src, Buffer* dst,
 	vkCmdCopyBuffer(m_cmdBuf, vkSrc->GetNativeBuffer(), vkDst->GetNativeBuffer(), 1, &region);
 }
 
-void VKCommandList::CopyBufferToTexture(Buffer* src, u64 srcOffset,
+void VKCommandList::CopyBufferToTexture(Buffer* src, u64 srcOffset, u32 srcRowPitch,
                                          Texture* dst, u32 mipLevel, u32 arraySlice)
 {
 	DYNAMIC_ASSERT(src, "VKCommandList::CopyBufferToTexture: src is null");
@@ -339,10 +348,33 @@ void VKCommandList::CopyBufferToTexture(Buffer* src, u64 srcOffset,
 	const u32 mipWidth   = (fullWidth  >> mipLevel) > 0 ? (fullWidth  >> mipLevel) : 1;
 	const u32 mipHeight  = (fullHeight >> mipLevel) > 0 ? (fullHeight >> mipLevel) : 1;
 
+	// Vulkan bufferRowLength is in texels. Convert from the byte srcRowPitch.
+	// For BC formats: (srcRowPitch / blockSizeBytes) * 4 texels per block width.
+	// For uncompressed: srcRowPitch / bytesPerTexel.
+	// If 0, Vulkan treats the data as tightly packed (bufferRowLength == mipWidth).
+	u32 bufferRowLength = 0;
+	const TextureFormat fmt = vkDst->GetFormat();
+	switch (fmt)
+	{
+		case TextureFormat::BC1: case TextureFormat::BC4: bufferRowLength = (srcRowPitch / 8)  * 4; break;
+		case TextureFormat::BC3: case TextureFormat::BC5:
+		case TextureFormat::BC7:                          bufferRowLength = (srcRowPitch / 16) * 4; break;
+		default:
+		{
+			// Uncompressed: compute texel count from byte pitch.
+			// BytesPerPixel for the common formats; 0 means unknown → fall back to tight packing.
+			static constexpr u32 k_bpp[] = { 0,4,4,4,2,1,8,16,12,8,4,0,0,0,0,0,0,0 };
+			const u32 idx = static_cast<u32>(fmt);
+			const u32 bpp = idx < sizeof(k_bpp) / sizeof(k_bpp[0]) ? k_bpp[idx] : 0;
+			bufferRowLength = (bpp > 0) ? (srcRowPitch / bpp) : 0;
+			break;
+		}
+	}
+
 	VkBufferImageCopy region = {};
 	region.bufferOffset      = srcOffset;
-	region.bufferRowLength   = 0; // tightly packed
-	region.bufferImageHeight = 0; // tightly packed
+	region.bufferRowLength   = bufferRowLength;
+	region.bufferImageHeight = 0; // tightly packed in height
 	region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
 	region.imageSubresource.mipLevel       = mipLevel;
 	region.imageSubresource.baseArrayLayer = arraySlice;
@@ -461,14 +493,73 @@ void VKCommandList::SetConstantBuffer(u32 /*rootIndex*/, Buffer* /*buffer*/)
 	// TODO: vkCmdPushConstants once a proper pipeline layout is in place
 }
 
-void VKCommandList::SetShaderResource(u32 /*rootIndex*/, Texture* /*texture*/)
+void VKCommandList::PushConstants(u32 size, const void* data)
 {
-	// TODO: vkCmdPushDescriptorSetKHR once push-descriptor layout is set up
+	DYNAMIC_ASSERT(m_currentLayout != VK_NULL_HANDLE, "VKCommandList::PushConstants: no pipeline bound — call SetPipelineState first");
+	DYNAMIC_ASSERT(data, "VKCommandList::PushConstants: data is null");
+	vkCmdPushConstants(m_cmdBuf, m_currentLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, size, data);
 }
 
-void VKCommandList::SetShaderResources(u32 /*rootIndex*/, const Vector<Texture*>& /*textures*/)
+void VKCommandList::SetShaderResource(u32 rootIndex, Texture* texture)
 {
-	// TODO: vkCmdPushDescriptorSetKHR — allocate contiguous descriptor set entries for all textures
+	if (!m_pushDescriptorFn || !texture || m_currentLayout == VK_NULL_HANDLE)
+		return;
+
+	VKTexture* vkTex = static_cast<VKTexture*>(texture);
+
+	VkDescriptorImageInfo imageInfo = {};
+	imageInfo.sampler     = m_defaultSampler;
+	imageInfo.imageView   = vkTex->GetNativeView();
+	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	VkWriteDescriptorSet write = {};
+	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstBinding      = rootIndex;
+	write.dstArrayElement = 0;
+	write.descriptorCount = 1;
+	write.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	write.pImageInfo      = &imageInfo;
+
+	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, 1, &write);
+}
+
+void VKCommandList::SetShaderResources(u32 /*rootIndex*/, const Vector<Texture*>& textures)
+{
+	if (!m_pushDescriptorFn || textures.empty() || m_currentLayout == VK_NULL_HANDLE)
+		return;
+
+	Vector<VkDescriptorImageInfo> imageInfos;
+	Vector<VkWriteDescriptorSet>  writes;
+	imageInfos.reserve(textures.size());
+	writes.reserve(textures.size());
+
+	for (u32 i = 0; i < static_cast<u32>(textures.size()); ++i)
+	{
+		if (!textures[i])
+			continue;
+
+		VKTexture* vkTex = static_cast<VKTexture*>(textures[i]);
+
+		VkDescriptorImageInfo& info = imageInfos.emplace_back();
+		info.sampler     = m_defaultSampler;
+		info.imageView   = vkTex->GetNativeView();
+		info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkWriteDescriptorSet& write = writes.emplace_back();
+		write                 = {};
+		write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstBinding      = i;
+		write.dstArrayElement = 0;
+		write.descriptorCount = 1;
+		write.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		write.pImageInfo      = &imageInfos.back();
+	}
+
+	if (!writes.empty())
+	{
+		m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0,
+		                   static_cast<u32>(writes.size()), writes.data());
+	}
 }
 
 // ---------------------------------------------------------------------------

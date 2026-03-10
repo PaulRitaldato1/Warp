@@ -55,7 +55,10 @@ public:
 	void Create(const u32 numBackBuffers, const u32 memTotalSize);
 	void Destroy();
 
-	bool Alloc(const u32 size, u32* outData);
+	// alignment must be a power of two (1 = no alignment).
+	// Inserts silent padding bytes before the allocation so *outData is already
+	// aligned; callers do not need to round up the returned offset themselves.
+	bool Alloc(const u32 size, u32* outData, u32 alignment = 1);
 
 	void OnBeginFrame();
 

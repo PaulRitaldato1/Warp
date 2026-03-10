@@ -41,14 +41,16 @@ public:
 	u32 GetComputeFamilyIndex()  const { return m_computeFamilyIndex; }
 	u32 GetTransferFamilyIndex() const { return m_transferFamilyIndex; }
 
-	VkQueue GetGraphicsQueue() const { return m_graphicsQueue; }
-	VkQueue GetComputeQueue()  const { return m_computeQueue; }
-	VkQueue GetTransferQueue() const { return m_transferQueue; }
+	VkQueue   GetGraphicsQueue()  const { return m_graphicsQueue; }
+	VkQueue   GetComputeQueue()   const { return m_computeQueue; }
+	VkQueue   GetTransferQueue()  const { return m_transferQueue; }
+	VkSampler GetDefaultSampler() const { return m_defaultSampler; }
 
 private:
 	void PickPhysicalDevice();
 	void CreateLogicalDevice(bool enableValidation);
 	void CreateAllocator();
+	void CreateDefaultSampler();
 
 	VkInstance               m_instance   = VK_NULL_HANDLE;
 	VkDebugUtilsMessengerEXT m_messenger  = VK_NULL_HANDLE;
@@ -56,9 +58,10 @@ private:
 	VkDevice                 m_device     = VK_NULL_HANDLE;
 	VmaAllocator             m_allocator  = VK_NULL_HANDLE;
 
-	VkQueue m_graphicsQueue = VK_NULL_HANDLE;
-	VkQueue m_computeQueue  = VK_NULL_HANDLE;
-	VkQueue m_transferQueue = VK_NULL_HANDLE;
+	VkQueue   m_graphicsQueue  = VK_NULL_HANDLE;
+	VkQueue   m_computeQueue   = VK_NULL_HANDLE;
+	VkQueue   m_transferQueue  = VK_NULL_HANDLE;
+	VkSampler m_defaultSampler = VK_NULL_HANDLE;
 
 	u32 m_graphicsFamilyIndex = 0;
 	u32 m_computeFamilyIndex  = 0;

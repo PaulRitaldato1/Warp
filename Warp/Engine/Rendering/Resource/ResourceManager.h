@@ -33,12 +33,27 @@ public:
 	// Renderer calls this in BeginFrame and passes each to QueueTextureUpload().
 	Vector<PendingTextureUpload> DrainTextureUploads();
 
+	// Drains textures that just became Ready and need a CopyDest → ShaderResource barrier.
+	// Renderer issues TransitionTexture on the graphics command list in BeginFrame.
+	Vector<Texture*> DrainTextureBarriers();
+
 	// Returns a MeshResource if ready, nullptr if still loading/uploading.
 	// Automatically kicks off loading on first request.
 	MeshResource* GetMeshResource(const char* path);
 
 	// Returns a TextureResource if ready, nullptr if still loading/uploading.
+	// Automatically kicks off loading on first request.
 	TextureResource* GetTextureResource(const char* path);
+
+	// Collects GPU textures for all PBR slots of a material.
+	// meshPath is used to resolve relative texture paths stored in the glTF.
+	// outTextures is resized to k_materialTextureSlots and filled in slot order:
+	//   [0] base color, [1] normal, [2] metallic-roughness, [3] occlusion, [4] emissive
+	// Null entries mean the texture is not yet loaded; loading is kicked off automatically.
+	void GetMaterialTextures(const char* meshPath, const Mesh& mesh, const Material& mat,
+	                         Vector<Texture*>& outTextures);
+
+	static constexpr u32 k_materialTextureSlots = 5;
 
 private:
 	void BeginMeshLoad(const String& path);
@@ -64,5 +79,7 @@ private:
 	HashMap<String, std::future<URef<TextureData>>> m_pendingTextureLoads;
 
 	// Staging uploads ready for Renderer to pick up.
-	Vector<PendingStagingUpload> m_readyStagingUploads;
+	Vector<PendingStagingUpload>  m_readyStagingUploads;
+	Vector<PendingTextureUpload>  m_readyTextureUploads;
+	Vector<Texture*>              m_pendingTextureBarriers;
 };

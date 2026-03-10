@@ -4,6 +4,10 @@
 #include <Debugging/Logging.h>
 #include <UserApplication.h>
 #include <Rendering/Renderer/Renderer.h>
+#include <Rendering/RenderBackend.h>
+#include <Rendering/Resource/ResourceManager.h>
+#include <Rendering/Window/Window.h>
+#include <Rendering/Cameras/Camera.h>
 #include <thread>
 
 WarpEngine::WarpEngine(UserApplicationBase* App)
@@ -14,13 +18,12 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 	Logger::Get().Init();
 	LOG_DEBUG("Engine Init Started");
 
-	m_app   = std::unique_ptr<UserApplicationBase>(App);
+	m_app	= std::unique_ptr<UserApplicationBase>(App);
 	m_world = std::make_unique<World>();
 
 	m_backend  = RenderBackend::Create();
-	m_window   = m_backend->MakeWindow(App->EngineInitDesc.Name,
-										  App->EngineInitDesc.WindowWidth,
-										  App->EngineInitDesc.WindowHeight);
+	m_window   = m_backend->MakeWindow(App->EngineInitDesc.Name, App->EngineInitDesc.WindowWidth,
+									   App->EngineInitDesc.WindowHeight);
 	m_renderer = m_backend->CreateRenderer();
 	if (m_renderer)
 	{
@@ -47,10 +50,41 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 WarpEngine::~WarpEngine()
 {
 	LOG_DEBUG("Shutting down");
-	if (m_world) { m_world->ShutdownSystems(); }
-	if (m_resourceManager) { m_resourceManager->Shutdown(); }
-	if (m_renderer) { m_renderer->Shutdown(); }
+	if (m_window && m_activeCamera)
+	{
+		m_window->ReleaseMouse();
+	}
+	if (m_world)
+	{
+		m_world->ShutdownSystems();
+	}
+	if (m_resourceManager)
+	{
+		m_resourceManager->Shutdown();
+	}
+	if (m_renderer)
+	{
+		m_renderer->Shutdown();
+	}
 	Logger::Get().Shutdown();
+}
+
+void WarpEngine::SetActiveCamera(Camera* camera)
+{
+	m_activeCamera = camera;
+	if (m_window && m_activeCamera)
+	{
+		m_window->CaptureMouse();
+	}
+}
+
+void WarpEngine::ClearActiveCamera()
+{
+	m_activeCamera = nullptr;
+	if (m_window)
+	{
+		m_window->ReleaseMouse();
+	}
 }
 
 bool WarpEngine::Run()
@@ -68,8 +102,7 @@ bool WarpEngine::Run()
 
 		if (m_renderer && m_window->WasResized())
 		{
-			m_renderer->OnResize(static_cast<u32>(m_window->GetWidth()),
-			                     static_cast<u32>(m_window->GetHeight()));
+			m_renderer->OnResize(static_cast<u32>(m_window->GetWidth()), static_cast<u32>(m_window->GetHeight()));
 		}
 
 		m_timer.Tick();
@@ -83,6 +116,12 @@ bool WarpEngine::Run()
 				LOG_ERROR("App update failed.");
 				m_bIsRunning = false;
 				break;
+			}
+
+			if (m_activeCamera)
+			{
+				m_activeCamera->Update(deltaTime);
+				m_renderer->SetViewProjectionMatrix(m_activeCamera->GetViewProjectionMatrix());
 			}
 
 			m_world->UpdateSystems(deltaTime);

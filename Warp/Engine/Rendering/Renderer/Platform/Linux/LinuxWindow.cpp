@@ -227,7 +227,31 @@ bool LinuxWindow::PumpMessages()
 			}
 			case MotionNotify:
 			{
-				g_InputEventManager.BroadcastMouseMove(event.xmotion.x, event.xmotion.y);
+				if (m_invisibleCursor != 0)
+				{
+					// When captured, warp to centre each frame for unbounded delta movement.
+					const int cx = m_width / 2;
+					const int cy = m_height / 2;
+					const int x  = event.xmotion.x;
+					const int y  = event.xmotion.y;
+
+					// Skip warp-generated events to avoid feedback loop.
+					if (x == cx && y == cy)
+					{
+						break;
+					}
+
+					// Broadcast relative delta directly — matches Windows WM_INPUT behaviour.
+					g_InputEventManager.BroadcastMouseMove(x - cx, y - cy);
+
+					// Warp cursor back to centre for the next frame.
+					XWarpPointer(m_display, None, m_window, 0, 0, 0, 0, cx, cy);
+					XFlush(m_display);
+				}
+				else
+				{
+					g_InputEventManager.BroadcastMouseMove(event.xmotion.x, event.xmotion.y);
+				}
 				break;
 			}
 			case ClientMessage:
@@ -260,6 +284,51 @@ bool LinuxWindow::PumpMessages()
 	}
 
 	return true;
+}
+
+void LinuxWindow::CaptureMouse()
+{
+	if (!m_display || !m_window)
+	{
+		return;
+	}
+
+	// Create a 1x1 invisible cursor.
+	static char data[1] = { 0 };
+	Pixmap blank         = XCreateBitmapFromData(m_display, m_window, data, 1, 1);
+	XColor dummy         = {};
+	m_invisibleCursor    = XCreatePixmapCursor(m_display, blank, blank, &dummy, &dummy, 0, 0);
+	XFreePixmap(m_display, blank);
+
+	XDefineCursor(m_display, m_window, m_invisibleCursor);
+
+	// Confine pointer to this window.
+	XGrabPointer(m_display, m_window, True,
+		ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+		GrabModeAsync, GrabModeAsync, m_window, m_invisibleCursor, CurrentTime);
+
+	// Warp to centre so the first delta starts from a known position.
+	XWarpPointer(m_display, None, m_window, 0, 0, 0, 0, m_width / 2, m_height / 2);
+	XFlush(m_display);
+}
+
+void LinuxWindow::ReleaseMouse()
+{
+	if (!m_display)
+	{
+		return;
+	}
+
+	XUngrabPointer(m_display, CurrentTime);
+	XUndefineCursor(m_display, m_window);
+
+	if (m_invisibleCursor != 0)
+	{
+		XFreeCursor(m_display, m_invisibleCursor);
+		m_invisibleCursor = 0;
+	}
+
+	XFlush(m_display);
 }
 
 #endif

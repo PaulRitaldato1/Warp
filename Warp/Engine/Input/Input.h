@@ -275,6 +275,22 @@ public:
 
 	void SubscribeToMouseMove(void (*Func)(int32, int32));
 
+	// Subscribe a member-function delegate to ALL key events (WarpKeyCode, bool bPressed).
+	// The delegate pointer must remain valid for the lifetime of the subscription.
+	template<typename T>
+	void SubscribeToKeyEvents(MemberFuncType<T, WarpKeyCode, bool>* delegate)
+	{
+		KeyPressedEventManager.Subscribe(delegate);
+	}
+
+	// Subscribe a member-function delegate to mouse move events (x, y in screen pixels).
+	// The delegate pointer must remain valid for the lifetime of the subscription.
+	template<typename T>
+	void SubscribeToMouseMoveEvents(MemberFuncType<T, int32, int32>* delegate)
+	{
+		MouseMoveEventManager.Subscribe(delegate);
+	}
+
 	inline void BroadcastMouseButton(MouseCode Code, bool bPressed)
 	{
 		MouseButtonEventManager.Broadcast(Code, bPressed);

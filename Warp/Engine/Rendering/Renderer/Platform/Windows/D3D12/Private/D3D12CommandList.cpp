@@ -181,6 +181,11 @@ void D3D12CommandList::SetConstantBuffer(u32 rootIndex, Buffer* buffer)
 		rootIndex, static_cast<D3D12Buffer*>(buffer)->GetGPUAddress());
 }
 
+void D3D12CommandList::SetConstantBufferView(u32 rootIndex, u64 gpuAddress)
+{
+	m_list->SetGraphicsRootConstantBufferView(rootIndex, static_cast<D3D12_GPU_VIRTUAL_ADDRESS>(gpuAddress));
+}
+
 void D3D12CommandList::SetShaderResource(u32 rootIndex, Texture* texture)
 {
 	DYNAMIC_ASSERT(texture,   "D3D12CommandList::SetShaderResource: texture is null");
@@ -209,14 +214,25 @@ void D3D12CommandList::SetShaderResources(u32 rootIndex, const Vector<Texture*>&
 
 	for (u32 i = 0; i < count; ++i)
 	{
-		FATAL_ASSERT(textures[i] != nullptr,
-		    "D3D12CommandList::SetShaderResources: null texture in list — cannot leave descriptor slot corrupt");
+		D3D12_CPU_DESCRIPTOR_HANDLE dst = { alloc.cpu.ptr + static_cast<SIZE_T>(i) * stride };
+
+		if (textures[i] == nullptr)
+		{
+			// Write a null SRV — D3D12 spec guarantees sampling a null SRV returns 0.
+			// Used when a texture slot is valid in the material but not yet uploaded.
+			D3D12_SHADER_RESOURCE_VIEW_DESC nullDesc          = {};
+			nullDesc.Format                                   = DXGI_FORMAT_R8G8B8A8_UNORM;
+			nullDesc.ViewDimension                            = D3D12_SRV_DIMENSION_TEXTURE2D;
+			nullDesc.Shader4ComponentMapping                  = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			nullDesc.Texture2D.MipLevels                      = 1;
+			m_device->CreateShaderResourceView(nullptr, &nullDesc, dst);
+			continue;
+		}
 
 		DescriptorHandle srcHandle = textures[i]->GetSRV();
 		FATAL_ASSERT(srcHandle.IsValid(),
 		    "D3D12CommandList::SetShaderResources: texture has no SRV — use TextureUsage::Sampled or RenderTarget");
 
-		D3D12_CPU_DESCRIPTOR_HANDLE dst = { alloc.cpu.ptr + static_cast<SIZE_T>(i) * stride };
 		D3D12_CPU_DESCRIPTOR_HANDLE src = { static_cast<SIZE_T>(srcHandle.ptr) };
 		m_device->CopyDescriptorsSimple(1, dst, src, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
@@ -241,11 +257,12 @@ void D3D12CommandList::CopyBuffer(Buffer* src, Buffer* dst,
 	                         d3dSrc->GetNativeResource(), srcOffset, size);
 }
 
-void D3D12CommandList::CopyBufferToTexture(Buffer* src, u64 srcOffset,
+void D3D12CommandList::CopyBufferToTexture(Buffer* src, u64 srcOffset, u32 srcRowPitch,
                                             Texture* dst, u32 mipLevel, u32 arraySlice)
 {
 	DYNAMIC_ASSERT(src, "D3D12CommandList::CopyBufferToTexture: src is null");
 	DYNAMIC_ASSERT(dst, "D3D12CommandList::CopyBufferToTexture: dst is null");
+	DYNAMIC_ASSERT(srcRowPitch > 0, "D3D12CommandList::CopyBufferToTexture: srcRowPitch must be > 0");
 
 	D3D12Buffer*  d3dSrc = static_cast<D3D12Buffer*>(src);
 	D3D12Texture* d3dDst = static_cast<D3D12Texture*>(dst);
@@ -257,22 +274,8 @@ void D3D12CommandList::CopyBufferToTexture(Buffer* src, u64 srcOffset,
 
 	const TextureFormat format = d3dDst->GetFormat();
 
-	// Build the row pitch, aligned to D3D12_TEXTURE_DATA_PITCH_ALIGNMENT (256).
-	u32 rowPitch = 0;
-	if (IsBlockCompressed(format))
-	{
-		const u32 blockSize   = BCBlockSizeForFormat(format);
-		const u32 blocksWide  = (mipWidth + 3) / 4;
-		rowPitch = blocksWide * blockSize;
-	}
-	else
-	{
-		const u32 bpp = BytesPerPixelForFormat(format);
-		DYNAMIC_ASSERT(bpp > 0, "D3D12CommandList::CopyBufferToTexture: unsupported format for copy");
-		rowPitch = mipWidth * bpp;
-	}
-	rowPitch = (rowPitch + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1)
-	         & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
+	// srcRowPitch is pre-aligned by ResourceManager — use directly.
+	const u32 rowPitch = srcRowPitch;
 
 	// Source location: placed footprint in the staging buffer.
 	D3D12_TEXTURE_COPY_LOCATION srcLoc = {};

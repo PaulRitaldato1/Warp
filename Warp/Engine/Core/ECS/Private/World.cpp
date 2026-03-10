@@ -35,6 +35,50 @@ Entity World::CreateEntity()
 	return entity;
 }
 
+Entity World::DuplicateEntity(Entity source)
+{
+	FATAL_ASSERT(IsAlive(source), "World::DuplicateEntity: source entity is not alive");
+
+	Entity newEntity = CreateEntity();
+
+	const EntityRecord& srcRecord = m_entities[source.id];
+	if (!srcRecord.archetype)
+	{
+		return newEntity; // Source has no components — return the empty copy.
+	}
+
+	Archetype* archetype = srcRecord.archetype;
+
+	// Place the new entity in the same archetype.
+	u32 newRow = archetype->AddEntity(newEntity);
+
+	// memcpy every component column from the source row to the new row.
+	// Components are guaranteed trivially copyable by the IsComponent concept.
+	const Vector<ComponentInfo>& registry = GetComponentRegistry();
+	const ComponentMask& mask = archetype->GetMask();
+
+	for (u32 bitIndex = 0; bitIndex < 64; ++bitIndex)
+	{
+		if (!mask.test(bitIndex))
+		{
+			continue;
+		}
+
+		size_t componentSize = registry[bitIndex].size;
+		byte*  column        = archetype->GetColumnRaw(bitIndex);
+
+		std::memcpy(column + newRow * componentSize,
+		            column + srcRecord.row * componentSize,
+		            componentSize);
+	}
+
+	EntityRecord& newRecord = m_entities[newEntity.id];
+	newRecord.archetype = archetype;
+	newRecord.row       = newRow;
+
+	return newEntity;
+}
+
 void World::DestroyEntity(Entity entity)
 {
 	FATAL_ASSERT(IsAlive(entity), "World::DestroyEntity: entity is not alive or has stale generation");

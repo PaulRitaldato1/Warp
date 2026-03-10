@@ -1,3 +1,19 @@
+// [[vk::push_constant]] tells DXC/shaderc to emit this as a push-constant block
+// instead of a uniform buffer. D3D12 ignores the attribute.
+[[vk::push_constant]]
+cbuffer PerDraw : register(b0)
+{
+    float4x4 viewProj;
+    float4x4 model;
+};
+
+Texture2D    BaseColorTexture         : register(t0);
+Texture2D    NormalTexture            : register(t1);
+Texture2D    MetallicRoughnessTexture : register(t2);
+Texture2D    OcclusionTexture         : register(t3);
+Texture2D    EmissiveTexture          : register(t4);
+SamplerState Sampler                  : register(s0);
+
 struct VSInput
 {
     float3 position : POSITION;
@@ -11,20 +27,20 @@ struct VSInput
 struct VSOutput
 {
     float4 position : SV_Position;
-    float4 color    : COLOR;
     float3 normal   : NORMAL;
+    float2 uv0      : TEXCOORD0;
 };
 
 VSOutput VSMain(VSInput input)
 {
     VSOutput output;
-    output.position = float4(input.position, 1.0);
-    output.color    = input.color;
-    output.normal   = input.normal * 0.5 + 0.5; // visualise normals as colour
+    output.position = mul(viewProj, mul(model, float4(input.position, 1.0)));
+    output.normal   = normalize(mul((float3x3)model, input.normal));
+    output.uv0      = input.uv0;
     return output;
 }
 
 float4 PSMain(VSOutput input) : SV_Target
 {
-    return float4(input.normal, 1.0);
+    return BaseColorTexture.Sample(Sampler, input.uv0);
 }

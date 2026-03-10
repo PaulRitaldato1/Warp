@@ -1,6 +1,8 @@
 #include <Rendering/Renderer/Renderer.h>
 #include <Rendering/Resource/ResourceManager.h>
 #include <Rendering/Resource/MeshResource.h>
+#include <Rendering/Resource/TextureResource.h>
+#include <Rendering/Renderer/ResourceState.h>
 #include <Core/ECS/World.h>
 #include <Core/ECS/Components/TransformComponent.h>
 #include <Core/ECS/Components/MeshComponent.h>
@@ -8,6 +10,17 @@
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 #include <algorithm>
+#include <cstring>
+
+// Per-draw data uploaded to the GPU each draw call.
+// Size must not exceed the Vulkan minimum push-constant guarantee (128 bytes).
+struct PerDrawConstants
+{
+	Mat4 viewProj;
+	Mat4 model;
+};
+
+Renderer::~Renderer() = default;
 
 void Renderer::BeginFrame()
 {
@@ -33,6 +46,11 @@ void Renderer::BeginFrame()
 													  [completedCopyValue](const InFlightStaging& s)
 													  { return s.fenceValue <= completedCopyValue; }),
 									   m_inFlightStagingBuffers.end());
+
+		m_inFlightTextureUploads.erase(std::remove_if(m_inFlightTextureUploads.begin(), m_inFlightTextureUploads.end(),
+													  [completedCopyValue](const InFlightTextureUpload& s)
+													  { return s.fenceValue <= completedCopyValue; }),
+									   m_inFlightTextureUploads.end());
 	}
 
 	// Retire the oldest frame's upload-buffer slice so the ring buffer can reuse it.
@@ -59,21 +77,27 @@ void Renderer::BeginFrame()
 	m_copyList->Begin(m_frameIndex);
 	m_urgentCopyList->Begin(m_frameIndex);
 
-	// Process ResourceManager: check async loads, create GPU buffers, drain staging uploads.
+	// Process ResourceManager: check async loads, create GPU buffers, drain uploads.
 	if (m_resourceManager)
 	{
 		m_resourceManager->ProcessPendingUploads();
-		Vector<PendingStagingUpload> uploads = m_resourceManager->DrainStagingUploads();
-		for (PendingStagingUpload& upload : uploads)
+
+		for (PendingStagingUpload& upload : m_resourceManager->DrainStagingUploads())
 		{
 			QueueStagingUpload(upload);
 		}
 
-		// Vector<PendingTextureUpload> textureUploads = m_resourceManager->DrainTextureUploads();
-		// for (PendingTextureUpload& upload : textureUploads)
-		// {
-		// 	QueueTextureUpload(upload);
-		// }
+		for (PendingTextureUpload& upload : m_resourceManager->DrainTextureUploads())
+		{
+			QueueTextureUpload(upload);
+		}
+
+		// Issue CopyDest -> ShaderResource barriers for textures whose uploads completed.
+		CommandList& graphicsCmd = *m_graphicsLists[0];
+		for (Texture* tex : m_resourceManager->DrainTextureBarriers())
+		{
+			graphicsCmd.TransitionTexture(tex, ResourceState::ShaderResource);
+		}
 	}
 }
 
@@ -147,6 +171,18 @@ void Renderer::EndFrame()
 	{
 		m_copyList->CopyBuffer(upload.stagingBuffer.get(), upload.destination, 0, 0, upload.size);
 	}
+
+	// --- Texture uploads: copy each mip from staging buffer to the GPU texture.
+	for (PendingTextureUpload& upload : m_deferredTextureUploads)
+	{
+		Buffer* stagingBuf = upload.stagingUploadBuffer->GetBackingBuffer();
+		for (const TextureMipUpload& mip : upload.mips)
+		{
+			m_copyList->CopyBufferToTexture(stagingBuf, mip.srcOffset, mip.srcRowPitch, upload.destination,
+											mip.mipLevel, mip.arraySlice);
+		}
+	}
+
 	m_copyList->End();
 
 	u64 deferredFenceValue = m_copyQueue->Submit(*m_copyList);
@@ -159,6 +195,15 @@ void Renderer::EndFrame()
 		m_inFlightStagingBuffers.push_back(std::move(entry));
 	}
 	m_deferredUploads.clear();
+
+	for (PendingTextureUpload& upload : m_deferredTextureUploads)
+	{
+		InFlightTextureUpload entry;
+		entry.stagingBuffer = std::move(upload.stagingUploadBuffer);
+		entry.fenceValue	= deferredFenceValue;
+		m_inFlightTextureUploads.push_back(std::move(entry));
+	}
+	m_deferredTextureUploads.clear();
 
 	lastCopyFenceValue = deferredFenceValue;
 
@@ -246,14 +291,39 @@ void Renderer::DrawDeferred()
 					return; // Still loading or uploading — skip this frame
 				}
 
-				// TODO: upload transform to per-object constant buffer via m_uploadBuffer
-				// TODO: set material / texture bindings per submesh
+				// Build model matrix from TransformComponent (scale → rotate → translate).
+				PerDrawConstants constants;
+				constants.viewProj = m_viewProj;
+
+				{
+					using namespace DirectX;
+					SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
+					SimdMat R = XMMatrixRotationQuaternion(XMLoadFloat4(&transform.rotation));
+					SimdMat T = XMMatrixTranslation(transform.position.x, transform.position.y, transform.position.z);
+					XMStoreFloat4x4(&constants.model, XMMatrixMultiply(XMMatrixMultiply(S, R), T));
+				}
+
+				// D3D12: sub-allocate from ring buffer and bind as root CBV.
+				// Vulkan: push both matrices as push constants.
+				UploadAllocation alloc = m_uploadBuffer->Alloc(sizeof(PerDrawConstants), 256);
+				memcpy(alloc.cpuPtr, &constants, sizeof(PerDrawConstants));
+				cmd.SetConstantBufferView(0, alloc.gpuAddr);
+				cmd.PushConstants(sizeof(PerDrawConstants), &constants);
 
 				cmd.SetVertexBuffer(resource->vertexBuffer.get());
 				cmd.SetIndexBuffer(resource->indexBuffer.get());
 
+				Vector<Texture*> matTextures;
+
 				for (const Submesh& submesh : resource->mesh->submeshes)
 				{
+					if (submesh.materialIndex >= 0)
+					{
+						const Material& mat = resource->mesh->materials[submesh.materialIndex];
+						m_resourceManager->GetMaterialTextures(meshComp.path, *resource->mesh, mat, matTextures);
+						cmd.SetShaderResources(1, matTextures);
+					}
+
 					cmd.DrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, 0);
 				}
 			});
@@ -276,6 +346,12 @@ void Renderer::QueueStagingUpload(PendingStagingUpload& upload)
 {
 	DYNAMIC_ASSERT(upload.IsValid(), "Renderer::QueueStagingUpload: invalid upload");
 	m_deferredUploads.push_back(std::move(upload));
+}
+
+void Renderer::QueueTextureUpload(PendingTextureUpload& upload)
+{
+	DYNAMIC_ASSERT(upload.IsValid(), "Renderer::QueueTextureUpload: invalid upload");
+	m_deferredTextureUploads.push_back(std::move(upload));
 }
 
 void Renderer::QueueCopyForThisFrame(PendingStagingUpload& upload, CommandQueueType queueType)
@@ -332,6 +408,8 @@ void Renderer::CreateMeshPipeline()
 	meshDesc.enableBlending		  = false;
 	meshDesc.rasterState.cullMode = RasterizerState::CullMode::Back;
 	meshDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
+	meshDesc.pushConstantSize	  = sizeof(PerDrawConstants);
+	meshDesc.textureSlotCount	  = 5; // BaseColor, Normal, MetallicRoughness, Occlusion, Emissive
 	m_meshPSO					  = m_device->CreatePipelineState(meshDesc);
 
 	LOG_DEBUG("Renderer: mesh PSO ready");
