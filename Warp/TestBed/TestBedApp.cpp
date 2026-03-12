@@ -9,29 +9,27 @@ struct TempGame : public UserApplicationBase
 {
 	FreeCam camera;
 
-	Vector<Entity> entities;
 	bool Initialize()
 	{
 		World& world = engine->GetWorld();
 
-		entities.push_back(world.CreateEntity());
-		world.AddComponent<TransformComponent>(entities.back());
-		world.AddComponent<MeshComponent>(entities.back());
-		world.GetComponent<MeshComponent>(entities.back()).SetPath("Resources/DamagedHelmet/DamagedHelmet.gltf");
+		Entity Helmet = world.CreateEntity();
+		world.AddComponent<TransformComponent>(Helmet);
+		world.AddComponent<MeshComponent>(Helmet);
+		world.GetComponent<MeshComponent>(Helmet).SetPath("Resources/DamagedHelmet/DamagedHelmet.gltf");
 
-		entities.push_back(world.CreateEntity());
-		world.AddComponent<TransformComponent>(entities.back());
-		world.AddComponent<MeshComponent>(entities.back());
-		world.GetComponent<MeshComponent>(entities.back()).SetPath("Resources/Avocado/Avocado.gltf");
-		TransformComponent& transform = world.GetComponent<TransformComponent>(entities.back());
+		Entity Avocado = world.CreateEntity();
+		world.AddComponent<TransformComponent>(Avocado);
+		world.AddComponent<MeshComponent>(Avocado);
+		world.GetComponent<MeshComponent>(Avocado).SetPath("Resources/Avocado/Avocado.gltf");
+		TransformComponent& transform = world.GetComponent<TransformComponent>(Avocado);
 		transform.Move({ 2.0f, 0.f, 0.f });
 		transform.Scale(20.0f);
 
-		Entity duplicateAvocado	  = world.DuplicateEntity(entities.back());
+		Entity duplicateAvocado	  = world.DuplicateEntity(Avocado);
 		TransformComponent& trans = world.GetComponent<TransformComponent>(duplicateAvocado);
 		trans.Move({ 5.0f, 0.0f, 0.0f });
 		trans.Scale(5.0f);
-		entities.push_back(duplicateAvocado);
 
 		const f32 aspect = static_cast<f32>(EngineInitDesc.WindowWidth) / static_cast<f32>(EngineInitDesc.WindowHeight);
 		camera.Initialize(60.f, aspect);
@@ -43,11 +41,9 @@ struct TempGame : public UserApplicationBase
 
 	bool Update(f32 DeltaTime)
 	{
-		for (Entity& Entity : entities)
-		{
-			TransformComponent& transform = engine->GetWorld().GetComponent<TransformComponent>(Entity);
-			transform.Rotate({ 0.f, 30.f * DeltaTime, 0.f });
-		}
+		World& world = engine->GetWorld();
+		world.Each<TransformComponent>([&](Entity entity, TransformComponent& transform)
+									   { transform.Rotate({ 0.f, 30.f * DeltaTime, 0.f }); });
 
 		return true;
 	}
