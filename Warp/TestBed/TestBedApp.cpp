@@ -25,12 +25,13 @@ struct TempGame : public UserApplicationBase
 		world.GetComponent<MeshComponent>(entities.back()).SetPath("Resources/Avocado/Avocado.gltf");
 		TransformComponent& transform = world.GetComponent<TransformComponent>(entities.back());
 		transform.Move({ 2.0f, 0.f, 0.f });
-		transform.Scale(20.0f); // Avocado is real-world scale (~0.1 units), scale up to be visible
-		// Entity duplicateAvocado		  = world.DuplicateEntity(entities.back());
-		// TransformComponent& transform = world.GetComponent<TransformComponent>(duplicateAvocado);
-		// transform.Move({ 0.3f, 0.0f, 0.0f });
-		// transform.Scale(5.0f);
-		// entities.push_back(duplicateAvocado);
+		transform.Scale(20.0f);
+
+		Entity duplicateAvocado	  = world.DuplicateEntity(entities.back());
+		TransformComponent& trans = world.GetComponent<TransformComponent>(duplicateAvocado);
+		trans.Move({ 5.0f, 0.0f, 0.0f });
+		trans.Scale(5.0f);
+		entities.push_back(duplicateAvocado);
 
 		const f32 aspect = static_cast<f32>(EngineInitDesc.WindowWidth) / static_cast<f32>(EngineInitDesc.WindowHeight);
 		camera.Initialize(60.f, aspect);

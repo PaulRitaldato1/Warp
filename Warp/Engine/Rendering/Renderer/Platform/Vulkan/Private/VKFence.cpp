@@ -111,8 +111,20 @@ void VKFence::WaitForValue(u64 value, u64 timeout)
 	waitInfo.pSemaphores    = &m_semaphore;
 	waitInfo.pValues        = &value;
 
-	VK_CHECK(vkWaitSemaphores(m_device, &waitInfo, timeout),
-	         "VKFence::WaitForValue: vkWaitSemaphores failed");
+	// Cap the default infinite timeout at 5 seconds (in nanoseconds) so a GPU hang
+	// surfaces as a logged error instead of blocking the process forever.
+	static constexpr u64 k_defaultTimeoutNs = 5ULL * 1'000'000'000ULL;
+	u64 effectiveTimeout = (timeout == UINT64_MAX) ? k_defaultTimeoutNs : timeout;
+
+	VkResult result = vkWaitSemaphores(m_device, &waitInfo, effectiveTimeout);
+	if (result == VK_TIMEOUT)
+	{
+		LOG_ERROR("VKFence: WaitForValue({}) timed out after 5s — possible GPU hang", value);
+	}
+	else
+	{
+		VK_CHECK(result, "VKFence::WaitForValue: vkWaitSemaphores failed");
+	}
 }
 
 #endif // WARP_BUILD_VK

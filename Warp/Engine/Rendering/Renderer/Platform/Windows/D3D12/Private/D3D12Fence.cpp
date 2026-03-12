@@ -72,7 +72,14 @@ void D3D12Fence::WaitForValue(u64 value, u64 timeout)
 	if (m_fence->GetCompletedValue() < value)
 	{
 		ThrowIfFailed(m_fence->SetEventOnCompletion(value, m_event));
-		WaitForSingleObjectEx(m_event, static_cast<DWORD>(timeout == UINT64_MAX ? INFINITE : timeout), FALSE);
+		// Cap the default infinite timeout at 5 seconds so a GPU hang surfaces as a
+		// logged error instead of freezing the process (and the whole desktop) forever.
+		DWORD ms     = (timeout == UINT64_MAX) ? 5000u : static_cast<DWORD>(timeout);
+		DWORD result = WaitForSingleObjectEx(m_event, ms, FALSE);
+		if (result == WAIT_TIMEOUT)
+		{
+			LOG_ERROR("D3D12Fence: WaitForValue({}) timed out after {}ms — possible GPU hang or TDR", value, ms);
+		}
 	}
 }
 

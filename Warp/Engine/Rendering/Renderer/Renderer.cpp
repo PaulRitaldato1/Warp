@@ -185,27 +185,31 @@ void Renderer::EndFrame()
 
 	m_copyList->End();
 
-	u64 deferredFenceValue = m_copyQueue->Submit(*m_copyList);
-
-	for (PendingStagingUpload& upload : m_deferredUploads)
+	if (!m_deferredUploads.empty() || !m_deferredTextureUploads.empty())
 	{
-		InFlightStaging entry;
-		entry.stagingBuffer = std::move(upload.stagingBuffer);
-		entry.fenceValue	= deferredFenceValue;
-		m_inFlightStagingBuffers.push_back(std::move(entry));
+		u64 deferredFenceValue = m_copyQueue->Submit(*m_copyList);
+
+		for (PendingStagingUpload& upload : m_deferredUploads)
+		{
+			InFlightStaging entry;
+			entry.stagingBuffer = std::move(upload.stagingBuffer);
+			entry.fenceValue	= deferredFenceValue;
+			m_inFlightStagingBuffers.push_back(std::move(entry));
+		}
+
+		for (PendingTextureUpload& upload : m_deferredTextureUploads)
+		{
+			InFlightTextureUpload entry;
+			entry.stagingBuffer = std::move(upload.stagingUploadBuffer);
+			entry.fenceValue	= deferredFenceValue;
+			m_inFlightTextureUploads.push_back(std::move(entry));
+		}
+
+		lastCopyFenceValue = deferredFenceValue;
 	}
+
 	m_deferredUploads.clear();
-
-	for (PendingTextureUpload& upload : m_deferredTextureUploads)
-	{
-		InFlightTextureUpload entry;
-		entry.stagingBuffer = std::move(upload.stagingUploadBuffer);
-		entry.fenceValue	= deferredFenceValue;
-		m_inFlightTextureUploads.push_back(std::move(entry));
-	}
 	m_deferredTextureUploads.clear();
-
-	lastCopyFenceValue = deferredFenceValue;
 
 	// Submit worker lists as batches and track the signaled fence value per queue.
 	FrameSyncPoint& sync = m_frameSyncPoints[m_frameIndex];

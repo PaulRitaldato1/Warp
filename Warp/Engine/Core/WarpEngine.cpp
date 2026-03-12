@@ -50,6 +50,7 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 WarpEngine::~WarpEngine()
 {
 	LOG_DEBUG("Shutting down");
+
 	if (m_window && m_activeCamera)
 	{
 		m_window->ReleaseMouse();
@@ -58,14 +59,22 @@ WarpEngine::~WarpEngine()
 	{
 		m_world->ShutdownSystems();
 	}
-	if (m_resourceManager)
-	{
-		m_resourceManager->Shutdown();
-	}
+
+	// Renderer must shut down first — it waits for the GPU to go idle before
+	// returning. Only then is it safe to free GPU resources held by the
+	// ResourceManager (mesh/texture buffers). Freeing them while the GPU is
+	// still in-flight forces the D3D12 debug layer (or Vulkan driver) to
+	// internally synchronize, causing a multi-second freeze.
 	if (m_renderer)
 	{
 		m_renderer->Shutdown();
 	}
+
+	if (m_resourceManager)
+	{
+		m_resourceManager->Shutdown();
+	}
+
 	Logger::Get().Shutdown();
 }
 

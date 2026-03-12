@@ -111,10 +111,16 @@ void Logger::FileWriterThread()
 {
 	while (true)
 	{
-		// Wait until notified or timeout (periodic flush safety net).
+		// Wait until notified, timed out, or shutdown requested.
+		// Using a predicate ensures notify_one() is never missed — if shutdown is
+		// set before the thread re-enters wait_for, it returns immediately instead
+		// of sleeping another 100ms.
+		bool shutdown = false;
 		{
 			std::unique_lock<std::mutex> lock(m_writerWakeMutex);
-			m_writerWakeCV.wait_for(lock, std::chrono::milliseconds(100));
+			m_writerWakeCV.wait_for(lock, std::chrono::milliseconds(100),
+				[this] { return m_shutdownWriter.load(std::memory_order_acquire); });
+			shutdown = m_shutdownWriter.load(std::memory_order_acquire);
 		}
 
 		// Swap and drain the back buffer.
@@ -133,7 +139,7 @@ void Logger::FileWriterThread()
 
 		m_fileBuffer.ClearBackContainer();
 
-		if (m_shutdownWriter.load(std::memory_order_acquire))
+		if (shutdown)
 			break;
 	}
 }
