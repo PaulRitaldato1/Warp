@@ -41,6 +41,10 @@ public:
 	// Automatically kicks off loading on first request.
 	MeshResource* GetMeshResource(const char* path);
 
+	// O(1) handle-based lookup. Returns nullptr if the handle is invalid.
+	// Use this in the hot render loop once a handle has been cached from GetMeshResource.
+	MeshResource* GetMeshResourceByHandle(u32 handle);
+
 	// Returns a TextureResource if ready, nullptr if still loading/uploading.
 	// Automatically kicks off loading on first request.
 	TextureResource* GetTextureResource(const char* path);
@@ -73,6 +77,9 @@ private:
 	// Cache: path -> resource. Entries persist for the lifetime of the manager.
 	HashMap<String, URef<MeshResource>>    m_meshCache;
 	HashMap<String, URef<TextureResource>> m_textureCache;
+
+	// Handle table: index -> raw pointer for O(1) render-loop lookups.
+	Vector<MeshResource*> m_meshByHandle;
 
 	// Pending async loads tracked via futures.
 	HashMap<String, std::future<URef<Mesh>>>        m_pendingMeshLoads;

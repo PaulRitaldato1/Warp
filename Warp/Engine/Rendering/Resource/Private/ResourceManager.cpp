@@ -234,9 +234,19 @@ void ResourceManager::BeginMeshLoad(const String& path)
 {
 	URef<MeshResource> resource = std::make_unique<MeshResource>();
 	resource->state				= AssetState::Loading;
-	m_meshCache[path]			= std::move(resource);
+	resource->handle			= static_cast<u32>(m_meshByHandle.size());
+
+	m_meshByHandle.push_back(resource.get());
+	m_meshCache[path] = std::move(resource);
 
 	m_pendingMeshLoads[path] = MeshLoader::LoadAsync(path, *m_threadPool);
+}
+
+MeshResource* ResourceManager::GetMeshResourceByHandle(u32 handle)
+{
+	if (handle >= static_cast<u32>(m_meshByHandle.size()))
+		return nullptr;
+	return m_meshByHandle[handle];
 }
 
 void ResourceManager::BeginTextureLoad(const String& path)

@@ -7,7 +7,8 @@
 
 struct MeshResource
 {
-	AssetState state = AssetState::Loading;
+	u32        handle = ~0u;
+	AssetState state  = AssetState::Loading;
 
 	// CPU-side data — retained after upload for culling/physics.
 	URef<Mesh> mesh;

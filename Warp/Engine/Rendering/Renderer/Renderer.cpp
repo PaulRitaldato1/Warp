@@ -284,12 +284,30 @@ void Renderer::DrawDeferred()
 		m_world->Each<TransformComponent, MeshComponent>(
 			[&cmd, this](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
 			{
+				if (!(meshComp.renderFlags & RenderFlags_Visible))
+				{
+					return;
+				}
+
 				if (meshComp.path[0] == '\0')
 				{
 					return; // No path set
 				}
 
-				MeshResource* resource = m_resourceManager->GetMeshResource(meshComp.path);
+				MeshResource* resource = nullptr;
+				if (meshComp.IsHandleValid())
+				{
+					resource = m_resourceManager->GetMeshResourceByHandle(meshComp.meshHandle);
+				}
+				else
+				{
+					resource = m_resourceManager->GetMeshResource(meshComp.path);
+					if (resource)
+					{
+						meshComp.meshHandle = resource->handle;
+					}
+				}
+
 				if (!resource || resource->state != AssetState::Ready)
 				{
 					return; // Still loading or uploading — skip this frame
@@ -298,7 +316,6 @@ void Renderer::DrawDeferred()
 				// Build model matrix from TransformComponent (scale → rotate → translate).
 				PerDrawConstants constants;
 				constants.viewProj = m_viewProj;
-
 				{
 					using namespace DirectX;
 					SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
