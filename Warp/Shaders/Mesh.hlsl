@@ -1,6 +1,3 @@
-// [[vk::push_constant]] tells DXC/shaderc to emit this as a push-constant block
-// instead of a uniform buffer. D3D12 ignores the attribute.
-[[vk::push_constant]]
 cbuffer PerDraw : register(b0)
 {
     float4x4 viewProj;

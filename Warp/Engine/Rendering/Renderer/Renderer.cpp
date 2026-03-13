@@ -324,12 +324,10 @@ void Renderer::DrawDeferred()
 					XMStoreFloat4x4(&constants.model, XMMatrixMultiply(XMMatrixMultiply(S, R), T));
 				}
 
-				// D3D12: sub-allocate from ring buffer and bind as root CBV.
-				// Vulkan: push both matrices as push constants.
+				// Sub-allocate from ring buffer and bind as CBV (root CBV on D3D12, push descriptor UBO on Vulkan).
 				UploadAllocation alloc = m_uploadBuffer->Alloc(sizeof(PerDrawConstants), 256);
 				memcpy(alloc.cpuPtr, &constants, sizeof(PerDrawConstants));
-				cmd.SetConstantBufferView(0, alloc.gpuAddr);
-				cmd.PushConstants(sizeof(PerDrawConstants), &constants);
+				cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), alloc.offset, sizeof(PerDrawConstants));
 
 				cmd.SetVertexBuffer(resource->vertexBuffer.get());
 				cmd.SetIndexBuffer(resource->indexBuffer.get());
@@ -429,7 +427,6 @@ void Renderer::CreateMeshPipeline()
 	meshDesc.enableBlending		  = false;
 	meshDesc.rasterState.cullMode = RasterizerState::CullMode::Back;
 	meshDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
-	meshDesc.pushConstantSize	  = sizeof(PerDrawConstants);
 	meshDesc.textureSlotCount	  = 5; // BaseColor, Normal, MetallicRoughness, Occlusion, Emissive
 	m_meshPSO					  = m_device->CreatePipelineState(meshDesc);
 

@@ -35,18 +35,17 @@ void VKUploadBuffer::Initialize(u64 size, u32 framesInFlight)
 
 UploadAllocation VKUploadBuffer::Alloc(u64 size, u64 alignment)
 {
-	// Align size up to the requested alignment before asking the ring buffer.
-	u64 alignedSize = (size + alignment - 1) & ~(alignment - 1);
-
+	// The ring buffer inserts alignment padding internally so offset is already
+	// aligned on return — no post-hoc rounding needed here.
 	u32 offset = 0;
-	bool ok = m_ringBuffer.Alloc(static_cast<u32>(alignedSize), &offset);
+	bool ok = m_ringBuffer.Alloc(static_cast<u32>(size), &offset, static_cast<u32>(alignment));
 	DYNAMIC_ASSERT(ok, "VKUploadBuffer::Alloc: upload buffer is full");
 
 	UploadAllocation alloc;
 	alloc.cpuPtr  = m_mapped + offset;
 	alloc.gpuAddr = m_gpuBase + offset;
 	alloc.offset  = static_cast<u64>(offset);
-	alloc.size    = alignedSize;
+	alloc.size    = size;
 	return alloc;
 }
 

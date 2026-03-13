@@ -78,15 +78,10 @@ public:
 	// NOTE: full bindless/descriptor-heap management is a future feature.
 	virtual void SetConstantBuffer(u32 rootIndex, Buffer* buffer)   = 0;
 
-	// Bind a constant buffer by raw GPU virtual address.
-	// Use this when sub-allocating from a ring buffer (UploadAllocation::gpuAddr).
-	// D3D12: SetGraphicsRootConstantBufferView.  Vulkan: no-op (use PushConstants).
-	virtual void SetConstantBufferView(u32 rootIndex, u64 gpuAddress) = 0;
-
-	// Upload small per-draw data via push constants (Vulkan) or root 32-bit constants (future).
-	// D3D12: no-op (use SetConstantBufferView).  Vulkan: vkCmdPushConstants at offset 0.
-	// size must be a multiple of 4 and fit within the pipeline's push constant range.
-	virtual void PushConstants(u32 size, const void* data) = 0;
+	// Bind a constant buffer sub-range as a CBV.
+	// Use this when sub-allocating from a ring buffer (UploadAllocation).
+	// D3D12: SetGraphicsRootConstantBufferView.  Vulkan: push descriptor UBO bind.
+	virtual void SetConstantBufferView(u32 rootIndex, Buffer* buffer, u64 offset, u64 size) = 0;
 
 	// Bind a single texture as an SRV at rootIndex.
 	virtual void SetShaderResource(u32 rootIndex, Texture* texture) = 0;

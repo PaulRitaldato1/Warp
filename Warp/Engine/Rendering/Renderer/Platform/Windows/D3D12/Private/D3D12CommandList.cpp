@@ -181,9 +181,11 @@ void D3D12CommandList::SetConstantBuffer(u32 rootIndex, Buffer* buffer)
 		rootIndex, static_cast<D3D12Buffer*>(buffer)->GetGPUAddress());
 }
 
-void D3D12CommandList::SetConstantBufferView(u32 rootIndex, u64 gpuAddress)
+void D3D12CommandList::SetConstantBufferView(u32 rootIndex, Buffer* buffer, u64 offset, u64 /*size*/)
 {
-	m_list->SetGraphicsRootConstantBufferView(rootIndex, static_cast<D3D12_GPU_VIRTUAL_ADDRESS>(gpuAddress));
+	DYNAMIC_ASSERT(buffer, "D3D12CommandList::SetConstantBufferView: buffer is null");
+	D3D12_GPU_VIRTUAL_ADDRESS addr = static_cast<D3D12Buffer*>(buffer)->GetGPUAddress() + offset;
+	m_list->SetGraphicsRootConstantBufferView(rootIndex, addr);
 }
 
 void D3D12CommandList::SetShaderResource(u32 rootIndex, Texture* texture)

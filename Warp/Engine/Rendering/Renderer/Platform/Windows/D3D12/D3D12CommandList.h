@@ -42,8 +42,7 @@ public:
 	                       f32 depth = 1.f, u8 stencil = 0)            override;
 
 	void SetConstantBuffer(u32 rootIndex, Buffer* buffer)                          override;
-	void SetConstantBufferView(u32 rootIndex, u64 gpuAddress)                      override;
-	void PushConstants(u32 size, const void* data)                                 override {}
+	void SetConstantBufferView(u32 rootIndex, Buffer* buffer, u64 offset, u64 size) override;
 	void SetShaderResource(u32 rootIndex, Texture* texture)                        override;
 	void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures)       override;
 

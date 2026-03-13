@@ -72,6 +72,13 @@ void VKShader::Initialize(const ShaderDesc& desc)
 	options.SetSourceLanguage(shaderc_source_language_hlsl);
 	options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
 	options.SetTargetSpirv(shaderc_spirv_version_1_6);
+
+	// Shift texture (t) and sampler (s) registers by 1 so binding 0 is reserved
+	// for the per-draw UBO (cbuffer at register(b0)).  This avoids binding
+	// conflicts without needing [[vk::binding()]] attributes in shaders.
+	options.SetBindingBase(shaderc_uniform_kind_texture, 1);
+	options.SetBindingBase(shaderc_uniform_kind_sampler, 1);
+
 	// Entry point is passed as the final argument to CompileGlslToSpv below.
 
 #if defined(WARP_DEBUG)

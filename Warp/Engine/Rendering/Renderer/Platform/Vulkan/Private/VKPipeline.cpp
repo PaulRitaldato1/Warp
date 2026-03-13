@@ -211,23 +211,34 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	// Descriptor set layout for push descriptors (texture slots)
 	// -------------------------------------------------------------------------
 
-	if (desc.textureSlotCount > 0)
 	{
-		Vector<VkDescriptorSetLayoutBinding> texBindings(desc.textureSlotCount);
+		// Binding 0: per-draw UBO (cbuffer at register(b0)).
+		// Bindings 1..N: combined image samplers (textures shifted by 1).
+		Vector<VkDescriptorSetLayoutBinding> bindings;
+		bindings.reserve(1 + desc.textureSlotCount);
+
+		VkDescriptorSetLayoutBinding uboBinding = {};
+		uboBinding.binding         = 0;
+		uboBinding.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		uboBinding.descriptorCount = 1;
+		uboBinding.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		bindings.push_back(uboBinding);
+
 		for (u32 i = 0; i < desc.textureSlotCount; ++i)
 		{
-			texBindings[i]                 = {};
-			texBindings[i].binding         = i;
-			texBindings[i].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			texBindings[i].descriptorCount = 1;
-			texBindings[i].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+			VkDescriptorSetLayoutBinding texBinding = {};
+			texBinding.binding         = i + 1;
+			texBinding.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			texBinding.descriptorCount = 1;
+			texBinding.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+			bindings.push_back(texBinding);
 		}
 
 		VkDescriptorSetLayoutCreateInfo setLayoutInfo = {};
 		setLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 		setLayoutInfo.flags        = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-		setLayoutInfo.bindingCount = desc.textureSlotCount;
-		setLayoutInfo.pBindings    = texBindings.data();
+		setLayoutInfo.bindingCount = static_cast<u32>(bindings.size());
+		setLayoutInfo.pBindings    = bindings.data();
 
 		VK_CHECK(vkCreateDescriptorSetLayout(m_device, &setLayoutInfo, nullptr, &m_descriptorSetLayout),
 				 "VKPipeline: vkCreateDescriptorSetLayout failed");
@@ -237,18 +248,10 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	// Pipeline layout
 	// -------------------------------------------------------------------------
 
-	// Push constant range derived from the caller's per-draw struct size.
-	VkPushConstantRange pushRange = {};
-	pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	pushRange.offset     = 0;
-	pushRange.size       = desc.pushConstantSize;
-
 	VkPipelineLayoutCreateInfo layoutInfo = {};
-	layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	layoutInfo.pushConstantRangeCount = (desc.pushConstantSize > 0) ? 1 : 0;
-	layoutInfo.pPushConstantRanges    = (desc.pushConstantSize > 0) ? &pushRange : nullptr;
-	layoutInfo.setLayoutCount         = (m_descriptorSetLayout != VK_NULL_HANDLE) ? 1 : 0;
-	layoutInfo.pSetLayouts            = (m_descriptorSetLayout != VK_NULL_HANDLE) ? &m_descriptorSetLayout : nullptr;
+	layoutInfo.sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	layoutInfo.setLayoutCount = 1;
+	layoutInfo.pSetLayouts    = &m_descriptorSetLayout;
 
 	VK_CHECK(vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_layout),
 			 "VKPipeline: vkCreatePipelineLayout failed");
