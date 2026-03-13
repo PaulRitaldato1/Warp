@@ -1,3 +1,4 @@
+#include "fastgltf/types.hpp"
 #include <Rendering/Mesh/MeshLoader.h>
 #include <Debugging/Logging.h>
 #include <Threading/ThreadPool.h>
@@ -42,7 +43,7 @@ static void ExtractMaterials(const fastgltf::Asset& asset, Mesh& out)
 		mat.alphaMode	= TranslateAlphaMode(src.alphaMode);
 		mat.unlit		= src.unlit;
 
-		const auto& pbr = src.pbrData;
+		const fastgltf::PBRData& pbr = src.pbrData;
 		mat.baseColorFactor =
 			Vec4(pbr.baseColorFactor[0], pbr.baseColorFactor[1], pbr.baseColorFactor[2], pbr.baseColorFactor[3]);
 		mat.metallicFactor	= pbr.metallicFactor;
@@ -51,23 +52,24 @@ static void ExtractMaterials(const fastgltf::Asset& asset, Mesh& out)
 
 		if (pbr.baseColorTexture.has_value())
 		{
-			mat.baseColorTexture = static_cast<int32>(pbr.baseColorTexture->textureIndex);
+			mat.TextureIndices[TextureSlot::BaseColor] = static_cast<int32>(pbr.baseColorTexture->textureIndex);
 		}
 		if (pbr.metallicRoughnessTexture.has_value())
 		{
-			mat.metallicRoughnessTexture = static_cast<int32>(pbr.metallicRoughnessTexture->textureIndex);
+			mat.TextureIndices[TextureSlot::MetallicRoughness] =
+				static_cast<int32>(pbr.metallicRoughnessTexture->textureIndex);
 		}
 		if (src.normalTexture.has_value())
 		{
-			mat.normalTexture = static_cast<int32>(src.normalTexture->textureIndex);
+			mat.TextureIndices[TextureSlot::Normal] = static_cast<int32>(src.normalTexture->textureIndex);
 		}
 		if (src.occlusionTexture.has_value())
 		{
-			mat.occlusionTexture = static_cast<int32>(src.occlusionTexture->textureIndex);
+			mat.TextureIndices[TextureSlot::Occlusion] = static_cast<int32>(src.occlusionTexture->textureIndex);
 		}
 		if (src.emissiveTexture.has_value())
 		{
-			mat.emissiveTexture = static_cast<int32>(src.emissiveTexture->textureIndex);
+			mat.TextureIndices[TextureSlot::Emissive] = static_cast<int32>(src.emissiveTexture->textureIndex);
 		}
 
 		out.materials.push_back(std::move(mat));

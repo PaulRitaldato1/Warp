@@ -10,18 +10,18 @@
 struct Vertex
 {
 	Vec3 position = { 0.f, 0.f, 0.f };
-	Vec3 normal   = { 0.f, 1.f, 0.f };
+	Vec3 normal	  = { 0.f, 1.f, 0.f };
 
 	// xyz = tangent direction, w = bitangent sign (+1 or -1).
 	// Bitangent = cross(normal, tangent.xyz) * tangent.w
-	Vec4 tangent  = { 1.f, 0.f, 0.f, 1.f };
+	Vec4 tangent = { 1.f, 0.f, 0.f, 1.f };
 
-	Vec2 uv0      = { 0.f, 0.f };  // primary UV (diffuse, PBR maps)
-	Vec2 uv1      = { 0.f, 0.f };  // secondary UV (lightmaps)
+	Vec2 uv0 = { 0.f, 0.f }; // primary UV (diffuse, PBR maps)
+	Vec2 uv1 = { 0.f, 0.f }; // secondary UV (lightmaps)
 
 	// Vertex colour — defaults to opaque white so meshes without colour data
 	// render correctly without shader branching.
-	Vec4 color    = { 1.f, 1.f, 1.f, 1.f };
+	Vec4 color = { 1.f, 1.f, 1.f, 1.f };
 };
 
 // ---------------------------------------------------------------------------
@@ -29,11 +29,21 @@ struct Vertex
 // ---------------------------------------------------------------------------
 enum class AlphaMode : u8
 {
-	Opaque,  // fully solid, no alpha test
-	Mask,    // alpha test against alphaCutoff
-	Blend    // blended transparency
+	Opaque, // fully solid, no alpha test
+	Mask,	// alpha test against alphaCutoff
+	Blend	// blended transparency
 };
 
+enum TextureSlot : int32
+{
+	BaseColor		  = 0,
+	Normal			  = 1,
+	MetallicRoughness = 2,
+	Occlusion		  = 3,
+	Emissive		  = 4,
+
+	TextureSlotCount
+};
 // ---------------------------------------------------------------------------
 // Material — all glTF 2.0 PBR fields plus KHR_materials_unlit.
 // Texture indices refer to the Mesh::texturePaths array (-1 = not present).
@@ -44,22 +54,23 @@ struct Material
 	String name;
 
 	// PBR metallic-roughness
-	Vec4  baseColorFactor            = { 1.f, 1.f, 1.f, 1.f };
-	f32   metallicFactor             = 1.f;
-	f32   roughnessFactor            = 1.f;
-	Vec3  emissiveFactor             = { 0.f, 0.f, 0.f };
-	f32   alphaCutoff                = 0.5f;
+	Vec4 baseColorFactor = { 1.f, 1.f, 1.f, 1.f };
+	f32 metallicFactor	 = 1.f;
+	f32 roughnessFactor	 = 1.f;
+	Vec3 emissiveFactor	 = { 0.f, 0.f, 0.f };
+	f32 alphaCutoff		 = 0.5f;
 
 	// Texture slots (-1 = not present)
-	int32 baseColorTexture           = -1;
-	int32 normalTexture              = -1;
-	int32 metallicRoughnessTexture   = -1;
-	int32 occlusionTexture           = -1;
-	int32 emissiveTexture            = -1;
+	Array<int32, TextureSlotCount> TextureIndices = { -1, -1, -1, -1, -1 };
+	// int32 baseColorTexture		   = -1;
+	// int32 normalTexture			   = -1;
+	// int32 metallicRoughnessTexture = -1;
+	// int32 occlusionTexture		   = -1;
+	// int32 emissiveTexture		   = -1;
 
 	AlphaMode alphaMode = AlphaMode::Opaque;
-	bool      doubleSided = false;
-	bool      unlit       = false;  // KHR_materials_unlit
+	bool doubleSided	= false;
+	bool unlit			= false; // KHR_materials_unlit
 };
 
 // ---------------------------------------------------------------------------
@@ -68,9 +79,9 @@ struct Material
 // ---------------------------------------------------------------------------
 struct Submesh
 {
-	u32   indexOffset  = 0;   // first index in Mesh::indices
-	u32   indexCount   = 0;
-	u32   vertexOffset = 0;   // base vertex added to each index (SV_BaseVertex)
+	u32 indexOffset		= 0; // first index in Mesh::indices
+	u32 indexCount		= 0;
+	u32 vertexOffset	= 0;  // base vertex added to each index (SV_BaseVertex)
 	int32 materialIndex = -1; // into Mesh::materials
 
 	BoundingBox bounds;
@@ -85,14 +96,14 @@ struct Mesh
 {
 	String name;
 
-	Vector<Vertex>   vertices;
-	Vector<u32>      indices;
-	Vector<Submesh>  submeshes;
+	Vector<Vertex> vertices;
+	Vector<u32> indices;
+	Vector<Submesh> submeshes;
 	Vector<Material> materials;
 
 	// Relative paths to image files, as stored in the glTF.
 	// Texture indices in Material refer to this array.
-	Vector<String>   texturePaths;
+	Vector<String> texturePaths;
 
 	BoundingBox bounds;
 };

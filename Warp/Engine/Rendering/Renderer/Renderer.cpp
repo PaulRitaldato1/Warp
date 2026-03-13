@@ -260,14 +260,6 @@ void Renderer::DrawDeferred()
 	cmd.SetViewport(0.f, 0.f, w, h);
 	cmd.SetScissorRect(0, 0, m_swapChain->GetWidth(), m_swapChain->GetHeight());
 
-	// // Test triangle — drawn until a scene system replaces it.
-	// if (m_testTriPSO)
-	// {
-	// 	cmd.SetPipelineState(m_testTriPSO.get());
-	// 	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
-	// 	cmd.Draw(3);
-	// }
-
 	// Draw mesh entities from ECS.
 	// Each<T...> iterates all entities that have AT LEAST the queried components.
 	// Entities with additional components beyond Transform + Mesh are still included.
@@ -333,16 +325,16 @@ void Renderer::DrawDeferred()
 				cmd.SetVertexBuffer(resource->vertexBuffer.get());
 				cmd.SetIndexBuffer(resource->indexBuffer.get());
 
-				Vector<Texture*> matTextures(m_resourceManager->materialTextureSlots, nullptr);
+				Vector<Texture*> matTextures(TextureSlot::TextureSlotCount, nullptr);
 
 				for (const Submesh& submesh : resource->mesh->submeshes)
 				{
 					if (submesh.materialIndex >= 0)
 					{
-						const Material&    mat     = resource->mesh->materials[submesh.materialIndex];
+						const Material& mat		   = resource->mesh->materials[submesh.materialIndex];
 						const Vector<u32>& handles = resource->textureHandles;
 
-						auto trySlot = [&](int32 texIdx, u32 slot)
+						auto tryFillSlot = [&](int32 texIdx, u32 slot)
 						{
 							matTextures[slot] = nullptr;
 							if (texIdx >= 0 && texIdx < static_cast<int32>(handles.size()))
@@ -355,11 +347,10 @@ void Renderer::DrawDeferred()
 							}
 						};
 
-						trySlot(mat.baseColorTexture,         0);
-						trySlot(mat.normalTexture,            1);
-						trySlot(mat.metallicRoughnessTexture, 2);
-						trySlot(mat.occlusionTexture,         3);
-						trySlot(mat.emissiveTexture,          4);
+						for (int32 slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
+						{
+							tryFillSlot(mat.TextureIndices[slot], slot);
+						}
 
 						cmd.SetShaderResources(1, matTextures);
 					}
@@ -448,8 +439,9 @@ void Renderer::CreateMeshPipeline()
 	meshDesc.enableBlending		  = false;
 	meshDesc.rasterState.cullMode = RasterizerState::CullMode::Back;
 	meshDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
-	meshDesc.textureSlotCount	  = 5; // BaseColor, Normal, MetallicRoughness, Occlusion, Emissive
-	m_meshPSO					  = m_device->CreatePipelineState(meshDesc);
+	meshDesc.textureSlotCount =
+		TextureSlot::TextureSlotCount; // BaseColor, Normal, MetallicRoughness, Occlusion, Emissive
+	m_meshPSO = m_device->CreatePipelineState(meshDesc);
 
 	LOG_DEBUG("Renderer: mesh PSO ready");
 }
