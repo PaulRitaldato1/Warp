@@ -15,6 +15,31 @@ public:
 
 	// Entity lifecycle
 	Entity CreateEntity();
+
+	// Creates an entity and adds all specified components in one step,
+	// placing it directly into the target archetype with no intermediate migrations.
+	// Components are default-constructed, so declared default values are respected.
+	template <IsComponent... Ts>
+	Entity CreateEntity()
+	{
+		Entity entity = CreateEntity();
+
+		ComponentMask mask     = BuildMask<Ts...>();
+		Archetype*    archetype = FindOrCreateArchetype(mask);
+
+		u32 row = archetype->AddEntity(entity);
+
+		EntityRecord& record = m_entities[entity.id];
+		record.archetype     = archetype;
+		record.row           = row;
+
+		// Write default-constructed values — AddEntity zero-inits storage, which
+		// would silently ignore non-zero field defaults (e.g. intensity = 1.f).
+		((archetype->GetColumn<Ts>()[row] = Ts{}), ...);
+
+		return entity;
+	}
+
 	Entity DuplicateEntity(Entity source);
 	void   DestroyEntity(Entity entity);
 	bool   IsAlive(Entity entity) const;

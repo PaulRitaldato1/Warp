@@ -13,14 +13,10 @@ struct TempGame : public UserApplicationBase
 	{
 		World& world = engine->GetWorld();
 
-		Entity Helmet = world.CreateEntity();
-		world.AddComponent<TransformComponent>(Helmet);
-		world.AddComponent<MeshComponent>(Helmet);
+		Entity Helmet = world.CreateEntity<TransformComponent, MeshComponent>();
 		world.GetComponent<MeshComponent>(Helmet).SetPath("Resources/DamagedHelmet/DamagedHelmet.gltf");
 
-		Entity Avocado = world.CreateEntity();
-		world.AddComponent<TransformComponent>(Avocado);
-		world.AddComponent<MeshComponent>(Avocado);
+		Entity Avocado = world.CreateEntity<TransformComponent, MeshComponent>();
 		world.GetComponent<MeshComponent>(Avocado).SetPath("Resources/Avocado/Avocado.gltf");
 		TransformComponent& transform = world.GetComponent<TransformComponent>(Avocado);
 		transform.Move({ 2.0f, 0.f, 0.f });
