@@ -49,19 +49,14 @@ public:
 	// Automatically kicks off loading on first request.
 	TextureResource* GetTextureResource(const char* path);
 
-	// Collects GPU textures for all PBR slots of a material.
-	// meshPath is used to resolve relative texture paths stored in the glTF.
-	// outTextures is resized to k_materialTextureSlots and filled in slot order:
-	//   [0] base color, [1] normal, [2] metallic-roughness, [3] occlusion, [4] emissive
-	// Null entries mean the texture is not yet loaded; loading is kicked off automatically.
-	void GetMaterialTextures(const char* meshPath, const Mesh& mesh, const Material& mat,
-	                         Vector<Texture*>& outTextures);
+	// O(1) handle-based lookup. Returns nullptr if the handle is invalid.
+	TextureResource* GetTextureResourceByHandle(u32 handle);
 
-	static constexpr u32 k_materialTextureSlots = 5;
+	u32 materialTextureSlots = 5;
 
 private:
 	void BeginMeshLoad(const String& path);
-	void BeginTextureLoad(const String& path);
+	u32  BeginTextureLoad(const String& path);
 
 	// Transition Loading -> Uploading: create GPU buffers, call UploadData().
 	void FinalizeMeshUpload(const String& path, MeshResource& resource);
@@ -78,8 +73,9 @@ private:
 	HashMap<String, URef<MeshResource>>    m_meshCache;
 	HashMap<String, URef<TextureResource>> m_textureCache;
 
-	// Handle table: index -> raw pointer for O(1) render-loop lookups.
-	Vector<MeshResource*> m_meshByHandle;
+	// Handle tables: index -> raw pointer for O(1) render-loop lookups.
+	Vector<MeshResource*>    m_meshByHandle;
+	Vector<TextureResource*> m_textureByHandle;
 
 	// Pending async loads tracked via futures.
 	HashMap<String, std::future<URef<Mesh>>>        m_pendingMeshLoads;

@@ -327,19 +327,40 @@ void Renderer::DrawDeferred()
 				// Sub-allocate from ring buffer and bind as CBV (root CBV on D3D12, push descriptor UBO on Vulkan).
 				UploadAllocation alloc = m_uploadBuffer->Alloc(sizeof(PerDrawConstants), 256);
 				memcpy(alloc.cpuPtr, &constants, sizeof(PerDrawConstants));
-				cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), alloc.offset, sizeof(PerDrawConstants));
+				cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), alloc.offset,
+										  sizeof(PerDrawConstants));
 
 				cmd.SetVertexBuffer(resource->vertexBuffer.get());
 				cmd.SetIndexBuffer(resource->indexBuffer.get());
 
-				Vector<Texture*> matTextures;
+				Vector<Texture*> matTextures(m_resourceManager->materialTextureSlots, nullptr);
 
 				for (const Submesh& submesh : resource->mesh->submeshes)
 				{
 					if (submesh.materialIndex >= 0)
 					{
-						const Material& mat = resource->mesh->materials[submesh.materialIndex];
-						m_resourceManager->GetMaterialTextures(meshComp.path, *resource->mesh, mat, matTextures);
+						const Material&    mat     = resource->mesh->materials[submesh.materialIndex];
+						const Vector<u32>& handles = resource->textureHandles;
+
+						auto trySlot = [&](int32 texIdx, u32 slot)
+						{
+							matTextures[slot] = nullptr;
+							if (texIdx >= 0 && texIdx < static_cast<int32>(handles.size()))
+							{
+								TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(handles[texIdx]);
+								if (tex)
+								{
+									matTextures[slot] = tex->gpuTexture.get();
+								}
+							}
+						};
+
+						trySlot(mat.baseColorTexture,         0);
+						trySlot(mat.normalTexture,            1);
+						trySlot(mat.metallicRoughnessTexture, 2);
+						trySlot(mat.occlusionTexture,         3);
+						trySlot(mat.emissiveTexture,          4);
+
 						cmd.SetShaderResources(1, matTextures);
 					}
 

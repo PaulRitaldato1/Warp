@@ -192,44 +192,6 @@ TextureResource* ResourceManager::GetTextureResource(const char* path)
 	return nullptr;
 }
 
-void ResourceManager::GetMaterialTextures(const char* meshPath, const Mesh& mesh,
-                                           const Material& mat, Vector<Texture*>& outTextures)
-{
-	outTextures.assign(k_materialTextureSlots, nullptr);
-
-	// Derive the directory that relative texture paths are resolved against.
-	String dir(meshPath);
-	size_t lastSlash = dir.find_last_of("/\\");
-	if (lastSlash != String::npos)
-	{
-		dir = dir.substr(0, lastSlash + 1);
-	}
-	else
-	{
-		dir.clear();
-	}
-
-	auto trySlot = [&](int32 texIdx, u32 slot)
-	{
-		if (texIdx < 0 || texIdx >= static_cast<int32>(mesh.texturePaths.size()))
-		{
-			return;
-		}
-		String fullPath         = dir + mesh.texturePaths[texIdx];
-		TextureResource* res    = GetTextureResource(fullPath.c_str());
-		if (res)
-		{
-			outTextures[slot] = res->gpuTexture.get();
-		}
-	};
-
-	trySlot(mat.baseColorTexture,         0);
-	trySlot(mat.normalTexture,            1);
-	trySlot(mat.metallicRoughnessTexture, 2);
-	trySlot(mat.occlusionTexture,         3);
-	trySlot(mat.emissiveTexture,          4);
-}
-
 void ResourceManager::BeginMeshLoad(const String& path)
 {
 	URef<MeshResource> resource = std::make_unique<MeshResource>();
@@ -245,17 +207,43 @@ void ResourceManager::BeginMeshLoad(const String& path)
 MeshResource* ResourceManager::GetMeshResourceByHandle(u32 handle)
 {
 	if (handle >= static_cast<u32>(m_meshByHandle.size()))
+	{
 		return nullptr;
+	}
 	return m_meshByHandle[handle];
 }
 
-void ResourceManager::BeginTextureLoad(const String& path)
+TextureResource* ResourceManager::GetTextureResourceByHandle(u32 handle)
 {
+	if (handle >= static_cast<u32>(m_textureByHandle.size()))
+	{
+		return nullptr;
+	}
+	TextureResource* resource = m_textureByHandle[handle];
+	if (!resource || resource->state != AssetState::Ready)
+	{
+		return nullptr;
+	}
+	return resource;
+}
+
+u32 ResourceManager::BeginTextureLoad(const String& path)
+{
+	auto it = m_textureCache.find(path);
+	if (it != m_textureCache.end())
+	{
+		return it->second->handle;
+	}
+
 	URef<TextureResource> resource = std::make_unique<TextureResource>();
 	resource->state				   = AssetState::Loading;
+	resource->handle			   = static_cast<u32>(m_textureByHandle.size());
+	u32 handle					   = resource->handle;
+	m_textureByHandle.push_back(resource.get());
 	m_textureCache[path]		   = std::move(resource);
 
 	m_pendingTextureLoads[path] = TextureLoader::LoadAsync(path, *m_threadPool);
+	return handle;
 }
 
 void ResourceManager::FinalizeMeshUpload(const String& path, MeshResource& resource)
@@ -292,6 +280,26 @@ void ResourceManager::FinalizeMeshUpload(const String& path, MeshResource& resou
 	if (indexUpload.IsValid())
 	{
 		m_readyStagingUploads.push_back(std::move(indexUpload));
+	}
+
+	// Kick off texture loads for all textures referenced by this mesh.
+	// Resolve relative paths against the mesh's directory.
+	String dir(path);
+	size_t lastSlash = dir.find_last_of("/\\");
+	if (lastSlash != String::npos)
+	{
+		dir = dir.substr(0, lastSlash + 1);
+	}
+	else
+	{
+		dir.clear();
+	}
+
+	resource.textureHandles.resize(mesh.texturePaths.size(), ~0u);
+	for (u32 i = 0; i < static_cast<u32>(mesh.texturePaths.size()); ++i)
+	{
+		String fullPath           = dir + mesh.texturePaths[i];
+		resource.textureHandles[i] = BeginTextureLoad(fullPath);
 	}
 
 	resource.state				= AssetState::Uploading;

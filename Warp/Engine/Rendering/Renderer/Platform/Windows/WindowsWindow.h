@@ -30,10 +30,13 @@ public:
 
 	void CaptureMouse() override;
 	void ReleaseMouse() override;
+	void ToggleMouseCapture() override;
+	bool IsMouseCaptured() const override { return m_mouseCaptured; }
 
 private:
-	HWND m_wndHnd;
+	HWND      m_wndHnd;
 	HINSTANCE m_appInst;
+	bool      m_mouseCaptured = false;
 };
 
 #endif

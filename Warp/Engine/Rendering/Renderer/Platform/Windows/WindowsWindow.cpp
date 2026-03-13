@@ -140,6 +140,14 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			return 0;
 		case WM_INPUT:
 		{
+			// Only forward mouse deltas when the mouse is captured — prevents
+			// camera movement when the cursor is free for UI interaction.
+			WindowsWindow* wnd = reinterpret_cast<WindowsWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+			if (!wnd || !wnd->IsMouseCaptured())
+			{
+				return 0;
+			}
+
 			// Read raw mouse data and broadcast relative (dx, dy) deltas.
 			// This avoids the WM_MOUSEMOVE limitation where deltas go to zero
 			// when the cursor hits the window edge.
@@ -167,6 +175,14 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			return 0;
 		case WM_KEYUP:
 			g_InputEventManager.BroadcastKey(static_cast<WarpKeyCode>(wParam), false);
+			if (wParam == VK_TAB)
+			{
+				WindowsWindow* wnd = reinterpret_cast<WindowsWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+				if (wnd)
+				{
+					wnd->ToggleMouseCapture();
+				}
+			}
 			if (wParam == VK_ESCAPE)
 			{
 				PostQuitMessage(0);
@@ -217,6 +233,7 @@ bool WindowsWindow::Create(String AppName, int width, int height)
 	}
 	ShowWindow(m_wndHnd, SW_SHOW);
 	UpdateWindow(m_wndHnd);
+	SetWindowLongPtr(m_wndHnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 
 	// Register for raw mouse input so mouse-move events deliver relative deltas
 	// regardless of cursor position — prevents yaw from stopping at window edges.
@@ -259,6 +276,7 @@ bool WindowsWindow::PumpMessages()
 
 void WindowsWindow::CaptureMouse()
 {
+	m_mouseCaptured = true;
 	ShowCursor(FALSE);
 
 	RECT rect;
@@ -269,8 +287,21 @@ void WindowsWindow::CaptureMouse()
 
 void WindowsWindow::ReleaseMouse()
 {
+	m_mouseCaptured = false;
 	ShowCursor(TRUE);
 	ClipCursor(nullptr);
+}
+
+void WindowsWindow::ToggleMouseCapture()
+{
+	if (m_mouseCaptured)
+	{
+		ReleaseMouse();
+	}
+	else
+	{
+		CaptureMouse();
+	}
 }
 
 #endif

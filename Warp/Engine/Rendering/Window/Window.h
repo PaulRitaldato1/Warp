@@ -29,6 +29,8 @@ public:
     // Hide the cursor and confine it to the window (e.g. for first-person camera).
     virtual void CaptureMouse() {}
     virtual void ReleaseMouse() {}
+    virtual void ToggleMouseCapture() {}
+    virtual bool IsMouseCaptured() const { return false; }
 
     // Returns the platform display/connection handle needed for Vulkan surface creation.
     // D3D12 / non-Vulkan backends return nullptr.
