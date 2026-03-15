@@ -7,7 +7,6 @@
 #include <Rendering/RenderBackend.h>
 #include <Rendering/Resource/ResourceManager.h>
 #include <Rendering/Window/Window.h>
-#include <Rendering/Cameras/Camera.h>
 #include <thread>
 
 WarpEngine::WarpEngine(UserApplicationBase* App)
@@ -51,7 +50,7 @@ WarpEngine::~WarpEngine()
 {
 	LOG_DEBUG("Shutting down");
 
-	if (m_window && m_activeCamera)
+	if (m_window)
 	{
 		m_window->ReleaseMouse();
 	}
@@ -78,23 +77,7 @@ WarpEngine::~WarpEngine()
 	Logger::Get().Shutdown();
 }
 
-void WarpEngine::SetActiveCamera(Camera* camera)
-{
-	m_activeCamera = camera;
-	if (m_window && m_activeCamera)
-	{
-		m_window->CaptureMouse();
-	}
-}
 
-void WarpEngine::ClearActiveCamera()
-{
-	m_activeCamera = nullptr;
-	if (m_window)
-	{
-		m_window->ReleaseMouse();
-	}
-}
 
 bool WarpEngine::Run()
 {
@@ -125,12 +108,6 @@ bool WarpEngine::Run()
 				LOG_ERROR("App update failed.");
 				m_bIsRunning = false;
 				break;
-			}
-
-			if (m_activeCamera)
-			{
-				m_activeCamera->Update(deltaTime);
-				m_renderer->SetViewProjectionMatrix(m_activeCamera->GetViewProjectionMatrix());
 			}
 
 			m_world->UpdateSystems(deltaTime);

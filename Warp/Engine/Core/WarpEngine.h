@@ -7,7 +7,6 @@
 
 class IWindow;
 class Renderer;
-class Camera;
 class RenderBackend;
 class ResourceManager;
 struct UserApplicationBase;
@@ -50,17 +49,14 @@ private:
 
 	URef<UserApplicationBase> m_app;
 
-	Camera* m_activeCamera = nullptr; // non-owning
-
 public:
 	World& GetWorld()
 	{
 		return *m_world;
 	}
 
-	// Set the active camera. The engine calls Update() and reads GetViewProjectionMatrix()
-	// each frame automatically — user code only needs to call this once.
-	// Hides and confines the cursor for first-person look.
-	void SetActiveCamera(Camera* camera);
-	void ClearActiveCamera();
+	IWindow* GetWindow()
+	{
+		return m_window.get();
+	}
 };

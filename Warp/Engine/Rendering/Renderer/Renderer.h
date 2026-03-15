@@ -16,6 +16,7 @@
 #include <Rendering/Renderer/Shader.h>
 #include <Rendering/Renderer/Pipeline.h>
 #include <Rendering/Renderer/TextureUpload.h>
+#include <vulkan/vulkan_core.h>
 
 class IWindow;
 class World;
@@ -26,6 +27,18 @@ enum class RenderPath
 {
 	Deferred,
 	ForwardPlus
+};
+
+struct GBufferSimple
+{
+	URef<Texture> albedo;
+	URef<Texture> normal;
+	URef<Texture> material;
+
+	bool IsInitialized() const
+	{
+		return albedo && normal && material;
+	}
 };
 
 // Tracks the GPU fence values for one in-flight frame slot.
@@ -59,6 +72,7 @@ public:
 	{
 		m_renderPath = path;
 	}
+
 	RenderPath GetRenderPath() const
 	{
 		return m_renderPath;
@@ -68,6 +82,7 @@ public:
 	{
 		m_world = world;
 	}
+
 	World* GetWorld() const
 	{
 		return m_world;
@@ -76,14 +91,6 @@ public:
 	void SetResourceManager(ResourceManager* manager)
 	{
 		m_resourceManager = manager;
-	}
-
-	// Set the view-projection matrix to use for the current frame.
-	// Call this from user code (e.g. TestBed Update) after updating the camera.
-	// The matrix must be pre-transposed for HLSL column-major layout.
-	void SetViewProjectionMatrix(const Mat4& viewProj)
-	{
-		m_viewProj = viewProj;
 	}
 
 	ResourceManager* GetResourceManager() const
@@ -116,6 +123,11 @@ protected:
 	// Vertex layout matches the Vertex struct in Mesh.h.
 	// Lazily called on the first frame that reaches the mesh draw path.
 	void CreateMeshPipeline();
+
+	void CreateDeferredGeometryPipeline();
+	void CreateDeferredLightingPipeline();
+
+	void InitGBufferTextures();
 
 	// How many frames the CPU is allowed to run ahead of the GPU.
 	// Controls the number of command allocator slots, upload buffer slices,
@@ -150,7 +162,13 @@ protected:
 	URef<Shader> m_meshPS;
 	URef<PipelineState> m_meshPSO;
 
-	Mat4 m_viewProj = {};
+	URef<Shader> m_deferredGeomVS;
+	URef<Shader> m_deferredGeomPS;
+	URef<PipelineState> m_deferredGeomPSO;
+
+	URef<Shader> m_deferredLightVS;
+	URef<Shader> m_deferredLightPS;
+	URef<PipelineState> m_deferredLightPSO;
 
 	World* m_world					   = nullptr; // non-owning — set by WarpEngine
 	ResourceManager* m_resourceManager = nullptr; // non-owning — set by WarpEngine
@@ -212,6 +230,8 @@ protected:
 	bool m_computeWaitOnCopy  = false;
 
 	URef<RenderDocCapture> m_renderDoc = std::make_unique<RenderDocCapture>();
+
+	GBufferSimple m_gbufferSimple;
 
 public:
 	// Queue a staging upload for the Renderer to process.

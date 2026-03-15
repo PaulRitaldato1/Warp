@@ -1,3 +1,4 @@
+#include "Renderer/Texture.h"
 #include <Rendering/Renderer/Renderer.h>
 #include <Rendering/Resource/ResourceManager.h>
 #include <Rendering/Resource/MeshResource.h>
@@ -6,18 +7,18 @@
 #include <Core/ECS/World.h>
 #include <Core/ECS/Components/TransformComponent.h>
 #include <Core/ECS/Components/MeshComponent.h>
+#include <Core/ECS/Components/CameraComponent.h>
 #include <Rendering/Mesh/Mesh.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 #include <algorithm>
 #include <cstring>
 
-// Per-draw data uploaded to the GPU each draw call.
-// Size must not exceed the Vulkan minimum push-constant guarantee (128 bytes).
 struct PerDrawConstants
 {
 	Mat4 viewProj;
 	Mat4 model;
+	Mat4 modelInvTranspose;
 };
 
 Renderer::~Renderer() = default;
@@ -244,6 +245,40 @@ void Renderer::DrawDeferred()
 {
 	CommandList& cmd = *m_graphicsLists[0];
 
+	if (!m_deferredGeomPSO)
+	{
+		CreateDeferredGeometryPipeline();
+	}
+
+	if (!m_deferredLightPSO)
+	{
+		CreateDeferredLightingPipeline();
+	}
+
+	if (!m_gbufferSimple.IsInitialized())
+	{
+		InitGBufferTextures();
+	}
+
+	// Find the active camera from the ECS.
+	Mat4 viewProj		= {};
+	Vec3 cameraPosition = {};
+	bool hasCamera		= false;
+
+	if (m_world)
+	{
+		m_world->Each<TransformComponent, CameraComponent>(
+			[&](Entity entity, TransformComponent& transform, CameraComponent& camera)
+			{
+				if (camera.isActive)
+				{
+					viewProj	   = camera.viewProj;
+					cameraPosition = transform.position;
+					hasCamera	   = true;
+				}
+			});
+	}
+
 	// Transition the current back buffer from present state to renderable.
 	m_swapChain->TransitionToRenderTarget(cmd);
 
@@ -252,29 +287,28 @@ void Renderer::DrawDeferred()
 	cmd.SetRenderTargets(1, &rtv, m_depthHandle);
 	cmd.ClearRenderTarget(rtv, 0.1f, 0.1f, 0.1f, 1.f);
 	if (m_depthHandle.IsValid())
+	{
 		cmd.ClearDepthStencil(m_depthHandle, 1.f, 0);
+	}
 
 	// Full-screen viewport and scissor.
-	const f32 w = static_cast<f32>(m_swapChain->GetWidth());
-	const f32 h = static_cast<f32>(m_swapChain->GetHeight());
-	cmd.SetViewport(0.f, 0.f, w, h);
+	const f32 swapChainWidth  = static_cast<f32>(m_swapChain->GetWidth());
+	const f32 swapChainHeight = static_cast<f32>(m_swapChain->GetHeight());
+	cmd.SetViewport(0.f, 0.f, swapChainWidth, swapChainHeight);
 	cmd.SetScissorRect(0, 0, m_swapChain->GetWidth(), m_swapChain->GetHeight());
 
-	// Draw mesh entities from ECS.
-	// Each<T...> iterates all entities that have AT LEAST the queried components.
-	// Entities with additional components beyond Transform + Mesh are still included.
 	if (!m_meshPSO)
 	{
 		CreateMeshPipeline();
 	}
 
-	if (m_world && m_resourceManager && m_meshPSO)
+	if (m_world && m_resourceManager && m_meshPSO && hasCamera)
 	{
 		cmd.SetPipelineState(m_meshPSO.get());
 		cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
 		m_world->Each<TransformComponent, MeshComponent>(
-			[&cmd, this](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
+			[&cmd, &viewProj, this](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
 			{
 				if (!(meshComp.renderFlags & RenderFlags_Visible))
 				{
@@ -307,16 +341,18 @@ void Renderer::DrawDeferred()
 
 				// Build model matrix from TransformComponent (scale → rotate → translate).
 				PerDrawConstants constants;
-				constants.viewProj = m_viewProj;
+				constants.viewProj = viewProj;
 				{
 					using namespace DirectX;
 					SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
 					SimdMat R = XMMatrixRotationQuaternion(XMLoadFloat4(&transform.rotation));
 					SimdMat T = XMMatrixTranslation(transform.position.x, transform.position.y, transform.position.z);
-					XMStoreFloat4x4(&constants.model, XMMatrixMultiply(XMMatrixMultiply(S, R), T));
+					SimdMat M = XMMatrixMultiply(XMMatrixMultiply(S, R), T);
+					XMStoreFloat4x4(&constants.model, M);
+					XMStoreFloat4x4(&constants.modelInvTranspose, XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
 				}
 
-				// Sub-allocate from ring buffer and bind as CBV (root CBV on D3D12, push descriptor UBO on Vulkan).
+				// Sub-allocate from ring buffer and bind as CBV.
 				UploadAllocation alloc = m_uploadBuffer->Alloc(sizeof(PerDrawConstants), 256);
 				memcpy(alloc.cpuPtr, &constants, sizeof(PerDrawConstants));
 				cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), alloc.offset,
@@ -446,6 +482,80 @@ void Renderer::CreateMeshPipeline()
 	LOG_DEBUG("Renderer: mesh PSO ready");
 }
 
+void Renderer::CreateDeferredGeometryPipeline()
+{
+	ShaderDesc vsDesc;
+	vsDesc.type		  = ShaderType::Vertex;
+	vsDesc.entryPoint = "VSMain";
+	vsDesc.filePath	  = "Shaders/DeferredGeometry.hlsl";
+	m_deferredGeomVS  = m_device->CreateShader(vsDesc);
+
+	ShaderDesc psDesc;
+	psDesc.type		  = ShaderType::Pixel;
+	psDesc.entryPoint = "PSMain";
+	psDesc.filePath	  = "Shaders/DeferredGeometry.hlsl";
+	m_deferredGeomPS  = m_device->CreateShader(psDesc);
+
+	// Input layout must match the Vertex struct layout in Mesh.h exactly.
+	PipelineDesc meshDesc;
+	meshDesc.vertexShader = m_deferredGeomVS.get();
+	meshDesc.pixelShader  = m_deferredGeomPS.get();
+	meshDesc.inputLayout  = {
+		 { "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
+		 { "NORMAL", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
+		 { "TANGENT", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
+		 { "TEXCOORD", 0, TextureFormat::RG32F, 0, InputElement::AppendAligned },
+		 { "TEXCOORD", 1, TextureFormat::RG32F, 0, InputElement::AppendAligned },
+		 { "COLOR", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
+	};
+	meshDesc.renderTargetFormats  = { TextureFormat::RGBA8, TextureFormat::RGBA16F, TextureFormat::RGBA8 };
+	meshDesc.depthFormat		  = TextureFormat::Depth32F;
+	meshDesc.topology			  = PrimitiveTopology::TriangleList;
+	meshDesc.enableDepthTest	  = true;
+	meshDesc.enableDepthWrite	  = true;
+	meshDesc.enableStencilTest	  = false;
+	meshDesc.enableBlending		  = false;
+	meshDesc.rasterState.cullMode = RasterizerState::CullMode::Back;
+	meshDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
+	meshDesc.textureSlotCount	  = TextureSlot::TextureSlotCount;
+	m_deferredGeomPSO			  = m_device->CreatePipelineState(meshDesc);
+
+	LOG_DEBUG("Renderer: deferred geometry PSO ready");
+}
+
+void Renderer::CreateDeferredLightingPipeline()
+{
+	ShaderDesc vsDesc;
+	vsDesc.type		  = ShaderType::Vertex;
+	vsDesc.entryPoint = "VSMain";
+	vsDesc.filePath	  = "Shaders/DeferredLighting.hlsl";
+	m_deferredLightVS = m_device->CreateShader(vsDesc);
+
+	ShaderDesc psDesc;
+	psDesc.type		  = ShaderType::Pixel;
+	psDesc.entryPoint = "PSMain";
+	psDesc.filePath	  = "Shaders/DeferredLighting.hlsl";
+	m_deferredLightPS = m_device->CreateShader(psDesc);
+
+	PipelineDesc desc;
+	desc.vertexShader		  = m_deferredLightVS.get();
+	desc.pixelShader		  = m_deferredLightPS.get();
+	desc.inputLayout		  = {};
+	desc.renderTargetFormats  = { TextureFormat::BGRA8 };
+	desc.depthFormat		  = TextureFormat::Unknown; // No depth
+	desc.topology			  = PrimitiveTopology::TriangleList;
+	desc.enableDepthTest	  = false;
+	desc.enableDepthWrite	  = false;
+	desc.enableStencilTest	  = false;
+	desc.enableBlending		  = false;
+	desc.rasterState.cullMode = RasterizerState::CullMode::None;
+	desc.rasterState.fillMode = RasterizerState::FillMode::Solid;
+	desc.textureSlotCount	  = TextureSlot::TextureSlotCount;
+	m_deferredLightPSO		  = m_device->CreatePipelineState(desc);
+
+	LOG_DEBUG("Renderer: deferred lighting PSO ready");
+}
+
 void Renderer::CreateTestTriangle()
 {
 	ShaderDesc vsDesc;
@@ -476,4 +586,31 @@ void Renderer::CreateTestTriangle()
 	m_testTriPSO				 = m_device->CreatePipelineState(triDesc);
 
 	LOG_DEBUG("Renderer: test triangle PSO ready");
+}
+
+void Renderer::InitGBufferTextures()
+{
+	const u32 w = m_swapChain->GetWidth();
+	const u32 h = m_swapChain->GetHeight();
+
+	TextureDesc albedoDesc;
+	albedoDesc.width  = w;
+	albedoDesc.height = h;
+	albedoDesc.format = TextureFormat::RGBA8;
+
+	TextureDesc normalDesc;
+	normalDesc.width  = w;
+	normalDesc.height = h;
+	normalDesc.format = TextureFormat::RGBA16F;
+
+	TextureDesc materialDesc;
+	materialDesc.width	= w;
+	materialDesc.height = h;
+	materialDesc.format = TextureFormat::RGBA8;
+
+	m_gbufferSimple.albedo	 = m_device->CreateTexture(albedoDesc);
+	m_gbufferSimple.normal	 = m_device->CreateTexture(normalDesc);
+	m_gbufferSimple.material = m_device->CreateTexture(materialDesc);
+
+	LOG_DEBUG("Renderer: G-buffer textures ready");
 }

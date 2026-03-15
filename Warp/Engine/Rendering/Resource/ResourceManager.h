@@ -52,7 +52,6 @@ public:
 	// O(1) handle-based lookup. Returns nullptr if the handle is invalid.
 	TextureResource* GetTextureResourceByHandle(u32 handle);
 
-	u32 materialTextureSlots = 5;
 
 private:
 	void BeginMeshLoad(const String& path);
