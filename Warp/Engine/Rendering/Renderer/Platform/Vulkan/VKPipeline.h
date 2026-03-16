@@ -26,11 +26,18 @@ public:
 	VkPipelineLayout      GetNativeLayout()        const { return m_layout; }
 	VkDescriptorSetLayout GetDescriptorSetLayout() const { return m_descriptorSetLayout; }
 
+	// Maps rootIndex (CommandList binding slot) to the Vulkan descriptor set binding index.
+	// Needed because a TextureTable with N textures expands to N sequential Vulkan bindings.
+	const Vector<u32>& GetRootToVulkanBindingMap() const { return m_rootToVulkanBinding; }
+
 private:
 	VkDevice              m_device              = VK_NULL_HANDLE;
 	VkPipeline            m_pipeline            = VK_NULL_HANDLE;
 	VkPipelineLayout      m_layout              = VK_NULL_HANDLE;
 	VkDescriptorSetLayout m_descriptorSetLayout = VK_NULL_HANDLE;
+
+	// rootIndex -> first Vulkan binding index for that slot.
+	Vector<u32> m_rootToVulkanBinding;
 };
 
 // ---------------------------------------------------------------------------

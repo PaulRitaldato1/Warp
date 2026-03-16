@@ -208,37 +208,67 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	dynamicState.pDynamicStates					  = dynamicStates;
 
 	// -------------------------------------------------------------------------
-	// Descriptor set layout for push descriptors (texture slots)
+	// Descriptor set layout — built from PipelineDesc::bindings.
+	//
+	// Each BindingSlot maps to one or more sequential Vulkan bindings:
+	//   ConstantBuffer   → 1 UBO binding
+	//   TextureTable     → N combined-image-sampler bindings
+	//   StructuredBuffer → 1 SSBO binding
 	// -------------------------------------------------------------------------
 
 	{
-		// Binding 0: per-draw UBO (cbuffer at register(b0)).
-		// Bindings 1..N: combined image samplers (textures shifted by 1).
-		Vector<VkDescriptorSetLayoutBinding> bindings;
-		bindings.reserve(1 + desc.textureSlotCount);
+		Vector<VkDescriptorSetLayoutBinding> vkBindings;
+		m_rootToVulkanBinding.resize(desc.bindings.size());
+		u32 vulkanBindingIndex = 0;
 
-		VkDescriptorSetLayoutBinding uboBinding = {};
-		uboBinding.binding         = 0;
-		uboBinding.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		uboBinding.descriptorCount = 1;
-		uboBinding.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-		bindings.push_back(uboBinding);
-
-		for (u32 i = 0; i < desc.textureSlotCount; ++i)
+		for (u32 rootIndex = 0; rootIndex < static_cast<u32>(desc.bindings.size()); ++rootIndex)
 		{
-			VkDescriptorSetLayoutBinding texBinding = {};
-			texBinding.binding         = i + 1;
-			texBinding.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			texBinding.descriptorCount = 1;
-			texBinding.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
-			bindings.push_back(texBinding);
+			const BindingSlot& slot = desc.bindings[rootIndex];
+			m_rootToVulkanBinding[rootIndex] = vulkanBindingIndex;
+
+			switch (slot.type)
+			{
+				case BindingType::ConstantBuffer:
+				{
+					VkDescriptorSetLayoutBinding binding = {};
+					binding.binding         = vulkanBindingIndex++;
+					binding.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+					binding.descriptorCount = 1;
+					binding.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+					vkBindings.push_back(binding);
+					break;
+				}
+				case BindingType::TextureTable:
+				{
+					for (u32 texIndex = 0; texIndex < slot.count; ++texIndex)
+					{
+						VkDescriptorSetLayoutBinding binding = {};
+						binding.binding         = vulkanBindingIndex++;
+						binding.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+						binding.descriptorCount = 1;
+						binding.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+						vkBindings.push_back(binding);
+					}
+					break;
+				}
+				case BindingType::StructuredBuffer:
+				{
+					VkDescriptorSetLayoutBinding binding = {};
+					binding.binding         = vulkanBindingIndex++;
+					binding.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+					binding.descriptorCount = 1;
+					binding.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+					vkBindings.push_back(binding);
+					break;
+				}
+			}
 		}
 
 		VkDescriptorSetLayoutCreateInfo setLayoutInfo = {};
 		setLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 		setLayoutInfo.flags        = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-		setLayoutInfo.bindingCount = static_cast<u32>(bindings.size());
-		setLayoutInfo.pBindings    = bindings.data();
+		setLayoutInfo.bindingCount = static_cast<u32>(vkBindings.size());
+		setLayoutInfo.pBindings    = vkBindings.data();
 
 		VK_CHECK(vkCreateDescriptorSetLayout(m_device, &setLayoutInfo, nullptr, &m_descriptorSetLayout),
 				 "VKPipeline: vkCreateDescriptorSetLayout failed");

@@ -2,6 +2,7 @@
 
 #include <Common/CommonTypes.h>
 #include <Memory/RingBuffer.h>
+#include <cstring>
 
 class Buffer;
 
@@ -13,6 +14,13 @@ struct UploadAllocation
 	u64   size;
 };
 
+// Returned by AllocAndCopy — no raw pointer, just the offset and size needed for binding.
+struct UploadResult
+{
+	u64 offset;
+	u64 size;
+};
+
 class UploadBuffer
 {
 public:
@@ -22,6 +30,17 @@ public:
 	virtual UploadAllocation Alloc(u64 size, u64 alignment = 256)     = 0;
 	virtual void             OnBeginFrame()                           = 0;
 	virtual void             Cleanup()                                = 0;
+
+	// Sub-allocates from the ring buffer, copies data into the allocation, and
+	// returns only the offset and size needed for binding. Use this for simple
+	// uploads where you have the data ready (e.g. per-draw constants).
+	// For row-by-row or custom copy patterns, use Alloc() directly.
+	UploadResult AllocAndCopy(const void* data, u64 size, u64 alignment = 256)
+	{
+		UploadAllocation alloc = Alloc(size, alignment);
+		memcpy(alloc.cpuPtr, data, size);
+		return { alloc.offset, alloc.size };
+	}
 
 	// Returns the underlying Buffer so it can be used as a source for CopyBuffer.
 	// Use with UploadAllocation::offset as the source offset for re-uploads.

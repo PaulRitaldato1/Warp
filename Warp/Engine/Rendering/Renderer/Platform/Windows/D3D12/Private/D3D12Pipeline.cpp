@@ -11,36 +11,66 @@
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// Default root signature layout:
-//   Param 0 — Root CBV  (b0, space0): per-draw constant buffer
-//   Param 1 — Descriptor table: 8 SRVs (t0-t7, space0)
-//   Static samplers: linear-wrap (s0), point-clamp (s1)
+// Data-driven root signature — built from PipelineDesc::bindings.
 //
-// This layout covers the common forward/deferred PBR case.  It is intentionally
-// fixed for now; a future bindless redesign will replace it with a single large
-// heap and indirect indexing.
+// Each BindingSlot becomes one root parameter:
+//   ConstantBuffer   → root CBV  at register bN
+//   TextureTable     → descriptor table of N SRVs starting at register tN
+//   StructuredBuffer → root SRV  at register tN
+//
+// Static samplers are always present:
+//   s0: linear wrap   (material textures)
+//   s1: point clamp   (GBuffer sampling)
 // ---------------------------------------------------------------------------
 
-void D3D12Pipeline::BuildRootSignature(ID3D12Device* device)
+void D3D12Pipeline::BuildRootSignature(ID3D12Device* device, const Vector<BindingSlot>& bindings)
 {
-	D3D12_DESCRIPTOR_RANGE srvRange			   = {};
-	srvRange.RangeType						   = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	srvRange.NumDescriptors					   = 8; // t0–t7
-	srvRange.BaseShaderRegister				   = 0;
-	srvRange.RegisterSpace					   = 0;
-	srvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+	// Build root parameters from binding slots.
+	// Descriptor ranges must outlive the root signature creation call,
+	// so store them alongside their root parameters.
+	Vector<D3D12_ROOT_PARAMETER>  params(bindings.size());
+	Vector<D3D12_DESCRIPTOR_RANGE> ranges(bindings.size());
 
-	D3D12_ROOT_PARAMETER params[2]		= {};
-	params[0].ParameterType				= D3D12_ROOT_PARAMETER_TYPE_CBV;
-	params[0].Descriptor.ShaderRegister = 0; // b0
-	params[0].Descriptor.RegisterSpace	= 0;
-	params[0].ShaderVisibility			= D3D12_SHADER_VISIBILITY_ALL;
+	for (u32 index = 0; index < static_cast<u32>(bindings.size()); ++index)
+	{
+		const BindingSlot& slot = bindings[index];
 
-	params[1].ParameterType						  = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	params[1].DescriptorTable.NumDescriptorRanges = 1;
-	params[1].DescriptorTable.pDescriptorRanges	  = &srvRange;
-	params[1].ShaderVisibility					  = D3D12_SHADER_VISIBILITY_PIXEL;
+		switch (slot.type)
+		{
+			case BindingType::ConstantBuffer:
+			{
+				params[index].ParameterType				= D3D12_ROOT_PARAMETER_TYPE_CBV;
+				params[index].Descriptor.ShaderRegister = slot.shaderRegister;
+				params[index].Descriptor.RegisterSpace	= 0;
+				params[index].ShaderVisibility			= D3D12_SHADER_VISIBILITY_ALL;
+				break;
+			}
+			case BindingType::TextureTable:
+			{
+				ranges[index].RangeType							= D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+				ranges[index].NumDescriptors					= slot.count;
+				ranges[index].BaseShaderRegister				= slot.shaderRegister;
+				ranges[index].RegisterSpace						= 0;
+				ranges[index].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
+				params[index].ParameterType						  = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+				params[index].DescriptorTable.NumDescriptorRanges = 1;
+				params[index].DescriptorTable.pDescriptorRanges	  = &ranges[index];
+				params[index].ShaderVisibility					  = D3D12_SHADER_VISIBILITY_PIXEL;
+				break;
+			}
+			case BindingType::StructuredBuffer:
+			{
+				params[index].ParameterType				= D3D12_ROOT_PARAMETER_TYPE_SRV;
+				params[index].Descriptor.ShaderRegister = slot.shaderRegister;
+				params[index].Descriptor.RegisterSpace	= 0;
+				params[index].ShaderVisibility			= D3D12_SHADER_VISIBILITY_ALL;
+				break;
+			}
+		}
+	}
+
+	// Static samplers — always present regardless of binding layout.
 	D3D12_STATIC_SAMPLER_DESC samplers[2] = {};
 	// s0: linear wrap
 	samplers[0].Filter			 = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -64,8 +94,8 @@ void D3D12Pipeline::BuildRootSignature(ID3D12Device* device)
 	samplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
 	D3D12_ROOT_SIGNATURE_DESC rootSigDesc = {};
-	rootSigDesc.NumParameters			  = _countof(params);
-	rootSigDesc.pParameters				  = params;
+	rootSigDesc.NumParameters			  = static_cast<UINT>(params.size());
+	rootSigDesc.pParameters				  = params.data();
 	rootSigDesc.NumStaticSamplers		  = _countof(samplers);
 	rootSigDesc.pStaticSamplers			  = samplers;
 	rootSigDesc.Flags					  = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
@@ -87,7 +117,7 @@ void D3D12Pipeline::InitializeWithDevice(ID3D12Device* device, const PipelineDes
 	DYNAMIC_ASSERT(desc.vertexShader, "D3D12Pipeline::InitializeWithDevice: vertexShader required");
 	DYNAMIC_ASSERT(desc.renderTargetFormats.size() <= 8, "D3D12Pipeline: max 8 render target formats");
 
-	BuildRootSignature(device);
+	BuildRootSignature(device, desc.bindings);
 
 	// --- Input layout ---
 	// SemanticName pointers stay valid until CreateGraphicsPipelineState returns,

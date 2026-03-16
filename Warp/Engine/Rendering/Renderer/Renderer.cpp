@@ -1,3 +1,5 @@
+#include "Renderer/DescriptorHandle.h"
+#include "Renderer/Pipeline.h"
 #include "Renderer/Texture.h"
 #include <Rendering/Renderer/Renderer.h>
 #include <Rendering/Resource/ResourceManager.h>
@@ -12,7 +14,6 @@
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 #include <algorithm>
-#include <cstring>
 
 struct PerDrawConstants
 {
@@ -245,21 +246,6 @@ void Renderer::DrawDeferred()
 {
 	CommandList& cmd = *m_graphicsLists[0];
 
-	if (!m_deferredGeomPSO)
-	{
-		CreateDeferredGeometryPipeline();
-	}
-
-	if (!m_deferredLightPSO)
-	{
-		CreateDeferredLightingPipeline();
-	}
-
-	if (!m_gbufferSimple.IsInitialized())
-	{
-		InitGBufferTextures();
-	}
-
 	// Find the active camera from the ECS.
 	Mat4 viewProj		= {};
 	Vec3 cameraPosition = {};
@@ -279,13 +265,30 @@ void Renderer::DrawDeferred()
 			});
 	}
 
-	// Transition the current back buffer from present state to renderable.
-	m_swapChain->TransitionToRenderTarget(cmd);
+	if (!m_deferredGeomPSO)
+	{
+		CreateDeferredGeometryPipeline();
+	}
+
+	if (!m_gbufferSimple.IsInitialized())
+	{
+		InitGBufferTextures();
+	}
 
 	// Bind and clear the back buffer + depth.
-	DescriptorHandle rtv = m_swapChain->GetCurrentRTV();
-	cmd.SetRenderTargets(1, &rtv, m_depthHandle);
-	cmd.ClearRenderTarget(rtv, 0.1f, 0.1f, 0.1f, 1.f);
+	Array<DescriptorHandle, 3> GBuffer{ m_gbufferSimple.albedo->GetRTV(), m_gbufferSimple.normal->GetRTV(),
+										m_gbufferSimple.material->GetRTV() };
+
+	cmd.TransitionTexture(m_gbufferSimple.albedo.get(), ResourceState::RenderTarget);
+	cmd.TransitionTexture(m_gbufferSimple.normal.get(), ResourceState::RenderTarget);
+	cmd.TransitionTexture(m_gbufferSimple.material.get(), ResourceState::RenderTarget);
+
+	cmd.SetRenderTargets(3, GBuffer.data(), m_depthHandle);
+
+	cmd.ClearRenderTarget(GBuffer[0], 0.0f, 0.0f, 0.0f, 0.0f);
+	cmd.ClearRenderTarget(GBuffer[1], 0.0f, 0.0f, 0.0f, 0.0f);
+	cmd.ClearRenderTarget(GBuffer[2], 0.0f, 0.0f, 0.0f, 0.0f);
+
 	if (m_depthHandle.IsValid())
 	{
 		cmd.ClearDepthStencil(m_depthHandle, 1.f, 0);
@@ -297,27 +300,23 @@ void Renderer::DrawDeferred()
 	cmd.SetViewport(0.f, 0.f, swapChainWidth, swapChainHeight);
 	cmd.SetScissorRect(0, 0, m_swapChain->GetWidth(), m_swapChain->GetHeight());
 
-	if (!m_meshPSO)
+	// Deferred geometry pass
+	if (m_world && m_resourceManager && hasCamera)
 	{
-		CreateMeshPipeline();
-	}
-
-	if (m_world && m_resourceManager && m_meshPSO && hasCamera)
-	{
-		cmd.SetPipelineState(m_meshPSO.get());
+		cmd.SetPipelineState(m_deferredGeomPSO.get());
 		cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
 		m_world->Each<TransformComponent, MeshComponent>(
 			[&cmd, &viewProj, this](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
 			{
-				if (!(meshComp.renderFlags & RenderFlags_Visible))
+				if (!meshComp.HasRenderFlag(RenderFlags_Visible))
 				{
 					return;
 				}
 
-				if (meshComp.path[0] == '\0')
+				if (!meshComp.IsValid())
 				{
-					return; // No path set
+					return;
 				}
 
 				MeshResource* resource = nullptr;
@@ -334,12 +333,11 @@ void Renderer::DrawDeferred()
 					}
 				}
 
-				if (!resource || resource->state != AssetState::Ready)
+				if (!resource)
 				{
-					return; // Still loading or uploading — skip this frame
+					return;
 				}
 
-				// Build model matrix from TransformComponent (scale → rotate → translate).
 				PerDrawConstants constants;
 				constants.viewProj = viewProj;
 				{
@@ -352,60 +350,71 @@ void Renderer::DrawDeferred()
 					XMStoreFloat4x4(&constants.modelInvTranspose, XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
 				}
 
-				// Sub-allocate from ring buffer and bind as CBV.
-				UploadAllocation alloc = m_uploadBuffer->Alloc(sizeof(PerDrawConstants), 256);
-				memcpy(alloc.cpuPtr, &constants, sizeof(PerDrawConstants));
-				cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), alloc.offset,
-										  sizeof(PerDrawConstants));
+				UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(PerDrawConstants), 256);
+				cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
 
 				cmd.SetVertexBuffer(resource->vertexBuffer.get());
 				cmd.SetIndexBuffer(resource->indexBuffer.get());
 
-				Vector<Texture*> matTextures(TextureSlot::TextureSlotCount, nullptr);
+				Vector<Texture*> materialTextures(TextureSlot::TextureSlotCount, nullptr);
 
 				for (const Submesh& submesh : resource->mesh->submeshes)
 				{
-					if (submesh.materialIndex >= 0)
+					if (submesh.materialIndex < 0)
 					{
-						const Material& mat		   = resource->mesh->materials[submesh.materialIndex];
-						const Vector<u32>& handles = resource->textureHandles;
-
-						auto tryFillSlot = [&](int32 texIdx, u32 slot)
-						{
-							matTextures[slot] = nullptr;
-							if (texIdx >= 0 && texIdx < static_cast<int32>(handles.size()))
-							{
-								TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(handles[texIdx]);
-								if (tex)
-								{
-									matTextures[slot] = tex->gpuTexture.get();
-								}
-							}
-						};
-
-						for (int32 slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
-						{
-							tryFillSlot(mat.TextureIndices[slot], slot);
-						}
-
-						cmd.SetShaderResources(1, matTextures);
+						continue;
 					}
 
+					const Material& material   = resource->mesh->materials[submesh.materialIndex];
+					const Vector<u32>& handles = resource->textureHandles;
+
+					auto tryFillSlot = [&](int32 texIdx, u32 slot)
+					{
+						materialTextures[slot] = nullptr;
+						if (texIdx >= 0 && texIdx < static_cast<int32>(handles.size()))
+						{
+							TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(handles[texIdx]);
+							if (tex)
+							{
+								materialTextures[slot] = tex->gpuTexture.get();
+							}
+						}
+					};
+
+					for (int slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
+					{
+						tryFillSlot(material.TextureIndices[slot], slot);
+					}
+
+					cmd.SetShaderResources(1, materialTextures);
 					cmd.DrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, 0);
 				}
 			});
 	}
 
-	// TODO: G-buffer pass, lighting pass, post-process
+	// DrawMeshesUnlit(cmd);
 
-	// Transition back buffer to present state before EndFrame submits the list.
+	// GBuffer Lighting Pass
+	if (!m_deferredLightPSO)
+	{
+		CreateDeferredLightingPipeline();
+	}
+
+	cmd.TransitionTexture(m_gbufferSimple.albedo.get(), ResourceState::ShaderResource);
+	cmd.TransitionTexture(m_gbufferSimple.normal.get(), ResourceState::ShaderResource);
+	cmd.TransitionTexture(m_gbufferSimple.material.get(), ResourceState::ShaderResource);
+
+	m_swapChain->TransitionToRenderTarget(cmd);
+
+	// TODO Gather lights, upload structured buffer, kick off triangle draw
+
+	//  Transition back buffer to present state before EndFrame submits the list.
 	m_swapChain->TransitionToPresent(cmd);
 }
 
 void Renderer::DrawForwardPlus()
 {
 	// TODO: light culling compute pass, forward opaque pass
-	// Shares the same back-buffer setup as deferred for now.
 	DrawDeferred();
 }
 
@@ -475,8 +484,10 @@ void Renderer::CreateMeshPipeline()
 	meshDesc.enableBlending		  = false;
 	meshDesc.rasterState.cullMode = RasterizerState::CullMode::Back;
 	meshDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
-	meshDesc.textureSlotCount =
-		TextureSlot::TextureSlotCount; // BaseColor, Normal, MetallicRoughness, Occlusion, Emissive
+	meshDesc.bindings			  = {
+		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — per-draw constants
+		{ BindingType::TextureTable, 0, TextureSlot::TextureSlotCount }, // rootIndex 1: t0-t4 — material textures
+	};
 	m_meshPSO = m_device->CreatePipelineState(meshDesc);
 
 	LOG_DEBUG("Renderer: mesh PSO ready");
@@ -517,8 +528,11 @@ void Renderer::CreateDeferredGeometryPipeline()
 	meshDesc.enableBlending		  = false;
 	meshDesc.rasterState.cullMode = RasterizerState::CullMode::Back;
 	meshDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
-	meshDesc.textureSlotCount	  = TextureSlot::TextureSlotCount;
-	m_deferredGeomPSO			  = m_device->CreatePipelineState(meshDesc);
+	meshDesc.bindings			  = {
+		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — per-draw constants
+		{ BindingType::TextureTable, 0, TextureSlot::TextureSlotCount }, // rootIndex 1: t0-t4 — material textures
+	};
+	m_deferredGeomPSO = m_device->CreatePipelineState(meshDesc);
 
 	LOG_DEBUG("Renderer: deferred geometry PSO ready");
 }
@@ -550,8 +564,11 @@ void Renderer::CreateDeferredLightingPipeline()
 	desc.enableBlending		  = false;
 	desc.rasterState.cullMode = RasterizerState::CullMode::None;
 	desc.rasterState.fillMode = RasterizerState::FillMode::Solid;
-	desc.textureSlotCount	  = TextureSlot::TextureSlotCount;
-	m_deferredLightPSO		  = m_device->CreatePipelineState(desc);
+	desc.bindings			  = {
+		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — lighting constants
+		{ BindingType::TextureTable, 0, TextureSlot::TextureSlotCount }, // rootIndex 1: t0-t4 — GBuffer textures
+	};
+	m_deferredLightPSO = m_device->CreatePipelineState(desc);
 
 	LOG_DEBUG("Renderer: deferred lighting PSO ready");
 }
@@ -597,20 +614,140 @@ void Renderer::InitGBufferTextures()
 	albedoDesc.width  = w;
 	albedoDesc.height = h;
 	albedoDesc.format = TextureFormat::RGBA8;
+	albedoDesc.usage  = TextureUsage::RenderTarget;
 
 	TextureDesc normalDesc;
 	normalDesc.width  = w;
 	normalDesc.height = h;
 	normalDesc.format = TextureFormat::RGBA16F;
+	normalDesc.usage  = TextureUsage::RenderTarget;
 
 	TextureDesc materialDesc;
 	materialDesc.width	= w;
 	materialDesc.height = h;
 	materialDesc.format = TextureFormat::RGBA8;
+	materialDesc.usage	= TextureUsage::RenderTarget;
 
 	m_gbufferSimple.albedo	 = m_device->CreateTexture(albedoDesc);
 	m_gbufferSimple.normal	 = m_device->CreateTexture(normalDesc);
 	m_gbufferSimple.material = m_device->CreateTexture(materialDesc);
 
 	LOG_DEBUG("Renderer: G-buffer textures ready");
+}
+
+void Renderer::DrawMeshesUnlit(CommandList& cmd)
+{
+	Mat4 viewProj		= {};
+	Vec3 cameraPosition = {};
+	bool hasCamera		= false;
+
+	if (m_world)
+	{
+		m_world->Each<TransformComponent, CameraComponent>(
+			[&](Entity entity, TransformComponent& transform, CameraComponent& camera)
+			{
+				if (camera.isActive)
+				{
+					viewProj	   = camera.viewProj;
+					cameraPosition = transform.position;
+					hasCamera	   = true;
+				}
+			});
+	}
+
+	if (!m_meshPSO)
+	{
+		CreateMeshPipeline();
+	}
+
+	if (m_world && m_resourceManager && m_meshPSO && hasCamera)
+	{
+		cmd.SetPipelineState(m_meshPSO.get());
+		cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
+
+		m_world->Each<TransformComponent, MeshComponent>(
+			[&cmd, &viewProj, this](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
+			{
+				if (!(meshComp.renderFlags & RenderFlags_Visible))
+				{
+					return;
+				}
+
+				if (meshComp.path[0] == '\0')
+				{
+					return; // No path set
+				}
+
+				MeshResource* resource = nullptr;
+				if (meshComp.IsHandleValid())
+				{
+					resource = m_resourceManager->GetMeshResourceByHandle(meshComp.meshHandle);
+				}
+				else
+				{
+					resource = m_resourceManager->GetMeshResource(meshComp.path);
+					if (resource)
+					{
+						meshComp.meshHandle = resource->handle;
+					}
+				}
+
+				if (!resource || resource->state != AssetState::Ready)
+				{
+					return; // Still loading or uploading — skip this frame
+				}
+
+				// Build model matrix from TransformComponent (scale → rotate → translate).
+				PerDrawConstants constants;
+				constants.viewProj = viewProj;
+				{
+					using namespace DirectX;
+					SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
+					SimdMat R = XMMatrixRotationQuaternion(XMLoadFloat4(&transform.rotation));
+					SimdMat T = XMMatrixTranslation(transform.position.x, transform.position.y, transform.position.z);
+					SimdMat M = XMMatrixMultiply(XMMatrixMultiply(S, R), T);
+					XMStoreFloat4x4(&constants.model, M);
+					XMStoreFloat4x4(&constants.modelInvTranspose, XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
+				}
+
+				UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(PerDrawConstants), 256);
+				cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
+
+				cmd.SetVertexBuffer(resource->vertexBuffer.get());
+				cmd.SetIndexBuffer(resource->indexBuffer.get());
+
+				Vector<Texture*> matTextures(TextureSlot::TextureSlotCount, nullptr);
+
+				for (const Submesh& submesh : resource->mesh->submeshes)
+				{
+					if (submesh.materialIndex >= 0)
+					{
+						const Material& mat		   = resource->mesh->materials[submesh.materialIndex];
+						const Vector<u32>& handles = resource->textureHandles;
+
+						auto tryFillSlot = [&](int32 texIdx, u32 slot)
+						{
+							matTextures[slot] = nullptr;
+							if (texIdx >= 0 && texIdx < static_cast<int32>(handles.size()))
+							{
+								TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(handles[texIdx]);
+								if (tex)
+								{
+									matTextures[slot] = tex->gpuTexture.get();
+								}
+							}
+						};
+
+						for (int32 slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
+						{
+							tryFillSlot(mat.TextureIndices[slot], slot);
+						}
+
+						cmd.SetShaderResources(1, matTextures);
+					}
+
+					cmd.DrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, 0);
+				}
+			});
+	}
 }

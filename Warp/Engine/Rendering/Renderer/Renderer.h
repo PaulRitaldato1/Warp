@@ -114,6 +114,7 @@ protected:
 	void DrawDeferred();
 	void DrawForwardPlus();
 
+	void DrawMeshesUnlit(CommandList& cmd);
 	// Creates the test triangle shaders + PSO from the shared HLSL source below.
 	// Called from platform Init() after the device and swap chain are ready.
 	// Uses only abstract Device / Shader / PipelineState types — no platform casts.

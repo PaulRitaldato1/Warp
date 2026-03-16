@@ -242,6 +242,13 @@ void D3D12CommandList::SetShaderResources(u32 rootIndex, const Vector<Texture*>&
 	m_list->SetGraphicsRootDescriptorTable(rootIndex, alloc.gpu);
 }
 
+void D3D12CommandList::SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 offset)
+{
+	DYNAMIC_ASSERT(buffer, "D3D12CommandList::SetShaderResourceBuffer: buffer is null");
+	D3D12_GPU_VIRTUAL_ADDRESS address = static_cast<D3D12Buffer*>(buffer)->GetGPUAddress() + offset;
+	m_list->SetGraphicsRootShaderResourceView(rootIndex, address);
+}
+
 // ---------------------------------------------------------------------------
 // Copy / transfer
 // ---------------------------------------------------------------------------

@@ -43,4 +43,14 @@ struct WARP_API MeshComponent
 	{
 		return meshHandle != ~0u;
 	}
+
+	bool HasPath() const
+	{
+		return path[0] != '\0';
+	}
+
+	bool IsValid() const
+	{
+		return IsHandleValid() || HasPath();
+	}
 };

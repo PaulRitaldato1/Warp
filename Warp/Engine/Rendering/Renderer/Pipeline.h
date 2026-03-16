@@ -76,6 +76,29 @@ enum class PrimitiveTopology
 };
 
 // ---------------------------------------------------------------------------
+// Resource binding layout — describes how shaders access GPU resources.
+//
+// Each BindingSlot maps to one root parameter (D3D12) or one/many descriptor
+// set bindings (Vulkan). The index of the slot in PipelineDesc::bindings is
+// the rootIndex used by CommandList::SetConstantBufferView, SetShaderResources,
+// and SetShaderResourceBuffer.
+// ---------------------------------------------------------------------------
+
+enum class BindingType
+{
+	ConstantBuffer,   // D3D12: root CBV.              Vulkan: uniform buffer.
+	TextureTable,     // D3D12: SRV descriptor table.  Vulkan: combined image sampler array.
+	StructuredBuffer, // D3D12: root SRV.              Vulkan: storage buffer.
+};
+
+struct BindingSlot
+{
+	BindingType type;
+	u32 shaderRegister;  // HLSL register number (b0, t0, t4, etc.)
+	u32 count;           // TextureTable: number of consecutive SRVs. Others: 1.
+};
+
+// ---------------------------------------------------------------------------
 // Graphics pipeline descriptor
 // ---------------------------------------------------------------------------
 
@@ -100,9 +123,10 @@ struct PipelineDesc
 	BlendState     blend;
 	RasterizerState rasterState;
 
-	// Number of combined-image-sampler texture slots this pipeline binds (Vulkan).
-	// Used to build a push-descriptor descriptor set layout. 0 = no textures.
-	u32 textureSlotCount = 0;
+	// Abstract binding layout — each entry becomes a root parameter (D3D12) or
+	// descriptor set binding(s) (Vulkan). The array index is the rootIndex used
+	// by CommandList binding methods.
+	Vector<BindingSlot> bindings;
 };
 
 // ---------------------------------------------------------------------------

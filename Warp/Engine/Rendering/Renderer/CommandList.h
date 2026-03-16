@@ -92,6 +92,11 @@ public:
 	// Null entries are allowed — a null SRV is written for that slot, which returns 0 when sampled.
 	virtual void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures) = 0;
 
+	// Bind a buffer as a structured buffer SRV at rootIndex.
+	// D3D12: SetGraphicsRootShaderResourceView.  Vulkan: push descriptor SSBO bind.
+	// Use for StructuredBuffer<T> in HLSL.
+	virtual void SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 offset) = 0;
+
 	// ---------------------------------------------------------------------------
 	// Copy / transfer
 	// ---------------------------------------------------------------------------

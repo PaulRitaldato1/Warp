@@ -41,10 +41,11 @@ public:
 	void ClearDepthStencil(DescriptorHandle dsv,
 	                       f32 depth = 1.f, u8 stencil = 0)            override;
 
-	void SetConstantBuffer(u32 rootIndex, Buffer* buffer)                          override;
-	void SetConstantBufferView(u32 rootIndex, Buffer* buffer, u64 offset, u64 size) override;
-	void SetShaderResource(u32 rootIndex, Texture* texture)                        override;
-	void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures)       override;
+	void SetConstantBuffer(u32 rootIndex, Buffer* buffer)                              override;
+	void SetConstantBufferView(u32 rootIndex, Buffer* buffer, u64 offset, u64 size)     override;
+	void SetShaderResource(u32 rootIndex, Texture* texture)                            override;
+	void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures)           override;
+	void SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 offset)            override;
 
 	void CopyBuffer(Buffer* src, Buffer* dst,
 	                u64 srcOffset, u64 dstOffset, u64 size) override;

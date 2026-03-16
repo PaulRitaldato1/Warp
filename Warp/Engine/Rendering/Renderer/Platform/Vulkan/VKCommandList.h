@@ -94,6 +94,7 @@ public:
 	void SetConstantBufferView(u32 rootIndex, Buffer* buffer, u64 offset, u64 size)    override;
 	void SetShaderResource(u32 rootIndex, Texture* texture)                  override;
 	void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures) override;
+	void SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 offset)  override;
 
 	// ---------------------------------------------------------------------------
 	// Draw / dispatch
@@ -112,7 +113,8 @@ private:
 	VkDevice               m_device        = VK_NULL_HANDLE;
 	Vector<VkCommandPool>  m_pools;          // one per frame slot
 	VkCommandBuffer        m_cmdBuf        = VK_NULL_HANDLE;
-	VkPipelineLayout       m_currentLayout = VK_NULL_HANDLE; // cached from last SetPipelineState
+	VkPipelineLayout       m_currentLayout     = VK_NULL_HANDLE; // cached from last SetPipelineState
+	const Vector<u32>*     m_currentBindingMap = nullptr;        // rootIndex -> Vulkan binding index
 
 	// Push descriptor support
 	PFN_vkCmdPushDescriptorSetKHR m_pushDescriptorFn = nullptr;
