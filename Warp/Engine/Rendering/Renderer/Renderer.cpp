@@ -1,6 +1,10 @@
-#include "Renderer/DescriptorHandle.h"
-#include "Renderer/Pipeline.h"
-#include "Renderer/Texture.h"
+#include "DirectXMath.h"
+#include "Math/Math.h"
+#include "Renderer/UploadBuffer.h"
+#include <Rendering/Lighting/LightData.h>
+#include <Rendering/Renderer/DescriptorHandle.h>
+#include <Rendering/Renderer/Pipeline.h>
+#include <Rendering/Renderer/Texture.h>
 #include <Rendering/Renderer/Renderer.h>
 #include <Rendering/Resource/ResourceManager.h>
 #include <Rendering/Resource/MeshResource.h>
@@ -10,7 +14,9 @@
 #include <Core/ECS/Components/TransformComponent.h>
 #include <Core/ECS/Components/MeshComponent.h>
 #include <Core/ECS/Components/CameraComponent.h>
+#include <Core/ECS/Components/LightComponent.h>
 #include <Rendering/Mesh/Mesh.h>
+#include <Rendering/Window/Window.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 #include <algorithm>
@@ -23,6 +29,98 @@ struct PerDrawConstants
 };
 
 Renderer::~Renderer() = default;
+
+void Renderer::Init(IWindow* window, URef<Device> device)
+{
+	DYNAMIC_ASSERT(window, "Renderer::Init: window is null");
+	DYNAMIC_ASSERT(device, "Renderer::Init: device is null");
+
+	m_device = std::move(device);
+
+	// Command queues
+	m_graphicsQueue = m_device->CreateCommandQueue(CommandQueueType::Graphics);
+	m_computeQueue	= m_device->CreateCommandQueue(CommandQueueType::Compute);
+	m_copyQueue		= m_device->CreateCommandQueue(CommandQueueType::Copy);
+
+	// Swap chain
+	SwapChainDesc scDesc;
+	scDesc.Window	   = window;
+	scDesc.Width	   = static_cast<u32>(window->GetWidth());
+	scDesc.Height	   = static_cast<u32>(window->GetHeight());
+	scDesc.BufferCount = k_backBufferCount;
+	scDesc.Format	   = SwapChainFormat::BGRA8;
+	scDesc.bUseVsync   = false;
+	m_swapChain		   = m_device->CreateSwapChain(scDesc);
+
+	// Depth buffer
+	CreateDepthBuffer(scDesc.Width, scDesc.Height);
+
+	// Command lists
+	m_graphicsLists.push_back(m_device->CreateCommandList(CommandQueueType::Graphics, k_framesInFlight));
+	m_computeLists.push_back(m_device->CreateCommandList(CommandQueueType::Compute, k_framesInFlight));
+	m_copyList		 = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
+	m_urgentCopyList = m_device->CreateCommandList(CommandQueueType::Copy, k_framesInFlight);
+
+	// Upload buffer
+	m_uploadBuffer = m_device->CreateUploadBuffer(k_uploadHeapSize, k_framesInFlight);
+
+	// Worker thread pool
+	m_workerPool = std::make_unique<ThreadPool>(8);
+
+	LOG_DEBUG("Renderer initialized ({})", m_device->GetAPIName());
+}
+
+void Renderer::Shutdown()
+{
+	if (m_device)
+	{
+		m_device->WaitForIdle();
+	}
+
+	if (m_swapChain)
+	{
+		m_swapChain->Cleanup();
+	}
+
+	LOG_DEBUG("Renderer shut down");
+}
+
+void Renderer::OnResize(u32 width, u32 height)
+{
+	if (width == 0 || height == 0)
+	{
+		return;
+	}
+
+	if (m_device)
+	{
+		m_device->WaitForIdle();
+	}
+
+	m_swapChain->Resize(width, height);
+
+	m_depthTexture.reset();
+	m_depthHandle = {};
+	CreateDepthBuffer(width, height);
+
+	m_gbufferSimple.albedo.reset();
+	m_gbufferSimple.normal.reset();
+	m_gbufferSimple.material.reset();
+
+	LOG_DEBUG("Renderer resized: {}x{}", width, height);
+}
+
+void Renderer::CreateDepthBuffer(u32 width, u32 height)
+{
+	TextureDesc depthDesc;
+	depthDesc.type	 = TextureType::Texture2D;
+	depthDesc.width	 = width;
+	depthDesc.height = height;
+	depthDesc.format = TextureFormat::Depth32F;
+	depthDesc.usage	 = TextureUsage::DepthStencilSampled;
+	m_depthTexture	 = m_device->CreateTexture(depthDesc);
+	m_depthHandle	 = m_depthTexture->GetDSV();
+}
 
 void Renderer::BeginFrame()
 {
@@ -244,15 +342,27 @@ void Renderer::EndFrame()
 
 void Renderer::DrawDeferred()
 {
+	if (!m_world)
+	{
+		LOG_ERROR("Renderer::DrawDeferred: No valid World");
+		return;
+	}
+
+	if (!m_resourceManager)
+	{
+		LOG_ERROR("Renderer::DrawDeferred: No valid Resource Manager, nothing to draw");
+		return;
+	}
+
 	CommandList& cmd = *m_graphicsLists[0];
 
 	// Find the active camera from the ECS.
 	Mat4 viewProj		= {};
 	Vec3 cameraPosition = {};
-	bool hasCamera		= false;
 
-	if (m_world)
 	{
+		bool hasCamera = false;
+
 		m_world->Each<TransformComponent, CameraComponent>(
 			[&](Entity entity, TransformComponent& transform, CameraComponent& camera)
 			{
@@ -263,6 +373,12 @@ void Renderer::DrawDeferred()
 					hasCamera	   = true;
 				}
 			});
+
+		if (!hasCamera)
+		{
+			LOG_ERROR("Renderer::DrawDeferred: No valid Camera in the world");
+			return;
+		}
 	}
 
 	if (!m_deferredGeomPSO)
@@ -301,96 +417,93 @@ void Renderer::DrawDeferred()
 	cmd.SetScissorRect(0, 0, m_swapChain->GetWidth(), m_swapChain->GetHeight());
 
 	// Deferred geometry pass
-	if (m_world && m_resourceManager && hasCamera)
-	{
-		cmd.SetPipelineState(m_deferredGeomPSO.get());
-		cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
+	cmd.SetPipelineState(m_deferredGeomPSO.get());
+	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
-		m_world->Each<TransformComponent, MeshComponent>(
-			[&cmd, &viewProj, this](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
+	m_world->Each<TransformComponent, MeshComponent>(
+		[&cmd, &viewProj, this](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
+		{
+			if (!meshComp.HasRenderFlag(RenderFlags_Visible))
 			{
-				if (!meshComp.HasRenderFlag(RenderFlags_Visible))
+				return;
+			}
+
+			if (!meshComp.IsValid())
+			{
+				return;
+			}
+
+			MeshResource* resource = nullptr;
+			if (meshComp.IsHandleValid())
+			{
+				resource = m_resourceManager->GetMeshResourceByHandle(meshComp.meshHandle);
+			}
+			else
+			{
+				resource = m_resourceManager->GetMeshResource(meshComp.path);
+				if (resource)
 				{
-					return;
+					meshComp.meshHandle = resource->handle;
+				}
+			}
+
+			if (!resource)
+			{
+				return;
+			}
+
+			PerDrawConstants constants;
+			constants.viewProj = viewProj;
+			{
+				using namespace DirectX;
+				SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
+				SimdMat R = XMMatrixRotationQuaternion(XMLoadFloat4(&transform.rotation));
+				SimdMat T = XMMatrixTranslation(transform.position.x, transform.position.y, transform.position.z);
+				SimdMat M = XMMatrixMultiply(XMMatrixMultiply(S, R), T);
+				XMStoreFloat4x4(&constants.model, M);
+				XMStoreFloat4x4(&constants.modelInvTranspose, XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
+			}
+
+			UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(PerDrawConstants), 256);
+			cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
+
+			cmd.SetVertexBuffer(resource->vertexBuffer.get());
+			cmd.SetIndexBuffer(resource->indexBuffer.get());
+
+			Vector<Texture*> materialTextures(TextureSlot::TextureSlotCount, nullptr);
+
+			for (const Submesh& submesh : resource->mesh->submeshes)
+			{
+				if (submesh.materialIndex < 0)
+				{
+					continue;
 				}
 
-				if (!meshComp.IsValid())
-				{
-					return;
-				}
+				const Material& material   = resource->mesh->materials[submesh.materialIndex];
+				const Vector<u32>& handles = resource->textureHandles;
 
-				MeshResource* resource = nullptr;
-				if (meshComp.IsHandleValid())
+				auto tryFillSlot = [&](int32 texIdx, u32 slot)
 				{
-					resource = m_resourceManager->GetMeshResourceByHandle(meshComp.meshHandle);
-				}
-				else
-				{
-					resource = m_resourceManager->GetMeshResource(meshComp.path);
-					if (resource)
+					materialTextures[slot] = nullptr;
+					if (texIdx >= 0 && texIdx < static_cast<int32>(handles.size()))
 					{
-						meshComp.meshHandle = resource->handle;
-					}
-				}
-
-				if (!resource)
-				{
-					return;
-				}
-
-				PerDrawConstants constants;
-				constants.viewProj = viewProj;
-				{
-					using namespace DirectX;
-					SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
-					SimdMat R = XMMatrixRotationQuaternion(XMLoadFloat4(&transform.rotation));
-					SimdMat T = XMMatrixTranslation(transform.position.x, transform.position.y, transform.position.z);
-					SimdMat M = XMMatrixMultiply(XMMatrixMultiply(S, R), T);
-					XMStoreFloat4x4(&constants.model, M);
-					XMStoreFloat4x4(&constants.modelInvTranspose, XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
-				}
-
-				UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(PerDrawConstants), 256);
-				cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
-
-				cmd.SetVertexBuffer(resource->vertexBuffer.get());
-				cmd.SetIndexBuffer(resource->indexBuffer.get());
-
-				Vector<Texture*> materialTextures(TextureSlot::TextureSlotCount, nullptr);
-
-				for (const Submesh& submesh : resource->mesh->submeshes)
-				{
-					if (submesh.materialIndex < 0)
-					{
-						continue;
-					}
-
-					const Material& material   = resource->mesh->materials[submesh.materialIndex];
-					const Vector<u32>& handles = resource->textureHandles;
-
-					auto tryFillSlot = [&](int32 texIdx, u32 slot)
-					{
-						materialTextures[slot] = nullptr;
-						if (texIdx >= 0 && texIdx < static_cast<int32>(handles.size()))
+						TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(handles[texIdx]);
+						if (tex)
 						{
-							TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(handles[texIdx]);
-							if (tex)
-							{
-								materialTextures[slot] = tex->gpuTexture.get();
-							}
+							materialTextures[slot] = tex->gpuTexture.get();
 						}
-					};
-
-					for (int slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
-					{
-						tryFillSlot(material.TextureIndices[slot], slot);
 					}
+				};
 
-					cmd.SetShaderResources(1, materialTextures);
-					cmd.DrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, 0);
+				for (int slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
+				{
+					tryFillSlot(material.TextureIndices[slot], slot);
 				}
-			});
-	}
+
+				cmd.SetShaderResources(1, materialTextures);
+				cmd.DrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, 0);
+			}
+		});
 
 	// DrawMeshesUnlit(cmd);
 
@@ -403,12 +516,59 @@ void Renderer::DrawDeferred()
 	cmd.TransitionTexture(m_gbufferSimple.albedo.get(), ResourceState::ShaderResource);
 	cmd.TransitionTexture(m_gbufferSimple.normal.get(), ResourceState::ShaderResource);
 	cmd.TransitionTexture(m_gbufferSimple.material.get(), ResourceState::ShaderResource);
+	cmd.TransitionTexture(m_depthTexture.get(), ResourceState::ShaderResource);
+
+	cmd.SetPipelineState(m_deferredLightPSO.get());
+	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
 	m_swapChain->TransitionToRenderTarget(cmd);
+	DescriptorHandle backBufferRTV = m_swapChain->GetCurrentRTV();
+	cmd.SetRenderTargets(1, &backBufferRTV, DescriptorHandle{});
 
-	// TODO Gather lights, upload structured buffer, kick off triangle draw
+	LightPassConstants lightConstants;
+	{
+		using namespace DirectX;
+		SimdMat simdViewProj	= XMLoadFloat4x4(&viewProj);
+		SimdMat simdInvViewProj = XMMatrixInverse(nullptr, simdViewProj);
+		XMStoreFloat4x4(&lightConstants.invViewProj, simdInvViewProj);
+	}
+	lightConstants.cameraPosition = cameraPosition;
 
-	//  Transition back buffer to present state before EndFrame submits the list.
+	// TODO handle this better, we should allocate once and re-use rather than this, just want to get this stood up
+	Vector<LightInfo> lightInfos;
+	m_world->Each<TransformComponent, LightComponent>(
+		[&lightInfos](Entity entity, TransformComponent& transform, LightComponent& lightComp)
+		{
+			LightInfo info;
+			info.position		= transform.position;
+			info.range			= lightComp.range;
+			info.color			= lightComp.color;
+			info.intensity		= lightComp.intensity;
+			info.direction		= transform.Forward();
+			info.type			= static_cast<int32>(lightComp.type);
+			info.innerConeAngle = lightComp.innerConeAngle;
+			info.outerConeAngle = lightComp.outerConeAngle;
+
+			lightInfos.push_back(info);
+		});
+
+	lightConstants.lightCount		  = static_cast<int32>(lightInfos.size());
+	UploadResult lightConstantsUpload = m_uploadBuffer->AllocAndCopy(&lightConstants, sizeof(LightPassConstants), 256);
+	cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), lightConstantsUpload.offset,
+							  lightConstantsUpload.size);
+
+	cmd.SetShaderResources(1, { m_gbufferSimple.albedo.get(), m_gbufferSimple.normal.get(),
+								m_gbufferSimple.material.get(), m_depthTexture.get() });
+
+	if (!lightInfos.empty())
+	{
+		UploadResult lightUpload =
+			m_uploadBuffer->AllocAndCopy(lightInfos.data(), lightInfos.size() * sizeof(LightInfo));
+		cmd.SetShaderResourceBuffer(2, m_uploadBuffer->GetBackingBuffer(), lightUpload.offset);
+	}
+
+	cmd.Draw(3);
+
 	m_swapChain->TransitionToPresent(cmd);
 }
 
@@ -565,8 +725,9 @@ void Renderer::CreateDeferredLightingPipeline()
 	desc.rasterState.cullMode = RasterizerState::CullMode::None;
 	desc.rasterState.fillMode = RasterizerState::FillMode::Solid;
 	desc.bindings			  = {
-		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — lighting constants
-		{ BindingType::TextureTable, 0, TextureSlot::TextureSlotCount }, // rootIndex 1: t0-t4 — GBuffer textures
+		{ BindingType::ConstantBuffer, 0, 1 },	// rootIndex 0: b0 — lighting constants
+		{ BindingType::TextureTable, 0, 4 },	// rootIndex 1: t0-t3 — GBuffer textures
+		{ BindingType::StructuredBuffer, 4, 1 } // rootIndex 2: t4 - Light Infos buffer
 	};
 	m_deferredLightPSO = m_device->CreatePipelineState(desc);
 

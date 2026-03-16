@@ -4,8 +4,8 @@
 
 enum class LightType : u8
 {
-	Directional,
 	Point,
+	Directional,
 	Spot,
 };
 

@@ -70,7 +70,7 @@ public:
 
 	ID3D12GraphicsCommandList* GetNative() const { return m_list.Get(); }
 
-	// Called once by D3D12Renderer::Init after list creation.
+	// Wired automatically by D3D12Device::CreateCommandList for graphics lists.
 	// The device is used to create inline SRVs in SetShaderResource.
 	// The heap is bound via SetDescriptorHeaps at the start of every Begin().
 	void SetDevice(ID3D12Device*       device) { m_device  = device; }
@@ -80,7 +80,7 @@ private:
 	ComRef<ID3D12GraphicsCommandList>      m_list;
 	Vector<ComRef<ID3D12CommandAllocator>> m_allocators; // one per frame-in-flight
 
-	// Non-owning — lifetime managed by D3D12Renderer.
+	// Non-owning — lifetime managed by D3D12Device.
 	ID3D12Device*      m_device  = nullptr;
 	D3D12DescriptorHeap* m_srvHeap = nullptr;
 };

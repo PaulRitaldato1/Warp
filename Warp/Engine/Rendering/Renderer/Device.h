@@ -28,6 +28,7 @@ struct DeviceDesc
 {
 	bool bEnableDebugLayer		   = false;
 	bool bEnableGPUValidationLayer = false;
+	u32  srvHeapCapacity           = 4096;
 };
 
 struct PhysicalDeviceInfo

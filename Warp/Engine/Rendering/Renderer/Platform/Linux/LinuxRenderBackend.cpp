@@ -2,7 +2,7 @@
 
 #include <Rendering/RenderBackend.h>
 #include <Rendering/Renderer/Platform/Linux/LinuxWindow.h>
-#include <Rendering/Renderer/Platform/Vulkan/VKRenderer.h>
+#include <Rendering/Renderer/Platform/Vulkan/VKDevice.h>
 #include <Debugging/Logging.h>
 
 class LinuxRenderBackend : public RenderBackend
@@ -13,9 +13,19 @@ public:
 		return std::make_unique<LinuxWindow>(name, width, height);
 	}
 
-	URef<Renderer> CreateRenderer() override
+	URef<Renderer> CreateRenderer(IWindow* window) override
 	{
-		return std::make_unique<VKRenderer>();
+		URef<Renderer> renderer = std::make_unique<Renderer>();
+
+		DeviceDesc deviceDesc;
+#if defined(WARP_DEBUG)
+		deviceDesc.bEnableDebugLayer = true;
+#endif
+		URef<VKDevice> device = std::make_unique<VKDevice>();
+		device->Initialize(deviceDesc);
+
+		renderer->Init(window, std::move(device));
+		return renderer;
 	}
 };
 

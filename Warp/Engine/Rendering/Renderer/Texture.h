@@ -44,10 +44,11 @@ enum class TextureFormat
 
 enum class TextureUsage
 {
-	Sampled,      // read in shaders
-	RenderTarget, // colour output
-	DepthStencil, // depth/stencil output
-	Storage,      // read/write in compute shaders
+	Sampled,              // read in shaders
+	RenderTarget,         // colour output + SRV for read-back
+	DepthStencil,         // depth/stencil output only — no shader read
+	DepthStencilSampled,  // depth/stencil output + SRV for shader read (e.g. lighting pass)
+	Storage,              // read/write in compute shaders
 };
 
 struct TextureDesc

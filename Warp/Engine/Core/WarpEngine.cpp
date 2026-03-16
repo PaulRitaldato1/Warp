@@ -23,10 +23,9 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 	m_backend  = RenderBackend::Create();
 	m_window   = m_backend->MakeWindow(App->EngineInitDesc.Name, App->EngineInitDesc.WindowWidth,
 									   App->EngineInitDesc.WindowHeight);
-	m_renderer = m_backend->CreateRenderer();
+	m_renderer = m_backend->CreateRenderer(m_window.get());
 	if (m_renderer)
 	{
-		m_renderer->Init(m_window.get());
 		m_renderer->SetWorld(m_world.get());
 
 		m_resourceManager = std::make_unique<ResourceManager>();

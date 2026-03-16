@@ -1,3 +1,4 @@
+#include "Core/ECS/Components/LightComponent.h"
 #include <EntryPoint/EntryPoint.h>
 #include <Common/CommonTypes.h>
 #include <Input/Input.h>
@@ -12,6 +13,17 @@ struct TempGame : public UserApplicationBase
 	{
 		World& world = engine->GetWorld();
 
+		Entity directionalLightEntity	 = world.CreateEntity<TransformComponent, LightComponent>();
+		LightComponent& directionalLight = world.GetComponent<LightComponent>(directionalLightEntity);
+		directionalLight.type			 = LightType::Directional;
+		directionalLight.color			 = { 1.f, 0.5f, 0.5f };
+		directionalLight.intensity		 = 10.f;
+
+		// Aim the light downward at an angle — the forward vector (+Z in LH) gets
+		// rotated by the transform's rotation, so pitch down ~45 degrees.
+		TransformComponent& lightTransform = world.GetComponent<TransformComponent>(directionalLightEntity);
+		lightTransform.Rotate({ 45.f, -30.f, 0.f });
+
 		Entity helmet = world.CreateEntity<TransformComponent, MeshComponent>();
 		world.GetComponent<MeshComponent>(helmet).SetPath("Resources/DamagedHelmet/DamagedHelmet.gltf");
 
@@ -21,7 +33,7 @@ struct TempGame : public UserApplicationBase
 		avocadoTransform.Move({ 2.0f, 0.f, 0.f });
 		avocadoTransform.Scale(20.0f);
 
-		Entity duplicateAvocado = world.DuplicateEntity(avocado);
+		Entity duplicateAvocado				   = world.DuplicateEntity(avocado);
 		TransformComponent& duplicateTransform = world.GetComponent<TransformComponent>(duplicateAvocado);
 		duplicateTransform.Move({ 5.0f, 0.0f, 0.0f });
 		duplicateTransform.Scale(5.0f);
@@ -43,9 +55,7 @@ struct TempGame : public UserApplicationBase
 		World& world = engine->GetWorld();
 		world.Each<TransformComponent, MeshComponent>(
 			[&](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
-			{
-				transform.Rotate({ 0.f, 30.f * deltaTime, 0.f });
-			});
+			{ transform.Rotate({ 0.f, 30.f * deltaTime, 0.f }); });
 
 		return true;
 	}
@@ -59,8 +69,8 @@ bool HookEngineFromApp(UserApplicationBase** outDesc)
 {
 	(*outDesc) = new TempGame();
 
-	(*outDesc)->EngineInitDesc.Name        = "Test Bed";
-	(*outDesc)->EngineInitDesc.WindowWidth  = 1920;
+	(*outDesc)->EngineInitDesc.Name			= "Test Bed";
+	(*outDesc)->EngineInitDesc.WindowWidth	= 1920;
 	(*outDesc)->EngineInitDesc.WindowHeight = 1080;
 
 	return true;

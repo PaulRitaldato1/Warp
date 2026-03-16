@@ -28,6 +28,18 @@ struct WARP_API TransformComponent
 		XMStoreFloat4(&rotation, XMQuaternionMultiply(current, delta));
 	}
 
+	// Returns the local forward direction (+Z in left-handed coordinates)
+	// rotated by the current quaternion.
+	Vec3 Forward() const
+	{
+		using namespace DirectX;
+		SimdVec quat    = XMLoadFloat4(&rotation);
+		SimdVec forward = XMVector3Rotate(XMVectorSet(0.f, 0.f, 1.f, 0.f), quat);
+		Vec3 result;
+		XMStoreFloat3(&result, forward);
+		return result;
+	}
+
 	// Multiply scale uniformly on all axes.
 	void Scale(f32 factor)
 	{

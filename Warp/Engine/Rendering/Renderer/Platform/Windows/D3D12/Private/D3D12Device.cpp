@@ -70,6 +70,8 @@ void D3D12Device::Initialize(const DeviceDesc& desc)
 		String name(wname.begin(), wname.end());
 		LOG_DEBUG("D3D12Device initialized on: {}", name);
 	}
+
+	m_srvHeap.Initialize(m_device.Get(), desc.srvHeapCapacity);
 }
 
 static D3D12_COMMAND_LIST_TYPE ToD3D12QueueType(CommandQueueType type)
@@ -115,6 +117,13 @@ URef<CommandList> D3D12Device::CreateCommandList(CommandQueueType type, u32 fram
 
 	URef<D3D12CommandList> list = std::make_unique<D3D12CommandList>();
 	list->InitializeWithDevice(m_device.Get(), framesInFlight, ToD3D12QueueType(type));
+
+	if (type == CommandQueueType::Graphics)
+	{
+		list->SetDevice(m_device.Get());
+		list->SetSRVHeap(&m_srvHeap);
+	}
+
 	return list;
 }
 

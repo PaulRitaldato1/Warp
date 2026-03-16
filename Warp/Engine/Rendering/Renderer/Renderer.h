@@ -16,8 +16,6 @@
 #include <Rendering/Renderer/Shader.h>
 #include <Rendering/Renderer/Pipeline.h>
 #include <Rendering/Renderer/TextureUpload.h>
-#include <vulkan/vulkan_core.h>
-
 class IWindow;
 class World;
 class ResourceManager;
@@ -54,13 +52,13 @@ struct FrameSyncPoint
 class Renderer
 {
 public:
-	virtual ~Renderer();
+	~Renderer();
 
-	// window is non-owning — WarpEngine retains ownership
-	// Platform-specific — implemented per API (D3D12, Vulkan, Metal)
-	virtual void Init(IWindow* window)			 = 0;
-	virtual void Shutdown()						 = 0;
-	virtual void OnResize(u32 width, u32 height) = 0;
+	// window is non-owning — WarpEngine retains ownership.
+	// device is moved in — Renderer takes ownership.
+	void Init(IWindow* window, URef<Device> device);
+	void Shutdown();
+	void OnResize(u32 width, u32 height);
 
 	// Frame loop — implemented once in Renderer.cpp using abstract types.
 	// These are not virtual: render path logic is shared across all APIs.
@@ -128,6 +126,7 @@ protected:
 	void CreateDeferredGeometryPipeline();
 	void CreateDeferredLightingPipeline();
 
+	void CreateDepthBuffer(u32 width, u32 height);
 	void InitGBufferTextures();
 
 	// How many frames the CPU is allowed to run ahead of the GPU.
@@ -148,7 +147,7 @@ protected:
 	URef<SwapChain> m_swapChain;
 
 	// Depth buffer shared across all render paths.
-	// Created by the platform Init(); handle stored here for use in DrawXxx().
+	// Created by CreateDepthBuffer(); handle stored here for use in DrawXxx().
 	URef<Texture> m_depthTexture;
 	DescriptorHandle m_depthHandle;
 

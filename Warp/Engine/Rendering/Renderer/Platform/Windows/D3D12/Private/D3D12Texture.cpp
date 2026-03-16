@@ -53,6 +53,19 @@ void D3D12Texture::InitializeWithDevice(ID3D12Device* device, const TextureDesc&
 			resourceDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
 			initState           = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 			break;
+		case TextureUsage::DepthStencilSampled:
+			resourceDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+			// Use typeless resource format so both DSV (D32_FLOAT) and SRV (R32_FLOAT) views work.
+			if (desc.format == TextureFormat::Depth32F)
+			{
+				resourceDesc.Format = DXGI_FORMAT_R32_TYPELESS;
+			}
+			else if (desc.format == TextureFormat::Depth24Stencil8)
+			{
+				resourceDesc.Format = DXGI_FORMAT_R24G8_TYPELESS;
+			}
+			initState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+			break;
 		case TextureUsage::Storage:
 			resourceDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 			initState           = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
@@ -87,8 +100,8 @@ void D3D12Texture::InitializeWithDevice(ID3D12Device* device, const TextureDesc&
 		m_rtvHandle = { static_cast<u64>(handle.ptr), desc.width, desc.height };
 	}
 
-	// DSV — DepthStencil textures
-	if (desc.usage == TextureUsage::DepthStencil)
+	// DSV — DepthStencil and DepthStencilSampled textures
+	if (desc.usage == TextureUsage::DepthStencil || desc.usage == TextureUsage::DepthStencilSampled)
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
 		heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
@@ -97,13 +110,26 @@ void D3D12Texture::InitializeWithDevice(ID3D12Device* device, const TextureDesc&
 		ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_dsvHeap)));
 
 		D3D12_CPU_DESCRIPTOR_HANDLE handle = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
-		device->CreateDepthStencilView(m_resource.Get(), nullptr, handle);
+
+		if (desc.usage == TextureUsage::DepthStencilSampled)
+		{
+			// Resource is typeless — must specify the typed depth format for the DSV.
+			D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+			dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+			dsvDesc.Format        = ToD3D12Format(desc.format);
+			device->CreateDepthStencilView(m_resource.Get(), &dsvDesc, handle);
+		}
+		else
+		{
+			device->CreateDepthStencilView(m_resource.Get(), nullptr, handle);
+		}
 		m_dsvHandle = { static_cast<u64>(handle.ptr), desc.width, desc.height };
 	}
 
-	// SRV — Sampled textures, and RenderTarget textures (G-buffer read-back in lighting pass).
+	// SRV — Sampled, RenderTarget, and DepthStencilSampled textures.
 	// CPU-only staging heap; copy into the frame's shader-visible heap when binding to a root signature.
-	if (desc.usage == TextureUsage::Sampled || desc.usage == TextureUsage::RenderTarget)
+	if (desc.usage == TextureUsage::Sampled || desc.usage == TextureUsage::RenderTarget
+		|| desc.usage == TextureUsage::DepthStencilSampled)
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
 		heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -112,8 +138,24 @@ void D3D12Texture::InitializeWithDevice(ID3D12Device* device, const TextureDesc&
 		ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_srvHeap)));
 
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Format                    = resourceDesc.Format;
 		srvDesc.Shader4ComponentMapping   = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+		// Typeless depth resources need an explicit float format for the SRV.
+		if (desc.usage == TextureUsage::DepthStencilSampled)
+		{
+			if (desc.format == TextureFormat::Depth32F)
+			{
+				srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+			}
+			else if (desc.format == TextureFormat::Depth24Stencil8)
+			{
+				srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+			}
+		}
+		else
+		{
+			srvDesc.Format = resourceDesc.Format;
+		}
 
 		if (desc.type == TextureType::CubeMap)
 		{

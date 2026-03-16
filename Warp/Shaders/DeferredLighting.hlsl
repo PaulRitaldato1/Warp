@@ -127,7 +127,7 @@ float4 PSMain(VSOutput input) : SV_Target
         {
             lightDir = normalize(-light.direction);
         }
-        else // Point — light radiates outward from a position, falls off with distance.
+        else // Point or Spot — light radiates outward from a position, falls off with distance.
         {
             float3 toLight = light.position - worldSpacePos.xyz;
             float  dist    = length(toLight);
@@ -138,6 +138,15 @@ float4 PSMain(VSOutput input) : SV_Target
             // Range attenuation smoothly cuts the light off at its maximum range.
             float rangeAttenuation = saturate(1.0 - (dist / light.range));
             attenuation = (rangeAttenuation * rangeAttenuation) / (dist * dist + 1.0);
+
+            if (light.type == 2) // Spot — cone falloff on top of point attenuation.
+            {
+                float cosAngle      = dot(normalize(light.direction), -lightDir);
+                float cosInner      = cos(radians(light.innerConeAngle));
+                float cosOuter      = cos(radians(light.outerConeAngle));
+                float spotFalloff   = saturate((cosAngle - cosOuter) / (cosInner - cosOuter));
+                attenuation        *= spotFalloff * spotFalloff;
+            }
         }
 
         float normalDotLight = max(dot(normal, lightDir), 0.0);

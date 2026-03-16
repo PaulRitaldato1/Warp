@@ -8,6 +8,7 @@
 
 #include <d3d12.h>
 #include <dxgi1_4.h>
+#include <Rendering/Renderer/Platform/Windows/D3D12/D3D12DescriptorHeap.h>
 
 class D3D12Device : public Device
 {
@@ -40,12 +41,17 @@ public:
 		return m_factory.Get();
 	}
 
+	D3D12DescriptorHeap* GetSRVHeap() { return &m_srvHeap; }
+
 private:
 	ComRef<ID3D12Device2> m_device;
 	ComRef<IDXGIFactory4> m_factory;
 	ComRef<IDXGIAdapter1> m_adapter;
 	ComRef<ID3D12Debug> m_debugController;
 	ComRef<ID3D12CommandQueue> m_graphicsQueue;
+
+	// Shader-visible CBV/SRV/UAV heap shared by all graphics command lists.
+	D3D12DescriptorHeap m_srvHeap;
 };
 
 #endif

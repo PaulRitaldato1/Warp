@@ -14,5 +14,5 @@ public:
 	static URef<RenderBackend> Create();
 
 	virtual URef<IWindow>  MakeWindow(const String& name, int width, int height) = 0;
-	virtual URef<Renderer> CreateRenderer()                                        = 0;
+	virtual URef<Renderer> CreateRenderer(IWindow* window)                       = 0;
 };

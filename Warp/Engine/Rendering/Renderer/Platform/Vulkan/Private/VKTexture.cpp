@@ -74,6 +74,9 @@ void VKTexture::Init(const TextureDesc& desc)
 		case TextureUsage::DepthStencil:
 			usageFlags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 			break;
+		case TextureUsage::DepthStencilSampled:
+			usageFlags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+			break;
 		case TextureUsage::Storage:
 			usageFlags |= VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 			break;
