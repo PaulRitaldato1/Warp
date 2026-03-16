@@ -1,6 +1,7 @@
 #include <Rendering/Resource/ResourceManager.h>
 #include <Rendering/Mesh/MeshLoader.h>
 #include <Rendering/Mesh/Mesh.h>
+#include <Rendering/Mesh/GeoGenerator.h>
 #include <Rendering/Texture/TextureLoader.h>
 #include <Rendering/Texture/TextureData.h>
 #include <Rendering/Renderer/Device.h>
@@ -19,7 +20,57 @@ void ResourceManager::Initialize(Device* device, ThreadPool* threadPool)
 	m_device	 = device;
 	m_threadPool = threadPool;
 
+	CreateDefaultTexture();
+
 	LOG_DEBUG("ResourceManager initialized");
+}
+
+void ResourceManager::CreateDefaultTexture()
+{
+	constexpr u32 size      = 64;
+	constexpr u32 blockSize = 8;
+	constexpr u32 bpp       = 4;
+
+	URef<TextureData> texData = std::make_unique<TextureData>();
+	texData->name      = "builtin://checkerboard";
+	texData->width     = size;
+	texData->height    = size;
+	texData->mipLevels = 1;
+	texData->format    = TextureFormat::RGBA8;
+	texData->data.resize(size * size * bpp);
+
+	for (u32 y = 0; y < size; ++y)
+	{
+		for (u32 x = 0; x < size; ++x)
+		{
+			bool white = ((x / blockSize) + (y / blockSize)) % 2 == 0;
+			u8 value   = white ? 200 : 50;
+			u32 offset = (y * size + x) * bpp;
+			texData->data[offset + 0] = value;
+			texData->data[offset + 1] = value;
+			texData->data[offset + 2] = value;
+			texData->data[offset + 3] = 255;
+		}
+	}
+
+	MipData mip;
+	mip.data       = texData->data.data();
+	mip.rowPitch   = size * bpp;
+	mip.slicePitch = size * size * bpp;
+	mip.width      = size;
+	mip.height     = size;
+	texData->mips.push_back(mip);
+
+	URef<TextureResource> resource = std::make_unique<TextureResource>();
+	resource->textureData = std::move(texData);
+	resource->handle      = static_cast<u32>(m_textureByHandle.size());
+
+	FinalizeTextureUpload("builtin://checkerboard", *resource);
+
+	m_defaultTextureHandle = resource->handle;
+	TextureResource* rawPtr = resource.get();
+	m_textureByHandle.push_back(rawPtr);
+	m_textureCache["builtin://checkerboard"] = std::move(resource);
 }
 
 void ResourceManager::Shutdown()
@@ -155,6 +206,41 @@ Vector<Texture*> ResourceManager::DrainTextureBarriers()
 	return barriers;
 }
 
+u32 ResourceManager::RegisterMesh(const String& name, URef<Mesh> mesh)
+{
+	DYNAMIC_ASSERT(mesh, "ResourceManager::RegisterMesh: mesh is null");
+	DYNAMIC_ASSERT(m_meshCache.find(name) == m_meshCache.end(),
+	               "ResourceManager::RegisterMesh: mesh already registered");
+
+	URef<MeshResource> resource = std::make_unique<MeshResource>();
+	resource->mesh = std::move(mesh);
+
+	u32 handle = static_cast<u32>(m_meshByHandle.size());
+	resource->handle = handle;
+
+	FinalizeMeshUpload(name, *resource);
+
+	resource->state = AssetState::Uploading;
+	resource->uploadFrameCounter = 0;
+
+	MeshResource* rawPtr = resource.get();
+	m_meshByHandle.push_back(rawPtr);
+	m_meshCache[name] = std::move(resource);
+
+	LOG_DEBUG("ResourceManager: registered mesh '{}'", name);
+	return handle;
+}
+
+u32 ResourceManager::CreatePlane(f32 sizeX, f32 sizeZ, u32 segmentsX, u32 segmentsZ)
+{
+	return RegisterMesh("builtin://plane", GeoGenerator::CreatePlane(sizeX, sizeZ, segmentsX, segmentsZ));
+}
+
+u32 ResourceManager::CreateBox(f32 sizeX, f32 sizeY, f32 sizeZ)
+{
+	return RegisterMesh("builtin://box", GeoGenerator::CreateBox(sizeX, sizeY, sizeZ));
+}
+
 MeshResource* ResourceManager::GetMeshResource(const char* path)
 {
 	String pathStr(path);
@@ -190,6 +276,12 @@ TextureResource* ResourceManager::GetTextureResource(const char* path)
 
 	BeginTextureLoad(pathStr);
 	return nullptr;
+}
+
+Texture* ResourceManager::GetDefaultTexture()
+{
+	TextureResource* resource = GetTextureResourceByHandle(m_defaultTextureHandle);
+	return resource ? resource->gpuTexture.get() : nullptr;
 }
 
 void ResourceManager::BeginMeshLoad(const String& path)

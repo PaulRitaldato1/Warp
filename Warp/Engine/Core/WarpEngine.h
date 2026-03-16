@@ -59,4 +59,9 @@ public:
 	{
 		return m_window.get();
 	}
+
+	ResourceManager* GetResourceManager()
+	{
+		return m_resourceManager.get();
+	}
 };

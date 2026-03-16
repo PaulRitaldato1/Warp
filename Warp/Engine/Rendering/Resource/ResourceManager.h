@@ -37,6 +37,10 @@ public:
 	// Renderer issues TransitionTexture on the graphics command list in BeginFrame.
 	Vector<Texture*> DrainTextureBarriers();
 
+	// Procedural geometry — creates GPU buffers and queues uploads. Returns the mesh handle.
+	u32 CreatePlane(f32 sizeX = 10.f, f32 sizeZ = 10.f, u32 segmentsX = 1, u32 segmentsZ = 1);
+	u32 CreateBox(f32 sizeX = 1.f, f32 sizeY = 1.f, f32 sizeZ = 1.f);
+
 	// Returns a MeshResource if ready, nullptr if still loading/uploading.
 	// Automatically kicks off loading on first request.
 	MeshResource* GetMeshResource(const char* path);
@@ -52,8 +56,13 @@ public:
 	// O(1) handle-based lookup. Returns nullptr if the handle is invalid.
 	TextureResource* GetTextureResourceByHandle(u32 handle);
 
+	// Returns the fallback checkerboard texture. Always valid after Initialize().
+	Texture* GetDefaultTexture();
+
 
 private:
+	u32  RegisterMesh(const String& name, URef<Mesh> mesh);
+	void CreateDefaultTexture();
 	void BeginMeshLoad(const String& path);
 	u32  BeginTextureLoad(const String& path);
 
@@ -75,6 +84,9 @@ private:
 	// Handle tables: index -> raw pointer for O(1) render-loop lookups.
 	Vector<MeshResource*>    m_meshByHandle;
 	Vector<TextureResource*> m_textureByHandle;
+
+	// Fallback checkerboard texture used when a texture slot has no assigned texture.
+	u32 m_defaultTextureHandle = ~0u;
 
 	// Pending async loads tracked via futures.
 	HashMap<String, std::future<URef<Mesh>>>        m_pendingMeshLoads;

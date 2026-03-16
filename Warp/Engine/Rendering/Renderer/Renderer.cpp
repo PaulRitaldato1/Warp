@@ -420,8 +420,10 @@ void Renderer::DrawDeferred()
 	cmd.SetPipelineState(m_deferredGeomPSO.get());
 	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
+	Texture* defaultTexture = m_resourceManager->GetDefaultTexture();
+
 	m_world->Each<TransformComponent, MeshComponent>(
-		[&cmd, &viewProj, this](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
+		[&cmd, &viewProj, &defaultTexture, this](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
 		{
 			if (!meshComp.HasRenderFlag(RenderFlags_Visible))
 			{
@@ -484,7 +486,7 @@ void Renderer::DrawDeferred()
 
 				auto tryFillSlot = [&](int32 texIdx, u32 slot)
 				{
-					materialTextures[slot] = nullptr;
+					materialTextures[slot] = defaultTexture;
 					if (texIdx >= 0 && texIdx < static_cast<int32>(handles.size()))
 					{
 						TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(handles[texIdx]);
