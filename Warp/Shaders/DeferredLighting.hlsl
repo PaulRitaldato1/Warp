@@ -133,11 +133,15 @@ float4 PSMain(VSOutput input) : SV_Target
             float  dist    = length(toLight);
             lightDir       = normalize(toLight);
 
-            // Inverse-square falloff: energy spreads over a sphere surface area (4*PI*r^2).
-            // The +1 prevents division by zero at dist=0.
-            // Range attenuation smoothly cuts the light off at its maximum range.
-            float rangeAttenuation = saturate(1.0 - (dist / light.range));
-            attenuation = (rangeAttenuation * rangeAttenuation) / (dist * dist + 1.0);
+            // Range-normalized inverse-square with smooth window.
+            // Dividing by (d/r)^2 instead of d^2 means doubling range doubles the
+            // visible reach rather than just moving a cutoff nobody can see.
+            // The (1-(d/r)^4)^2 window ensures a clean fade to zero at range.
+            float distOverRange  = dist / light.range;
+            float distOverRange2 = distOverRange * distOverRange;
+            float distOverRange4 = distOverRange2 * distOverRange2;
+            float rangeWindow    = saturate(1.0 - distOverRange4);
+            attenuation = (rangeWindow * rangeWindow) / (distOverRange2 + 0.01);
 
             if (light.type == 2) // Spot — cone falloff on top of point attenuation.
             {

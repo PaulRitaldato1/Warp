@@ -21,6 +21,7 @@ void ResourceManager::Initialize(Device* device, ThreadPool* threadPool)
 	m_threadPool = threadPool;
 
 	CreateDefaultTexture();
+	CreateDefaultMaterialTexture();
 
 	LOG_DEBUG("ResourceManager initialized");
 }
@@ -71,6 +72,46 @@ void ResourceManager::CreateDefaultTexture()
 	TextureResource* rawPtr = resource.get();
 	m_textureByHandle.push_back(rawPtr);
 	m_textureCache["builtin://checkerboard"] = std::move(resource);
+}
+
+void ResourceManager::CreateDefaultMaterialTexture()
+{
+	constexpr u32 size = 1;
+	constexpr u32 bpp  = 4;
+
+	URef<TextureData> texData = std::make_unique<TextureData>();
+	texData->name      = "builtin://default_material";
+	texData->width     = size;
+	texData->height    = size;
+	texData->mipLevels = 1;
+	texData->format    = TextureFormat::RGBA8;
+	texData->data.resize(bpp);
+
+	// glTF metallic-roughness: R = occlusion, G = roughness, B = metallic.
+	// Non-metallic, fully rough, full occlusion — a safe neutral default.
+	texData->data[0] = 255; // R (occlusion = 1)
+	texData->data[1] = 255; // G (roughness = 1)
+	texData->data[2] = 0;   // B (metallic  = 0)
+	texData->data[3] = 255; // A
+
+	MipData mip;
+	mip.data       = texData->data.data();
+	mip.rowPitch   = size * bpp;
+	mip.slicePitch = size * size * bpp;
+	mip.width      = size;
+	mip.height     = size;
+	texData->mips.push_back(mip);
+
+	URef<TextureResource> resource = std::make_unique<TextureResource>();
+	resource->textureData = std::move(texData);
+	resource->handle      = static_cast<u32>(m_textureByHandle.size());
+
+	FinalizeTextureUpload("builtin://default_material", *resource);
+
+	m_defaultMaterialTextureHandle = resource->handle;
+	TextureResource* rawPtr = resource.get();
+	m_textureByHandle.push_back(rawPtr);
+	m_textureCache["builtin://default_material"] = std::move(resource);
 }
 
 void ResourceManager::Shutdown()
@@ -281,6 +322,12 @@ TextureResource* ResourceManager::GetTextureResource(const char* path)
 Texture* ResourceManager::GetDefaultTexture()
 {
 	TextureResource* resource = GetTextureResourceByHandle(m_defaultTextureHandle);
+	return resource ? resource->gpuTexture.get() : nullptr;
+}
+
+Texture* ResourceManager::GetDefaultMaterialTexture()
+{
+	TextureResource* resource = GetTextureResourceByHandle(m_defaultMaterialTextureHandle);
 	return resource ? resource->gpuTexture.get() : nullptr;
 }
 

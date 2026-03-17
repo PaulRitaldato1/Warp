@@ -56,20 +56,23 @@ struct TempGame : public UserApplicationBase
 
 		Entity redLight = world.CreateEntity<TransformComponent, LightComponent, OrbitComponent>();
 		world.GetComponent<LightComponent>(redLight).color	   = { 1.f, 0.f, 0.f };
-		world.GetComponent<LightComponent>(redLight).intensity = 5.f;
+		world.GetComponent<LightComponent>(redLight).intensity = 0.3f;
+		world.GetComponent<LightComponent>(redLight).range	   = 10.f;
 		world.GetComponent<OrbitComponent>(redLight).radius	   = 5.f;
 		world.GetComponent<OrbitComponent>(redLight).height	   = 1.f;
 
 		Entity greenLight = world.CreateEntity<TransformComponent, LightComponent, OrbitComponent>();
 		world.GetComponent<LightComponent>(greenLight).color	   = { 0.f, 1.f, 0.f };
-		world.GetComponent<LightComponent>(greenLight).intensity   = 5.f;
+		world.GetComponent<LightComponent>(greenLight).intensity   = 0.3f;
+		world.GetComponent<LightComponent>(greenLight).range	   = 10.f;
 		world.GetComponent<OrbitComponent>(greenLight).radius	   = 5.f;
 		world.GetComponent<OrbitComponent>(greenLight).height	   = 1.f;
 		world.GetComponent<OrbitComponent>(greenLight).phaseOffset = phaseStep;
 
 		Entity purpleLight = world.CreateEntity<TransformComponent, LightComponent, OrbitComponent>();
 		world.GetComponent<LightComponent>(purpleLight).color		= { 0.8f, 0.f, 1.f };
-		world.GetComponent<LightComponent>(purpleLight).intensity	= 5.f;
+		world.GetComponent<LightComponent>(purpleLight).intensity	= 0.3f;
+		world.GetComponent<LightComponent>(purpleLight).range		= 10.f;
 		world.GetComponent<OrbitComponent>(purpleLight).radius		= 5.f;
 		world.GetComponent<OrbitComponent>(purpleLight).height		= 1.f;
 		world.GetComponent<OrbitComponent>(purpleLight).phaseOffset = phaseStep * 2.f;

@@ -56,13 +56,19 @@ public:
 	// O(1) handle-based lookup. Returns nullptr if the handle is invalid.
 	TextureResource* GetTextureResourceByHandle(u32 handle);
 
-	// Returns the fallback checkerboard texture. Always valid after Initialize().
+	// Returns the fallback checkerboard texture (used for BaseColor). Always valid after Initialize().
 	Texture* GetDefaultTexture();
+
+	// Returns a flat default texture for non-albedo material slots.
+	// MetallicRoughness: (0, 1, 0) = non-metallic, fully rough.
+	// Normal/Occlusion/Emissive all get sensible neutral values from white.
+	Texture* GetDefaultMaterialTexture();
 
 
 private:
 	u32  RegisterMesh(const String& name, URef<Mesh> mesh);
 	void CreateDefaultTexture();
+	void CreateDefaultMaterialTexture();
 	void BeginMeshLoad(const String& path);
 	u32  BeginTextureLoad(const String& path);
 
@@ -85,8 +91,11 @@ private:
 	Vector<MeshResource*>    m_meshByHandle;
 	Vector<TextureResource*> m_textureByHandle;
 
-	// Fallback checkerboard texture used when a texture slot has no assigned texture.
+	// Fallback checkerboard texture used for BaseColor when no texture is assigned.
 	u32 m_defaultTextureHandle = ~0u;
+
+	// Flat default texture for non-albedo material slots (metallic-roughness, normal, etc.).
+	u32 m_defaultMaterialTextureHandle = ~0u;
 
 	// Pending async loads tracked via futures.
 	HashMap<String, std::future<URef<Mesh>>>        m_pendingMeshLoads;
