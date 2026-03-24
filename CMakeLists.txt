@@ -78,7 +78,15 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(DirectXMath fastgltf VulkanMemoryAllocator tinyddsloader stb)
+FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG        v1.91.8
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  "_none"
+)
+
+FetchContent_MakeAvailable(DirectXMath fastgltf VulkanMemoryAllocator tinyddsloader stb imgui)
 
 # DirectXMath includes sal.h which is a Windows-only SAL annotation header.
 # Provide a no-op stub for non-Windows builds. configure_file runs on every
@@ -133,10 +141,26 @@ include_directories(
     ${Warp_SOURCE_DIR}/Warp/Engine
     )
 
+# ImGui core source files
+set(IMGUI_SRCS
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+)
+# Platform/renderer backends — added per-platform below
+if(WIN32)
+    list(APPEND IMGUI_SRCS
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp
+    )
+endif()
+
 #TODO
 #we also have 'WARP_ASSERTIONS_ENABLED', 'LOG_WARN_ENABLED', 'LOG_DEBUG_ENABLED', 'LOG_INFO_ENABLED', and 'WARP_RELEASE'
 #that we need to add depending on the build type
-add_library(WarpEngine SHARED ${ENGINE_SRCS} ${ENGINE_HDRS})
+add_library(WarpEngine SHARED ${ENGINE_SRCS} ${ENGINE_HDRS} ${IMGUI_SRCS})
 target_compile_features(WarpEngine PRIVATE cxx_std_20)
 target_compile_definitions(WarpEngine PRIVATE "WARP_EXPORT")
 target_precompile_headers(WarpEngine PRIVATE "Warp/Engine/Common/CommonTypes.h")
@@ -157,6 +181,8 @@ target_link_libraries(WarpEngine PRIVATE fastgltf::fastgltf)
 target_include_directories(WarpEngine PUBLIC  ${directxmath_SOURCE_DIR}/Inc)
 target_include_directories(WarpEngine SYSTEM PRIVATE ${tinyddsloader_SOURCE_DIR})
 target_include_directories(WarpEngine SYSTEM PRIVATE ${stb_SOURCE_DIR})
+target_include_directories(WarpEngine SYSTEM PUBLIC  ${imgui_SOURCE_DIR})
+target_include_directories(WarpEngine SYSTEM PUBLIC  ${imgui_SOURCE_DIR}/backends)
 
 if(WIN32)
     find_package(Vulkan REQUIRED)

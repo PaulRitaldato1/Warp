@@ -4,6 +4,7 @@
 #include <Core/GameTimer.h>
 #include <Core/ECS/World.h>
 #include <Input/Input.h>
+#include <UI/EditorUI.h>
 
 class IWindow;
 class Renderer;
@@ -48,6 +49,7 @@ private:
 	URef<ResourceManager> m_resourceManager;
 
 	URef<UserApplicationBase> m_app;
+	EditorUI m_editorUI;
 
 public:
 	World& GetWorld()

@@ -33,6 +33,11 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 		m_renderer->SetResourceManager(m_resourceManager.get());
 	}
 
+	if (m_renderer)
+	{
+		m_renderer->InitImGui(m_window.get());
+	}
+
 	LOG_DEBUG("Render backend initialized ({})", m_renderer ? "renderer ready" : "no renderer");
 
 	m_bIsRunning	= true;
@@ -114,6 +119,13 @@ bool WarpEngine::Run()
 			if (m_renderer)
 			{
 				m_renderer->BeginFrame();
+
+				if (m_renderer->IsImGuiInitialized())
+				{
+					m_renderer->NewFrameImGui();
+					m_editorUI.BuildUI(*m_world);
+				}
+
 				m_renderer->Draw();
 				m_renderer->EndFrame();
 			}

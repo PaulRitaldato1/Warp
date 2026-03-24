@@ -21,6 +21,8 @@ class World;
 class ResourceManager;
 class RenderDocCapture;
 
+#include <UI/ImGuiBackend.h>
+
 enum class RenderPath
 {
 	Deferred,
@@ -65,6 +67,12 @@ public:
 	void BeginFrame();
 	void Draw();
 	void EndFrame();
+
+	void InitImGui(IWindow* window);
+	void ShutdownImGui();
+	void RenderImGui();
+	void NewFrameImGui();
+	bool IsImGuiInitialized() const;
 
 	void SetRenderPath(RenderPath path)
 	{
@@ -232,6 +240,9 @@ protected:
 	URef<RenderDocCapture> m_renderDoc = std::make_unique<RenderDocCapture>();
 
 	GBufferSimple m_gbufferSimple;
+
+	bool m_imguiInitialized = false;
+	URef<ImGuiBackend> m_imguiBackend;
 
 public:
 	// Queue a staging upload for the Renderer to process.

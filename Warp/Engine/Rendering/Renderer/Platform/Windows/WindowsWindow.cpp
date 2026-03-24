@@ -5,11 +5,31 @@
 #include <cstdlib>
 #include <Input/Input.h>
 
-
+#include <imgui.h>
+#include <imgui_impl_win32.h>
 #include <WindowsX.h>
+
+// Forward declare the ImGui Win32 handler (defined in imgui_impl_win32.cpp).
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	// Let ImGui process input first. If ImGui wants keyboard or mouse,
+	// skip forwarding those events to the game's input system.
+	if (ImGui::GetCurrentContext())
+	{
+		ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
+		const ImGuiIO& io = ImGui::GetIO();
+
+		bool isMouseMsg    = (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) || msg == WM_INPUT;
+		bool isKeyboardMsg = (msg >= WM_KEYFIRST && msg <= WM_KEYLAST);
+
+		if ((isMouseMsg && io.WantCaptureMouse) || (isKeyboardMsg && io.WantCaptureKeyboard))
+		{
+			return 0;
+		}
+	}
+
 	switch (msg)
 	{
 		// WM_ACTIVATE is sent when the window is activated or deactivated.

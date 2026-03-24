@@ -132,6 +132,50 @@ public:
 		return column[record.row];
 	}
 
+	// Runtime access by component ID — used by the generic editor inspector.
+	void* GetComponentRaw(u32 componentId, Entity entity)
+	{
+		FATAL_ASSERT(IsAlive(entity), "World::GetComponentRaw: entity is not alive");
+		EntityRecord& record = m_entities[entity.id];
+		FATAL_ASSERT(record.archetype, "World::GetComponentRaw: entity has no archetype");
+		byte* column = record.archetype->GetColumnRaw(componentId);
+		FATAL_ASSERT(column, "World::GetComponentRaw: entity does not have this component");
+
+		const Vector<ComponentInfo>& registry = GetComponentRegistry();
+		FATAL_ASSERT(componentId < registry.size(), "World::GetComponentRaw: invalid component ID");
+		size_t componentSize = registry[componentId].size;
+		return column + record.row * componentSize;
+	}
+
+	ComponentMask GetComponentMask(Entity entity) const
+	{
+		if (!IsAlive(entity))
+		{
+			return {};
+		}
+		const EntityRecord& record = m_entities[entity.id];
+		if (!record.archetype)
+		{
+			return {};
+		}
+		return record.archetype->GetMask();
+	}
+
+	// Returns all live entities in the world.
+	Vector<Entity> GetAllEntities() const
+	{
+		Vector<Entity> result;
+		for (u32 i = 1; i < m_entities.size(); ++i)
+		{
+			const EntityRecord& record = m_entities[i];
+			if (record.alive)
+			{
+				result.push_back(Entity{ i, record.generation });
+			}
+		}
+		return result;
+	}
+
 	template <IsComponent T>
 	bool HasComponent(Entity entity) const
 	{

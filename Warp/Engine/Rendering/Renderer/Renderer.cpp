@@ -19,6 +19,7 @@
 #include <Rendering/Window/Window.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
+#include <UI/ImGuiBackend.h>
 #include <algorithm>
 
 struct PerDrawConstants
@@ -77,12 +78,63 @@ void Renderer::Shutdown()
 		m_device->WaitForIdle();
 	}
 
+	ShutdownImGui();
+
 	if (m_swapChain)
 	{
 		m_swapChain->Cleanup();
 	}
 
 	LOG_DEBUG("Renderer shut down");
+}
+
+// ---------------------------------------------------------------------------
+// ImGui integration — delegates to the platform-specific ImGuiBackend.
+// ---------------------------------------------------------------------------
+
+void Renderer::InitImGui(IWindow* window)
+{
+	m_imguiBackend = CreateImGuiBackend();
+	m_imguiInitialized = m_imguiBackend->Init(window, m_device.get(), m_graphicsQueue.get(), k_framesInFlight);
+	if (m_imguiInitialized)
+	{
+		LOG_DEBUG("ImGui initialized");
+	}
+	else
+	{
+		LOG_ERROR("Failed to initialize ImGui");
+	}
+}
+
+void Renderer::ShutdownImGui()
+{
+	if (m_imguiBackend)
+	{
+		m_imguiBackend->Shutdown();
+		m_imguiBackend.reset();
+		m_imguiInitialized = false;
+	}
+}
+
+void Renderer::NewFrameImGui()
+{
+	if (m_imguiBackend)
+	{
+		m_imguiBackend->NewFrame();
+	}
+}
+
+void Renderer::RenderImGui()
+{
+	if (m_imguiBackend && !m_graphicsLists.empty())
+	{
+		m_imguiBackend->Render(m_graphicsLists[0].get());
+	}
+}
+
+bool Renderer::IsImGuiInitialized() const
+{
+	return m_imguiInitialized;
 }
 
 void Renderer::OnResize(u32 width, u32 height)
@@ -572,6 +624,9 @@ void Renderer::DrawDeferred()
 	}
 
 	cmd.Draw(3);
+
+	// Render ImGui on top of the scene, before presenting.
+	RenderImGui();
 
 	m_swapChain->TransitionToPresent(cmd);
 }
