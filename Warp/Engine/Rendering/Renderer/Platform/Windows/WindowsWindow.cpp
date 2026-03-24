@@ -14,9 +14,13 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 
 LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	// Let ImGui process input first. If ImGui wants keyboard or mouse,
-	// skip forwarding those events to the game's input system.
-	if (ImGui::GetCurrentContext())
+	// Let ImGui process input, but only intercept events when the mouse
+	// is NOT captured by the game (FreeCam). When captured, all mouse/keyboard
+	// input goes to the game — ImGui only gets events when the cursor is free.
+	WindowsWindow* window = reinterpret_cast<WindowsWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+	bool mouseCaptured = window && window->IsMouseCaptured();
+
+	if (ImGui::GetCurrentContext() && !mouseCaptured)
 	{
 		ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
 		const ImGuiIO& io = ImGui::GetIO();
@@ -27,6 +31,17 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		if ((isMouseMsg && io.WantCaptureMouse) || (isKeyboardMsg && io.WantCaptureKeyboard))
 		{
 			return 0;
+		}
+	}
+	else if (ImGui::GetCurrentContext())
+	{
+		// Still feed non-mouse/keyboard messages to ImGui (e.g. WM_SIZE)
+		// so it tracks window state correctly.
+		bool isMouseMsg    = (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) || msg == WM_INPUT;
+		bool isKeyboardMsg = (msg >= WM_KEYFIRST && msg <= WM_KEYLAST);
+		if (!isMouseMsg && !isKeyboardMsg)
+		{
+			ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
 		}
 	}
 
