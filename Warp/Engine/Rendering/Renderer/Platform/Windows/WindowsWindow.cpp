@@ -68,75 +68,42 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 		// WM_SIZE is sent when the user resizes the window.
 		case WM_SIZE:
-			// TODO: Pause and Send RESIZE event
+		{
+			WindowsWindow* wnd = reinterpret_cast<WindowsWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+			int16 newWidth  = static_cast<int16>(LOWORD(lParam));
+			int16 newHeight = static_cast<int16>(HIWORD(lParam));
 
-			// Save the new client area dimensions.
-			// mClientWidth  = LOWORD(lParam);
-			// mClientHeight = HIWORD(lParam);
 			if (wParam == SIZE_MINIMIZED)
 			{
-				// mAppPaused = true;
-				// mMinimized = true;
-				// mMaximized = false;
+				if (wnd) wnd->SetMinimized(true);
 			}
-			else if (wParam == SIZE_MAXIMIZED)
+			else if (newWidth > 0 && newHeight > 0 && wnd)
 			{
-				// mAppPaused = false;
-				// mMinimized = false;
-				// mMaximized = true;
-				// OnResize();
-			}
-			else if (wParam == SIZE_RESTORED)
-			{
-
-				// Restoring from minimized state?
-				// if( mMinimized )
-				// {
-				//     mAppPaused = false;
-				//     mMinimized = false;
-				//     OnResize();
-				// }
-
-				// Restoring from maximized state?
-				// else if( mMaximized )
-				// {
-				//     mAppPaused = false;
-				//     mMaximized = false;
-				//     OnResize();
-				// }
-				// else if( mResizing )
-				// {
-				//     // If user is dragging the resize bars, we do not resize
-				//     // the buffers here because as the user continuously
-				//     // drags the resize bars, a stream of WM_SIZE messages are
-				//     // sent to the window, and it would be pointless (and slow)
-				//     // to resize for each WM_SIZE message received from dragging
-				//     // the resize bars.  So instead, we reset after the user is
-				//     // done resizing the window and releases the resize bars, which
-				//     // sends a WM_EXITSIZEMOVE message.
-				// }
-				// else // API call such as SetWindowPos or mSwapChain->SetFullscreenState.
-				// {
-				//     OnResize();
-				// }
+				wnd->SetMinimized(false);
+				wnd->NotifyResize(newWidth, newHeight);
 			}
 			return 0;
+		}
 
-		// WM_EXITSIZEMOVE is sent when the user grabs the resize bars.
+		// WM_ENTERSIZEMOVE is sent when the user grabs the resize bars.
 		case WM_ENTERSIZEMOVE:
-			// mAppPaused = true;
-			// mResizing  = true;
-			// mTimer.Stop();
 			return 0;
 
 		// WM_EXITSIZEMOVE is sent when the user releases the resize bars.
-		// Here we reset everything based on the new window dimensions.
+		// Flag a resize so the swap chain updates once at the final size.
 		case WM_EXITSIZEMOVE:
-			// mAppPaused = false;
-			// mResizing  = false;
-			// mTimer.Start();
-			// OnResize();
+		{
+			WindowsWindow* wnd = reinterpret_cast<WindowsWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+			if (wnd)
+			{
+				RECT clientRect;
+				GetClientRect(hwnd, &clientRect);
+				int16 newWidth  = static_cast<int16>(clientRect.right - clientRect.left);
+				int16 newHeight = static_cast<int16>(clientRect.bottom - clientRect.top);
+				wnd->NotifyResize(newWidth, newHeight);
+			}
 			return 0;
+		}
 
 		// WM_DESTROY is sent when the window is being destroyed.
 		case WM_DESTROY:

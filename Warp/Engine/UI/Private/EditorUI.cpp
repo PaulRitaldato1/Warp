@@ -1,7 +1,10 @@
 #include <UI/EditorUI.h>
 #include <UI/ComponentDescriptor.h>
 #include <Core/ECS/World.h>
+#include <Core/ECS/Components/MeshComponent.h>
+#include <Rendering/Resource/ResourceManager.h>
 #include <imgui.h>
+#include <filesystem>
 
 void EditorUI::BuildUI(World& world)
 {
@@ -11,6 +14,37 @@ void EditorUI::BuildUI(World& world)
 	if (m_showEntityCreator)
 	{
 		DrawEntityCreator(world);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Mesh file scanning — caches list of .gltf/.glb files in Resources/.
+// ---------------------------------------------------------------------------
+void EditorUI::RefreshMeshFileList()
+{
+	m_meshFiles.clear();
+	m_meshFilesScanned = true;
+
+	std::filesystem::path resourcesDir = "Resources";
+	if (!std::filesystem::exists(resourcesDir))
+	{
+		return;
+	}
+
+	for (const auto& entry : std::filesystem::recursive_directory_iterator(resourcesDir))
+	{
+		if (!entry.is_regular_file())
+		{
+			continue;
+		}
+
+		String extension = entry.path().extension().string();
+		if (extension == ".gltf" || extension == ".glb")
+		{
+			// Store as forward-slash relative path (matches how MeshComponent paths are used).
+			String path = entry.path().generic_string();
+			m_meshFiles.push_back(path);
+		}
 	}
 }
 
@@ -88,6 +122,7 @@ void EditorUI::DrawEntityInspector(World& world)
 
 	ComponentMask mask = world.GetComponentMask(m_selectedEntity);
 	const auto& descriptors = GetComponentDescriptors();
+	u32 meshComponentId = ComponentID<MeshComponent>::Get();
 
 	// Draw each component the entity has.
 	for (const auto& [componentId, descriptor] : descriptors)
@@ -115,6 +150,12 @@ void EditorUI::DrawEntityInspector(World& world)
 
 		if (open)
 		{
+			// For MeshComponent, draw the mesh browser before the generic fields.
+			if (componentId == meshComponentId && m_resourceManager)
+			{
+				DrawMeshBrowser(world);
+			}
+
 			void* componentData = world.GetComponentRaw(componentId, m_selectedEntity);
 			descriptor.drawUI(componentData);
 			ImGui::TreePop();
@@ -149,6 +190,69 @@ void EditorUI::DrawEntityInspector(World& world)
 	}
 
 	ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+// Mesh Browser — dropdown to pick from disk meshes or built-in geometry.
+// ---------------------------------------------------------------------------
+void EditorUI::DrawMeshBrowser(World& world)
+{
+	if (!m_meshFilesScanned)
+	{
+		RefreshMeshFileList();
+	}
+
+	MeshComponent& mesh = world.GetComponent<MeshComponent>(m_selectedEntity);
+
+	// Determine the current label for the combo.
+	const char* currentLabel = mesh.HasPath() ? mesh.path : "(none)";
+
+	if (ImGui::BeginCombo("Mesh", currentLabel))
+	{
+		// Built-in geometry section.
+		ImGui::TextDisabled("Built-in Geometry");
+		ImGui::Separator();
+
+		if (ImGui::Selectable("  Plane"))
+		{
+			u32 handle = m_resourceManager->CreatePlane(10.f, 10.f);
+			mesh.meshHandle = handle;
+			mesh.path[0] = '\0';
+		}
+		if (ImGui::Selectable("  Box"))
+		{
+			u32 handle = m_resourceManager->CreateBox(1.f, 1.f, 1.f);
+			mesh.meshHandle = handle;
+			mesh.path[0] = '\0';
+		}
+
+		// Mesh files from Resources/ section.
+		if (!m_meshFiles.empty())
+		{
+			ImGui::Separator();
+			ImGui::TextDisabled("Resource Files");
+			ImGui::Separator();
+
+			for (const String& filePath : m_meshFiles)
+			{
+				bool isSelected = (String(mesh.path) == filePath);
+				if (ImGui::Selectable(filePath.c_str(), isSelected))
+				{
+					mesh.SetPath(filePath.c_str());
+					mesh.meshHandle = ~0u; // Reset handle so the renderer re-resolves from path.
+				}
+			}
+		}
+
+		ImGui::EndCombo();
+	}
+
+	// Refresh button in case files were added at runtime.
+	ImGui::SameLine();
+	if (ImGui::SmallButton("Refresh"))
+	{
+		RefreshMeshFileList();
+	}
 }
 
 // ---------------------------------------------------------------------------

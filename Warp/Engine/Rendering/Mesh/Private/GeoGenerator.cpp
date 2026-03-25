@@ -97,11 +97,11 @@ URef<Mesh> GeoGenerator::CreateBox(f32 sizeX, f32 sizeY, f32 sizeZ)
 		mesh->vertices.push_back(v3);
 
 		mesh->indices.push_back(base);
+		mesh->indices.push_back(base + 2);
 		mesh->indices.push_back(base + 1);
-		mesh->indices.push_back(base + 2);
 		mesh->indices.push_back(base);
-		mesh->indices.push_back(base + 2);
 		mesh->indices.push_back(base + 3);
+		mesh->indices.push_back(base + 2);
 	};
 
 	// +Y (top)

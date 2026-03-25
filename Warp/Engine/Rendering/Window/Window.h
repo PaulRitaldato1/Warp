@@ -26,6 +26,19 @@ public:
 
     virtual void* GetNativeHandle() const = 0;
 
+    // Called by platform message handlers when the window client area changes.
+    void NotifyResize(int16 newWidth, int16 newHeight)
+    {
+        if (newWidth > 0 && newHeight > 0 && (newWidth != m_width || newHeight != m_height))
+        {
+            m_width    = newWidth;
+            m_height   = newHeight;
+            m_bResizing = true;
+        }
+    }
+
+    void SetMinimized(bool minimized) { m_bMinimized = minimized; }
+
     // Hide the cursor and confine it to the window (e.g. for first-person camera).
     virtual void CaptureMouse() {}
     virtual void ReleaseMouse() {}

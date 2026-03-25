@@ -103,8 +103,8 @@ bool HookEngineFromApp(UserApplicationBase** outDesc)
 	(*outDesc) = new TempGame();
 
 	(*outDesc)->EngineInitDesc.Name			= "Test Bed";
-	(*outDesc)->EngineInitDesc.WindowWidth	= 1920;
-	(*outDesc)->EngineInitDesc.WindowHeight = 1080;
+	(*outDesc)->EngineInitDesc.WindowWidth	= 2560;
+	(*outDesc)->EngineInitDesc.WindowHeight = 1440;
 
 	return true;
 }

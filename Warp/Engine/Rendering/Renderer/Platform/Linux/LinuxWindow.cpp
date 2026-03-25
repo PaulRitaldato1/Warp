@@ -264,14 +264,8 @@ bool LinuxWindow::PumpMessages()
 			}
 			case ConfigureNotify:
 			{
-				const int newW = event.xconfigure.width;
-				const int newH = event.xconfigure.height;
-				if (newW != m_width || newH != m_height)
-				{
-					m_width     = static_cast<int16>(newW);
-					m_height    = static_cast<int16>(newH);
-					m_bResizing = true;
-				}
+				NotifyResize(static_cast<int16>(event.xconfigure.width),
+				             static_cast<int16>(event.xconfigure.height));
 				break;
 			}
 			case DestroyNotify:

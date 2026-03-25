@@ -274,11 +274,21 @@ u32 ResourceManager::RegisterMesh(const String& name, URef<Mesh> mesh)
 
 u32 ResourceManager::CreatePlane(f32 sizeX, f32 sizeZ, u32 segmentsX, u32 segmentsZ)
 {
+	auto it = m_meshCache.find("builtin://plane");
+	if (it != m_meshCache.end())
+	{
+		return it->second->handle;
+	}
 	return RegisterMesh("builtin://plane", GeoGenerator::CreatePlane(sizeX, sizeZ, segmentsX, segmentsZ));
 }
 
 u32 ResourceManager::CreateBox(f32 sizeX, f32 sizeY, f32 sizeZ)
 {
+	auto it = m_meshCache.find("builtin://box");
+	if (it != m_meshCache.end())
+	{
+		return it->second->handle;
+	}
 	return RegisterMesh("builtin://box", GeoGenerator::CreateBox(sizeX, sizeY, sizeZ));
 }
 

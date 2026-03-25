@@ -38,6 +38,8 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 		m_renderer->InitImGui(m_window.get());
 	}
 
+	m_editorUI.SetResourceManager(m_resourceManager.get());
+
 	LOG_DEBUG("Render backend initialized ({})", m_renderer ? "renderer ready" : "no renderer");
 
 	m_bIsRunning	= true;
