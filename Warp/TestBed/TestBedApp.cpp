@@ -1,4 +1,5 @@
 #include "Core/ECS/Components/LightComponent.h"
+#include "Core/ECS/Components/SkyComponent.h"
 #include <EntryPoint/EntryPoint.h>
 #include <Common/CommonTypes.h>
 #include <Input/Input.h>
@@ -76,6 +77,9 @@ struct TempGame : public UserApplicationBase
 		world.GetComponent<OrbitComponent>(purpleLight).radius		= 5.f;
 		world.GetComponent<OrbitComponent>(purpleLight).height		= 1.f;
 		world.GetComponent<OrbitComponent>(purpleLight).phaseOffset = phaseStep * 2.f;
+
+		Entity skyLight = world.CreateEntity<TransformComponent, SkyComponent>();
+		world.GetComponent<TransformComponent>(skyLight).Rotate({ 45.f, -30.f, 0.f });
 
 		world.RegisterSystem<FreeCamSystem>();
 		world.RegisterSystem<OrbitSystem>();

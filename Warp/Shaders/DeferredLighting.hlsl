@@ -5,6 +5,18 @@ cbuffer LightPassConstants : register(b0)
     float4x4 invViewProj;
     float3   cameraPosition;
     int      lightCount;
+
+    // Sky parameters
+    float3 sunDirection;
+    float  sunDiscSize;
+    float3 skyColorZenith;
+    float  sunIntensity;
+    float3 skyColorHorizon;
+    float  horizonSharpness;
+    float3 groundColor;
+    float  groundFade;
+    float3 sunColor;
+    int    skyEnabled;
 };
 
 struct LightInfo
@@ -30,8 +42,9 @@ SamplerState     PointSampler    : register(s0);
 
 struct VSOutput
 {
-    float4 position : SV_Position;
-    float2 uv       : TEXCOORD0;
+    float4 position     : SV_Position;
+    float2 uv           : TEXCOORD0;
+    float3 worldFarPos  : TEXCOORD1;
 };
 
 VSOutput VSMain(uint vertexID : SV_VertexID)
@@ -42,6 +55,12 @@ VSOutput VSMain(uint vertexID : SV_VertexID)
     position.y = (vertexID == 2) ? 3.0f : -1.0f;
     output.position = float4(position, 0.0f, 1.0f);
     output.uv = position * float2(0.5, -0.5) + 0.5;
+
+    // Project the corner onto the far plane so the PS can get view direction cheaply.
+    float4 clipFar = float4(position, 1.0, 1.0);
+    float4 worldFar = mul(invViewProj, clipFar);
+    output.worldFarPos = worldFar.xyz / worldFar.w;
+
     return output;
 }
 
@@ -82,10 +101,37 @@ float4 PSMain(VSOutput input) : SV_Target
 {
     float depth = GBufferDepth.Sample(PointSampler, input.uv);
 
-    // Nothing was drawn to this pixel — return black.
+    // Nothing was drawn to this pixel — render procedural sky if a SunComponent exists.
     if (depth >= 1.0)
     {
-        return float4(0.0, 0.0, 0.0, 1.0);
+        if (!skyEnabled)
+        {
+            return float4(0.0, 0.0, 0.0, 1.0);
+        }
+        // View direction from interpolated far-plane position (computed in VS).
+        float3 viewDir = normalize(input.worldFarPos - cameraPosition);
+
+        // Vertical gradient: blend horizon -> zenith based on how far up we look.
+        float upAmount      = viewDir.y;
+        float horizonBlend  = 1.0 - pow(saturate(upAmount), horizonSharpness);
+        float3 skyColor     = lerp(skyColorZenith, skyColorHorizon, horizonBlend);
+
+        // Below the horizon: blend toward ground color.
+        float belowHorizon  = saturate(-upAmount * groundFade);
+        skyColor = lerp(skyColor, groundColor, belowHorizon);
+
+        // Sun disc: bright spot where view direction aligns with sun direction.
+        float sunDot        = dot(viewDir, sunDirection);
+        float sunMask       = smoothstep(sunDiscSize, sunDiscSize + 0.0005, sunDot);
+        skyColor += sunColor * sunIntensity * sunMask;
+
+        // Subtle sun glow around the disc.
+        float sunGlow       = pow(saturate(sunDot), 128.0);
+        skyColor += sunColor * sunGlow * 0.3;
+
+        // Gamma correction.
+        skyColor = pow(max(skyColor, 0.0), 1.0 / 2.2);
+        return float4(skyColor, 1.0);
     }
 
     // Reconstruct world-space position from depth.

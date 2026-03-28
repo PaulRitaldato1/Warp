@@ -15,6 +15,7 @@
 #include <Core/ECS/Components/MeshComponent.h>
 #include <Core/ECS/Components/CameraComponent.h>
 #include <Core/ECS/Components/LightComponent.h>
+#include <Core/ECS/Components/SkyComponent.h>
 #include <Rendering/Mesh/Mesh.h>
 #include <Rendering/Window/Window.h>
 #include <Debugging/Assert.h>
@@ -592,8 +593,10 @@ void Renderer::DrawDeferred()
 
 	// TODO handle this better, we should allocate once and re-use rather than this, just want to get this stood up
 	Vector<LightInfo> lightInfos;
+	Vec3 sunDirection = { 0.f, -1.f, 0.f }; // default: straight down
+
 	m_world->Each<TransformComponent, LightComponent>(
-		[&lightInfos](Entity entity, TransformComponent& transform, LightComponent& lightComp)
+		[&lightInfos, &sunDirection](Entity entity, TransformComponent& transform, LightComponent& lightComp)
 		{
 			LightInfo info;
 			info.position		= transform.position;
@@ -605,8 +608,50 @@ void Renderer::DrawDeferred()
 			info.innerConeAngle = lightComp.innerConeAngle;
 			info.outerConeAngle = lightComp.outerConeAngle;
 
+			// Use the first directional light as the sun for the sky.
+			if (lightComp.type == LightType::Directional)
+			{
+				sunDirection = transform.Forward();
+			}
+
 			lightInfos.push_back(info);
 		});
+
+	// Look for a SkyComponent to drive the procedural sky.
+	// Sky is disabled (black background) if no SkyComponent exists.
+	{
+		SkyParameters sky{};
+
+		m_world->Each<TransformComponent, SkyComponent>(
+			[&](Entity entity, TransformComponent& transform, SkyComponent& sun)
+			{
+				if (sky.enabled)
+				{
+					return; // use the first one
+				}
+
+				sky.skyColorZenith   = sun.skyColorZenith;
+				sky.skyColorHorizon  = sun.skyColorHorizon;
+				sky.horizonSharpness = sun.horizonSharpness;
+				sky.groundColor      = sun.groundColor;
+				sky.groundFade       = sun.groundFade;
+				sky.sunColor         = sun.sunColor;
+				sky.sunIntensity     = sun.sunIntensity;
+				sky.sunDiscSize      = sun.sunDiscSize;
+				sky.enabled          = 1;
+
+				sunDirection = transform.Forward();
+			});
+
+		if (sky.enabled)
+		{
+			using namespace DirectX;
+			XMVECTOR sunDir = XMVector3Normalize(XMLoadFloat3(&sunDirection));
+			XMStoreFloat3(&sky.sunDirection, XMVectorNegate(sunDir));
+		}
+
+		lightConstants.sky = sky;
+	}
 
 	lightConstants.lightCount		  = static_cast<int32>(lightInfos.size());
 	UploadResult lightConstantsUpload = m_uploadBuffer->AllocAndCopy(&lightConstants, sizeof(LightPassConstants), 256);
