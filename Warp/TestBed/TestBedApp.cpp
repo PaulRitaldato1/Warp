@@ -52,38 +52,38 @@ struct TempGame : public UserApplicationBase
 		world.GetComponent<TransformComponent>(camera).Move({ 0.f, 0.f, -5.f });
 		world.GetComponent<CameraComponent>(camera).SetAspect(aspect);
 
-		// Orbiting point lights — red, green, purple — 120° apart
-		constexpr f32 phaseStep = 2.0943951f; // 2*pi/3
+		// // Orbiting point lights — red, green, purple — 120° apart
+		// constexpr f32 phaseStep = 2.0943951f; // 2*pi/3
 
-		Entity redLight = world.CreateEntity<TransformComponent, LightComponent, OrbitComponent>();
-		world.GetComponent<LightComponent>(redLight).color	   = { 1.f, 0.f, 0.f };
-		world.GetComponent<LightComponent>(redLight).intensity = 0.3f;
-		world.GetComponent<LightComponent>(redLight).range	   = 10.f;
-		world.GetComponent<OrbitComponent>(redLight).radius	   = 5.f;
-		world.GetComponent<OrbitComponent>(redLight).height	   = 1.f;
+		// Entity redLight = world.CreateEntity<TransformComponent, LightComponent, OrbitComponent>();
+		// world.GetComponent<LightComponent>(redLight).color	   = { 1.f, 0.f, 0.f };
+		// world.GetComponent<LightComponent>(redLight).intensity = 0.3f;
+		// world.GetComponent<LightComponent>(redLight).range	   = 10.f;
+		// world.GetComponent<OrbitComponent>(redLight).radius	   = 5.f;
+		// world.GetComponent<OrbitComponent>(redLight).height	   = 1.f;
 
-		Entity greenLight = world.CreateEntity<TransformComponent, LightComponent, OrbitComponent>();
-		world.GetComponent<LightComponent>(greenLight).color	   = { 0.f, 1.f, 0.f };
-		world.GetComponent<LightComponent>(greenLight).intensity   = 0.3f;
-		world.GetComponent<LightComponent>(greenLight).range	   = 10.f;
-		world.GetComponent<OrbitComponent>(greenLight).radius	   = 5.f;
-		world.GetComponent<OrbitComponent>(greenLight).height	   = 1.f;
-		world.GetComponent<OrbitComponent>(greenLight).phaseOffset = phaseStep;
+		// Entity greenLight = world.CreateEntity<TransformComponent, LightComponent, OrbitComponent>();
+		// world.GetComponent<LightComponent>(greenLight).color	   = { 0.f, 1.f, 0.f };
+		// world.GetComponent<LightComponent>(greenLight).intensity   = 0.3f;
+		// world.GetComponent<LightComponent>(greenLight).range	   = 10.f;
+		// world.GetComponent<OrbitComponent>(greenLight).radius	   = 5.f;
+		// world.GetComponent<OrbitComponent>(greenLight).height	   = 1.f;
+		// world.GetComponent<OrbitComponent>(greenLight).phaseOffset = phaseStep;
 
-		Entity purpleLight = world.CreateEntity<TransformComponent, LightComponent, OrbitComponent>();
-		world.GetComponent<LightComponent>(purpleLight).color		= { 0.8f, 0.f, 1.f };
-		world.GetComponent<LightComponent>(purpleLight).intensity	= 0.3f;
-		world.GetComponent<LightComponent>(purpleLight).range		= 10.f;
-		world.GetComponent<OrbitComponent>(purpleLight).radius		= 5.f;
-		world.GetComponent<OrbitComponent>(purpleLight).height		= 1.f;
-		world.GetComponent<OrbitComponent>(purpleLight).phaseOffset = phaseStep * 2.f;
+		// Entity purpleLight = world.CreateEntity<TransformComponent, LightComponent, OrbitComponent>();
+		// world.GetComponent<LightComponent>(purpleLight).color		= { 0.8f, 0.f, 1.f };
+		// world.GetComponent<LightComponent>(purpleLight).intensity	= 0.3f;
+		// world.GetComponent<LightComponent>(purpleLight).range		= 10.f;
+		// world.GetComponent<OrbitComponent>(purpleLight).radius		= 5.f;
+		// world.GetComponent<OrbitComponent>(purpleLight).height		= 1.f;
+		// world.GetComponent<OrbitComponent>(purpleLight).phaseOffset = phaseStep * 2.f;
 
 		Entity skyLight = world.CreateEntity<TransformComponent, SkyComponent, LightComponent>();
 		world.GetComponent<TransformComponent>(skyLight).Rotate({ 45.f, -30.f, 0.f });
 		LightComponent& sunLight = world.GetComponent<LightComponent>(skyLight);
-		sunLight.type            = LightType::Directional;
-		sunLight.color           = { 1.f, 0.95f, 0.9f };
-		sunLight.intensity       = 1.0f;
+		sunLight.type			 = LightType::Directional;
+		sunLight.color			 = { 1.f, 0.95f, 0.9f };
+		sunLight.intensity		 = 1.0f;
 
 		world.RegisterSystem<FreeCamSystem>();
 		world.RegisterSystem<OrbitSystem>();
