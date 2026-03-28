@@ -2,7 +2,7 @@
 
 #include <Math/Math.h>
 
-struct WARP_API SkyComponent
+struct WARP_API SkyLightComponent
 {
 	// Sky gradient
 	Vec3 skyColorZenith   = { 0.1f, 0.2f, 0.45f };
@@ -17,4 +17,7 @@ struct WARP_API SkyComponent
 	Vec3 sunColor     = { 1.0f, 0.95f, 0.8f };
 	f32  sunIntensity = 2.0f;
 	f32  sunDiscSize  = 0.9995f; // cosine of the sun disc half-angle
+
+	// Built-in directional light — color comes from sunColor, direction from transform
+	f32 lightIntensity = 1.0f;
 };

@@ -4,7 +4,7 @@
 #include <Core/ECS/Components/MeshComponent.h>
 #include <Core/ECS/Components/LightComponent.h>
 #include <Core/ECS/Components/OrbitComponent.h>
-#include <Core/ECS/Components/SkyComponent.h>
+#include <Core/ECS/Components/SkyLightComponent.h>
 #include <imgui.h>
 
 // ---------------------------------------------------------------------------
@@ -155,12 +155,12 @@ struct ComponentUI<OrbitComponent>
 };
 
 // ---------------------------------------------------------------------------
-// SkyComponent
+// SkyLightComponent
 // ---------------------------------------------------------------------------
 template <>
-struct ComponentUI<SkyComponent>
+struct ComponentUI<SkyLightComponent>
 {
-	static void Draw(SkyComponent& sun)
+	static void Draw(SkyLightComponent& sun)
 	{
 		ImGui::SeparatorText("Sky");
 		ImGui::ColorEdit3("Zenith Color", &sun.skyColorZenith.x);
@@ -173,12 +173,16 @@ struct ComponentUI<SkyComponent>
 
 		ImGui::SeparatorText("Sun Disc");
 		ImGui::ColorEdit3("Sun Color", &sun.sunColor.x);
-		ImGui::DragFloat("Sun Intensity", &sun.sunIntensity, 0.1f, 0.0f, 50.0f);
+		ImGui::DragFloat("Sun Disc Intensity", &sun.sunIntensity, 0.1f, 0.0f, 50.0f);
 		ImGui::DragFloat("Sun Disc Size", &sun.sunDiscSize, 0.0001f, 0.99f, 1.0f, "%.4f");
+
+		ImGui::SeparatorText("Directional Light");
+		ImGui::DragFloat("Light Intensity", &sun.lightIntensity, 0.1f, 0.0f, 100.0f);
 
 		ImGui::SeparatorText("Info");
 		ImGui::TextDisabled("Sun direction comes from this entity's Transform rotation.");
+		ImGui::TextDisabled("Light color is driven by Sun Color.");
 	}
 
-	static inline bool registered = RegisterComponentUI<SkyComponent>("Sky", &Draw);
+	static inline bool registered = RegisterComponentUI<SkyLightComponent>("Sky Light", &Draw);
 };

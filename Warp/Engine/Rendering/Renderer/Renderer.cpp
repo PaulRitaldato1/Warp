@@ -15,7 +15,7 @@
 #include <Core/ECS/Components/MeshComponent.h>
 #include <Core/ECS/Components/CameraComponent.h>
 #include <Core/ECS/Components/LightComponent.h>
-#include <Core/ECS/Components/SkyComponent.h>
+#include <Core/ECS/Components/SkyLightComponent.h>
 #include <Rendering/Mesh/Mesh.h>
 #include <Rendering/Window/Window.h>
 #include <Debugging/Assert.h>
@@ -617,30 +617,44 @@ void Renderer::DrawDeferred()
 			lightInfos.push_back(info);
 		});
 
-	// Look for a SkyComponent to drive the procedural sky.
-	// Sky is disabled (black background) if no SkyComponent exists.
+	// Look for a SkyLightComponent to drive the procedural sky and its built-in directional light.
+	// Sky is disabled (black background) if no SkyLightComponent exists.
 	{
 		SkyParameters sky{};
 
-		m_world->Each<TransformComponent, SkyComponent>(
-			[&](Entity entity, TransformComponent& transform, SkyComponent& sun)
+		m_world->Each<TransformComponent, SkyLightComponent>(
+			[&](Entity entity, TransformComponent& transform, SkyLightComponent& skyComp)
 			{
 				if (sky.enabled)
 				{
 					return; // use the first one
 				}
 
-				sky.skyColorZenith   = sun.skyColorZenith;
-				sky.skyColorHorizon  = sun.skyColorHorizon;
-				sky.horizonSharpness = sun.horizonSharpness;
-				sky.groundColor      = sun.groundColor;
-				sky.groundFade       = sun.groundFade;
-				sky.sunColor         = sun.sunColor;
-				sky.sunIntensity     = sun.sunIntensity;
-				sky.sunDiscSize      = sun.sunDiscSize;
+				sky.skyColorZenith   = skyComp.skyColorZenith;
+				sky.skyColorHorizon  = skyComp.skyColorHorizon;
+				sky.horizonSharpness = skyComp.horizonSharpness;
+				sky.groundColor      = skyComp.groundColor;
+				sky.groundFade       = skyComp.groundFade;
+				sky.sunColor         = skyComp.sunColor;
+				sky.sunIntensity     = skyComp.sunIntensity;
+				sky.sunDiscSize      = skyComp.sunDiscSize;
 				sky.enabled          = 1;
 
 				sunDirection = transform.Forward();
+
+				// Emit a directional light from the sky's sun — color and intensity
+				// are owned by the SkyLightComponent, direction comes from the transform.
+				LightInfo sunLight;
+				sunLight.position       = {};
+				sunLight.range          = 0.f;
+				sunLight.color          = skyComp.sunColor;
+				sunLight.intensity      = skyComp.lightIntensity;
+				sunLight.direction      = transform.Forward();
+				sunLight.type           = 1; // Directional
+				sunLight.innerConeAngle = 0.f;
+				sunLight.outerConeAngle = 0.f;
+				sunLight.padding        = {};
+				lightInfos.push_back(sunLight);
 			});
 
 		if (sky.enabled)
