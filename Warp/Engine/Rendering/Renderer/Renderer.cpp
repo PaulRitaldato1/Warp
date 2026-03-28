@@ -95,7 +95,7 @@ void Renderer::Shutdown()
 
 void Renderer::InitImGui(IWindow* window)
 {
-	m_imguiBackend = CreateImGuiBackend();
+	m_imguiBackend	   = CreateImGuiBackend();
 	m_imguiInitialized = m_imguiBackend->Init(window, m_device.get(), m_graphicsQueue.get(), k_framesInFlight);
 	if (m_imguiInitialized)
 	{
@@ -630,30 +630,30 @@ void Renderer::DrawDeferred()
 					return; // use the first one
 				}
 
-				sky.skyColorZenith   = skyComp.skyColorZenith;
-				sky.skyColorHorizon  = skyComp.skyColorHorizon;
+				sky.skyColorZenith	 = skyComp.skyColorZenith;
+				sky.skyColorHorizon	 = skyComp.skyColorHorizon;
 				sky.horizonSharpness = skyComp.horizonSharpness;
-				sky.groundColor      = skyComp.groundColor;
-				sky.groundFade       = skyComp.groundFade;
-				sky.sunColor         = skyComp.sunColor;
-				sky.sunIntensity     = skyComp.sunIntensity;
-				sky.sunDiscSize      = skyComp.sunDiscSize;
-				sky.enabled          = 1;
+				sky.groundColor		 = skyComp.groundColor;
+				sky.groundFade		 = skyComp.groundFade;
+				sky.sunColor		 = skyComp.sunColor;
+				sky.sunIntensity	 = skyComp.sunIntensity;
+				sky.sunDiscSize		 = skyComp.sunDiscSize;
+				sky.enabled			 = 1;
 
 				sunDirection = transform.Forward();
 
 				// Emit a directional light from the sky's sun — color and intensity
 				// are owned by the SkyLightComponent, direction comes from the transform.
 				LightInfo sunLight;
-				sunLight.position       = {};
-				sunLight.range          = 0.f;
-				sunLight.color          = skyComp.sunColor;
-				sunLight.intensity      = skyComp.lightIntensity;
-				sunLight.direction      = transform.Forward();
-				sunLight.type           = 1; // Directional
+				sunLight.position		= {};
+				sunLight.range			= 0.f;
+				sunLight.color			= skyComp.sunColor;
+				sunLight.intensity		= skyComp.lightIntensity;
+				sunLight.direction		= transform.Forward();
+				sunLight.type			= 1; // Directional
 				sunLight.innerConeAngle = 0.f;
 				sunLight.outerConeAngle = 0.f;
-				sunLight.padding        = {};
+				sunLight.padding		= {};
 				lightInfos.push_back(sunLight);
 			});
 
