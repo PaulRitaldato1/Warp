@@ -233,9 +233,18 @@ bool WindowsWindow::Create(String AppName, int width, int height)
 		MessageBox(0, "CreateWindow Failed.", 0, 0);
 		return false;
 	}
+	// Set user data before ShowWindow so WM_SIZE messages during
+	// the initial show can reach NotifyResize.
+	SetWindowLongPtr(m_wndHnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 	ShowWindow(m_wndHnd, SW_SHOW);
 	UpdateWindow(m_wndHnd);
-	SetWindowLongPtr(m_wndHnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+
+	// Query the actual client area — on high-DPI displays the OS may have
+	// scaled the window, so the real size can differ from what we requested.
+	RECT actualClient;
+	GetClientRect(m_wndHnd, &actualClient);
+	m_width  = static_cast<int16>(actualClient.right - actualClient.left);
+	m_height = static_cast<int16>(actualClient.bottom - actualClient.top);
 
 	// Register for raw mouse input so mouse-move events deliver relative deltas
 	// regardless of cursor position — prevents yaw from stopping at window edges.

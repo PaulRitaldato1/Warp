@@ -32,6 +32,14 @@ bool D3D12ImGuiBackend::Init(IWindow* window, Device* device, CommandQueue* grap
 	ImGui::StyleColorsDark();
 
 	HWND hwnd = static_cast<HWND>(window->GetNativeHandle());
+
+	// Build the font atlas at the monitor's DPI so text is sharp from the first frame.
+	// The default font is 13px — scale it to match the actual DPI.
+	float dpiScale = static_cast<float>(GetDpiForWindow(hwnd)) / 96.0f;
+	ImFontConfig fontConfig;
+	fontConfig.SizePixels = 13.0f * dpiScale;
+	io.Fonts->AddFontDefault(&fontConfig);
+
 	ImGui_ImplWin32_Init(hwnd);
 
 	ImGui_ImplDX12_InitInfo initInfo;
