@@ -593,10 +593,9 @@ void Renderer::DrawDeferred()
 
 	// TODO handle this better, we should allocate once and re-use rather than this, just want to get this stood up
 	Vector<LightInfo> lightInfos;
-	Vec3 sunDirection = { 0.f, -1.f, 0.f }; // default: straight down
 
 	m_world->Each<TransformComponent, LightComponent>(
-		[&lightInfos, &sunDirection](Entity entity, TransformComponent& transform, LightComponent& lightComp)
+		[&lightInfos](Entity entity, TransformComponent& transform, LightComponent& lightComp)
 		{
 			LightInfo info;
 			info.position		= transform.position;
@@ -608,14 +607,10 @@ void Renderer::DrawDeferred()
 			info.innerConeAngle = lightComp.innerConeAngle;
 			info.outerConeAngle = lightComp.outerConeAngle;
 
-			// Use the first directional light as the sun for the sky.
-			if (lightComp.type == LightType::Directional)
-			{
-				sunDirection = transform.Forward();
-			}
-
 			lightInfos.push_back(info);
 		});
+
+	Vec3 sunDirection = { 0.f, -1.f, 0.f }; // default: straight down
 
 	// Look for a SkyLightComponent to drive the procedural sky and its built-in directional light.
 	// Sky is disabled (black background) if no SkyLightComponent exists.
