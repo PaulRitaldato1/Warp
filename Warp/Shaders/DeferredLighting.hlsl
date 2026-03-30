@@ -16,7 +16,12 @@ cbuffer LightPassConstants : register(b0)
     float3 groundColor;
     float  groundFade;
     float3 sunColor;
-    int    skyEnabled;
+    float  skyBrightness;
+
+    // Shadow mapping
+    float4x4 lightViewProj;
+    float    shadowBias;
+    float3   shadowPadding;
 };
 
 struct LightInfo
@@ -32,13 +37,15 @@ struct LightInfo
     float2 padding;
 };
 
-StructuredBuffer<LightInfo> LightBuffer : register(t4);
-
 Texture2D        GBufferAlbedo   : register(t0);
 Texture2D        GBufferNormal   : register(t1);
 Texture2D        GBufferMaterial : register(t2);
 Texture2D<float> GBufferDepth    : register(t3);
+Texture2D        GBufferEmissive : register(t4);
+StructuredBuffer<LightInfo> LightBuffer : register(t5);
+Texture2D<float> ShadowMap       : register(t6);
 SamplerState     PointSampler    : register(s0);
+SamplerComparisonState ShadowSampler : register(s2);
 
 struct VSOutput
 {
@@ -97,6 +104,39 @@ float GeometrySmith(float normalDotView, float normalDotLight, float roughness)
     return viewShadowing * lightShadowing;
 }
 
+// Computes shadow factor: 1.0 = fully lit, 0.0 = fully in shadow.
+float ComputeDirectionalShadow(float3 worldPos)
+{
+    float4 lightSpacePos = mul(lightViewProj, float4(worldPos, 1.0));
+    float3 projCoords    = lightSpacePos.xyz / lightSpacePos.w;
+
+    // Convert from clip space [-1,1] to UV space [0,1].
+    float2 shadowUV = projCoords.xy * 0.5 + 0.5;
+    shadowUV.y      = 1.0 - shadowUV.y;
+
+    // Outside the shadow map — treat as lit.
+    if (shadowUV.x < 0.0 || shadowUV.x > 1.0 || shadowUV.y < 0.0 || shadowUV.y > 1.0)
+    {
+        return 1.0;
+    }
+
+    float currentDepth = projCoords.z;
+
+    // PCF 3x3 — sample a grid around the pixel for softer shadow edges.
+    float shadow = 0.0;
+    float shadowWidth, shadowHeight;
+    ShadowMap.GetDimensions(shadowWidth, shadowHeight);
+    float2 texelSize = 1.0 / float2(shadowWidth, shadowHeight);
+    for (int x = -1; x <= 1; ++x)
+    {
+        for (int y = -1; y <= 1; ++y)
+        {
+            shadow += ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowUV + float2(x, y) * texelSize, currentDepth - shadowBias);
+        }
+    }
+    return shadow / 9.0;
+}
+
 float4 PSMain(VSOutput input) : SV_Target
 {
     float depth = GBufferDepth.Sample(PointSampler, input.uv);
@@ -104,7 +144,7 @@ float4 PSMain(VSOutput input) : SV_Target
     // Nothing was drawn to this pixel — render procedural sky if a SunComponent exists.
     if (depth >= 1.0)
     {
-        if (!skyEnabled)
+        if (skyBrightness <= 0.0)
         {
             return float4(0.0, 0.0, 0.0, 1.0);
         }
@@ -129,6 +169,9 @@ float4 PSMain(VSOutput input) : SV_Target
         float sunGlow       = pow(saturate(sunDot), 128.0);
         skyColor += sunColor * sunGlow * 0.3;
 
+        // Exposure-style brightness: pow curve keeps the falloff perceptually smooth.
+        skyColor *= pow(saturate(skyBrightness), 2.2);
+
         // Gamma correction.
         skyColor = pow(max(skyColor, 0.0), 1.0 / 2.2);
         return float4(skyColor, 1.0);
@@ -147,7 +190,7 @@ float4 PSMain(VSOutput input) : SV_Target
 
     // Unpack GBuffer values.
     // Normal RT: rgb = world-space normal, a = metallic
-    // Material RT: g = roughness, b = metallic (glTF convention)
+    // Material RT: r = occlusion, g = roughness, b = metallic
     float3 albedo    = albedoSample.rgb;
     float3 normal    = normalize(normalSample.rgb);
     float  metallic  = normalSample.a;
@@ -234,12 +277,19 @@ float4 PSMain(VSOutput input) : SV_Target
         float3 diffuseFraction  = (1.0 - specularFraction) * (1.0 - metallic);
         float3 diffuse          = diffuseFraction * albedo / PI;
 
+        float shadow = 1.0;
+        if (light.type == 1) // Directional lights use the shadow map.
+        {
+            shadow = ComputeDirectionalShadow(worldSpacePos.xyz);
+        }
+
         float3 incomingRadiance = light.color * light.intensity * attenuation;
-        totalRadiance += (diffuse + specular) * incomingRadiance * normalDotLight;
+        totalRadiance += (diffuse + specular) * incomingRadiance * normalDotLight * shadow;
     }
 
-    float3 ambient = float3(0.03, 0.03, 0.03) * albedo;
-    float3 color   = ambient + totalRadiance;
+    float3 ambient  = float3(0.03, 0.03, 0.03) * albedo;
+    float3 emissive = GBufferEmissive.Sample(PointSampler, input.uv).rgb;
+    float3 color    = ambient + totalRadiance + emissive;
 
     // Gamma correction (linear -> sRGB).
     color = pow(max(color, 0.0), 1.0 / 2.2);

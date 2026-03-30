@@ -26,7 +26,8 @@ public:
 	ID3D12RootSignature* GetNativeRootSig() const { return m_rootSignature.Get(); }
 
 private:
-	void BuildRootSignature(ID3D12Device* device, const Vector<BindingSlot>& bindings);
+	void BuildRootSignature(ID3D12Device* device, const Vector<BindingSlot>& bindings,
+	                        const Vector<SamplerDesc>& samplers);
 
 	ComRef<ID3D12PipelineState> m_pso;
 	ComRef<ID3D12RootSignature> m_rootSignature;

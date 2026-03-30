@@ -23,7 +23,8 @@
 //   s1: point clamp   (GBuffer sampling)
 // ---------------------------------------------------------------------------
 
-void D3D12Pipeline::BuildRootSignature(ID3D12Device* device, const Vector<BindingSlot>& bindings)
+void D3D12Pipeline::BuildRootSignature(ID3D12Device* device, const Vector<BindingSlot>& bindings,
+                                        const Vector<SamplerDesc>& samplers)
 {
 	// Build root parameters from binding slots.
 	// Descriptor ranges must outlive the root signature creation call,
@@ -70,34 +71,57 @@ void D3D12Pipeline::BuildRootSignature(ID3D12Device* device, const Vector<Bindin
 		}
 	}
 
-	// Static samplers — always present regardless of binding layout.
-	D3D12_STATIC_SAMPLER_DESC samplers[2] = {};
-	// s0: linear wrap
-	samplers[0].Filter			 = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-	samplers[0].AddressU		 = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	samplers[0].AddressV		 = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	samplers[0].AddressW		 = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	samplers[0].MaxAnisotropy	 = 1;
-	samplers[0].ComparisonFunc	 = D3D12_COMPARISON_FUNC_ALWAYS;
-	samplers[0].MaxLOD			 = D3D12_FLOAT32_MAX;
-	samplers[0].ShaderRegister	 = 0; // s0
-	samplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-	// s1: point clamp
-	samplers[1].Filter			 = D3D12_FILTER_MIN_MAG_MIP_POINT;
-	samplers[1].AddressU		 = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-	samplers[1].AddressV		 = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-	samplers[1].AddressW		 = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-	samplers[1].MaxAnisotropy	 = 1;
-	samplers[1].ComparisonFunc	 = D3D12_COMPARISON_FUNC_ALWAYS;
-	samplers[1].MaxLOD			 = D3D12_FLOAT32_MAX;
-	samplers[1].ShaderRegister	 = 1; // s1
-	samplers[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	// Translate abstract SamplerDesc to D3D12 static samplers.
+	Vector<D3D12_STATIC_SAMPLER_DESC> d3dSamplers(samplers.size());
+	for (u32 i = 0; i < static_cast<u32>(samplers.size()); ++i)
+	{
+		const SamplerDesc& src = samplers[i];
+		D3D12_STATIC_SAMPLER_DESC& dst = d3dSamplers[i];
+		dst = {};
+
+		switch (src.filter)
+		{
+			case SamplerFilter::Linear:
+				dst.Filter         = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+				dst.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+				break;
+			case SamplerFilter::Point:
+				dst.Filter         = D3D12_FILTER_MIN_MAG_MIP_POINT;
+				dst.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+				break;
+			case SamplerFilter::ComparisonLinear:
+				dst.Filter         = D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+				dst.ComparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+				break;
+		}
+
+		D3D12_TEXTURE_ADDRESS_MODE addressMode = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+		switch (src.addressMode)
+		{
+			case SamplerAddressMode::Wrap:   addressMode = D3D12_TEXTURE_ADDRESS_MODE_WRAP;   break;
+			case SamplerAddressMode::Clamp:  addressMode = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;  break;
+			case SamplerAddressMode::Border: addressMode = D3D12_TEXTURE_ADDRESS_MODE_BORDER; break;
+		}
+
+		dst.AddressU		 = addressMode;
+		dst.AddressV		 = addressMode;
+		dst.AddressW		 = addressMode;
+		dst.MaxAnisotropy	 = 1;
+		dst.MaxLOD			 = D3D12_FLOAT32_MAX;
+		dst.ShaderRegister	 = src.shaderRegister;
+		dst.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+		if (src.addressMode == SamplerAddressMode::Border)
+		{
+			dst.BorderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE;
+		}
+	}
 
 	D3D12_ROOT_SIGNATURE_DESC rootSigDesc = {};
 	rootSigDesc.NumParameters			  = static_cast<UINT>(params.size());
 	rootSigDesc.pParameters				  = params.data();
-	rootSigDesc.NumStaticSamplers		  = _countof(samplers);
-	rootSigDesc.pStaticSamplers			  = samplers;
+	rootSigDesc.NumStaticSamplers		  = static_cast<UINT>(d3dSamplers.size());
+	rootSigDesc.pStaticSamplers			  = d3dSamplers.data();
 	rootSigDesc.Flags					  = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	ComRef<ID3DBlob> serialized, errorBlob;
@@ -117,7 +141,7 @@ void D3D12Pipeline::InitializeWithDevice(ID3D12Device* device, const PipelineDes
 	DYNAMIC_ASSERT(desc.vertexShader, "D3D12Pipeline::InitializeWithDevice: vertexShader required");
 	DYNAMIC_ASSERT(desc.renderTargetFormats.size() <= 8, "D3D12Pipeline: max 8 render target formats");
 
-	BuildRootSignature(device, desc.bindings);
+	BuildRootSignature(device, desc.bindings, desc.samplers);
 
 	// --- Input layout ---
 	// SemanticName pointers stay valid until CreateGraphicsPipelineState returns,

@@ -61,10 +61,10 @@ public:
 	// ---------------------------------------------------------------------------
 
 	void SetRenderTargets(u32 rtvCount, const DescriptorHandle* rtvs,
-	                      DescriptorHandle dsv)                    override;
+	                      Texture* dsv)                            override;
 	void ClearRenderTarget(DescriptorHandle rtv,
 	                       f32 r, f32 g, f32 b, f32 a)            override;
-	void ClearDepthStencil(DescriptorHandle dsv,
+	void ClearDepthStencil(Texture* dsv,
 	                       f32 depth = 1.f, u8 stencil = 0)       override;
 
 	// Called by VKSwapChain::TransitionToPresent before the image barrier.

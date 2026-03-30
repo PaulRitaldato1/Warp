@@ -34,10 +34,28 @@ struct GBufferSimple
 	URef<Texture> albedo;
 	URef<Texture> normal;
 	URef<Texture> material;
+	URef<Texture> emissive;
 
 	bool IsInitialized() const
 	{
-		return albedo && normal && material;
+		return albedo && normal && material && emissive;
+	}
+};
+
+struct ShadowPassTextures
+{
+	URef<Texture> directionalShadowMap;
+	URef<Texture> spotShadowMap;
+	// TODO add cubemap for point lights
+
+	bool IsInitialized() const
+	{
+		return directionalShadowMap && spotShadowMap;
+	}
+
+	bool IsDirectionalMapInitialized() const
+	{
+		return directionalShadowMap.get() ? true : false;
 	}
 };
 
@@ -137,6 +155,10 @@ protected:
 	void CreateDepthBuffer(u32 width, u32 height);
 	void InitGBufferTextures();
 
+	void InitShadowPass();
+	void InitShadowPSO();
+	void InitShadowTextures();
+
 	// How many frames the CPU is allowed to run ahead of the GPU.
 	// Controls the number of command allocator slots, upload buffer slices,
 	// and FrameSyncPoints — NOT the swap chain back buffer count.
@@ -155,9 +177,8 @@ protected:
 	URef<SwapChain> m_swapChain;
 
 	// Depth buffer shared across all render paths.
-	// Created by CreateDepthBuffer(); handle stored here for use in DrawXxx().
+	// Created by CreateDepthBuffer(); used directly in DrawXxx() via Texture*.
 	URef<Texture> m_depthTexture;
-	DescriptorHandle m_depthHandle;
 
 	// Test triangle — filled by CreateTestTriangle(), drawn in DrawDeferred().
 	// Replace with a proper scene submission system once the pipeline is proven.
@@ -177,6 +198,9 @@ protected:
 	URef<Shader> m_deferredLightVS;
 	URef<Shader> m_deferredLightPS;
 	URef<PipelineState> m_deferredLightPSO;
+
+	URef<Shader> m_directionalShadowVS;
+	URef<PipelineState> m_directionalShadowPSO;
 
 	World* m_world					   = nullptr; // non-owning — set by WarpEngine
 	ResourceManager* m_resourceManager = nullptr; // non-owning — set by WarpEngine
@@ -240,6 +264,9 @@ protected:
 	URef<RenderDocCapture> m_renderDoc = std::make_unique<RenderDocCapture>();
 
 	GBufferSimple m_gbufferSimple;
+
+	u32 m_shadowResolution = 4096;
+	ShadowPassTextures m_shadowTextures;
 
 	bool m_imguiInitialized = false;
 	URef<ImGuiBackend> m_imguiBackend;

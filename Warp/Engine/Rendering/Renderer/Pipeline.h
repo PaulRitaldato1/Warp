@@ -99,6 +99,34 @@ struct BindingSlot
 };
 
 // ---------------------------------------------------------------------------
+// Sampler description — abstract static/immutable samplers.
+//
+// D3D12: becomes a D3D12_STATIC_SAMPLER_DESC in the root signature.
+// Vulkan: becomes a VkSampler stored on the pipeline for descriptor writes.
+// ---------------------------------------------------------------------------
+
+enum class SamplerFilter
+{
+	Linear,            // D3D12: MIN_MAG_MIP_LINEAR.            Vulkan: LINEAR
+	Point,             // D3D12: MIN_MAG_MIP_POINT.             Vulkan: NEAREST
+	ComparisonLinear,  // D3D12: COMPARISON_MIN_MAG_LINEAR_MIP_POINT. Vulkan: LINEAR + compareEnable
+};
+
+enum class SamplerAddressMode
+{
+	Wrap,
+	Clamp,
+	Border,
+};
+
+struct SamplerDesc
+{
+	u32                shaderRegister = 0;  // HLSL register (s0, s1, s2, ...)
+	SamplerFilter      filter        = SamplerFilter::Linear;
+	SamplerAddressMode addressMode   = SamplerAddressMode::Wrap;
+};
+
+// ---------------------------------------------------------------------------
 // Graphics pipeline descriptor
 // ---------------------------------------------------------------------------
 
@@ -127,6 +155,10 @@ struct PipelineDesc
 	// descriptor set binding(s) (Vulkan). The array index is the rootIndex used
 	// by CommandList binding methods.
 	Vector<BindingSlot> bindings;
+
+	// Static/immutable samplers — each becomes a D3D12 static sampler or a
+	// Vulkan VkSampler. Assigned to HLSL register sN.
+	Vector<SamplerDesc> samplers;
 };
 
 // ---------------------------------------------------------------------------

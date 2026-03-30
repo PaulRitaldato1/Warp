@@ -203,7 +203,7 @@ void VKCommandList::SetScissorRect(u32 left, u32 top, u32 right, u32 bottom)
 // ---------------------------------------------------------------------------
 
 void VKCommandList::SetRenderTargets(u32 rtvCount, const DescriptorHandle* rtvs,
-                                     DescriptorHandle dsv)
+                                     Texture* dsv)
 {
 	DYNAMIC_ASSERT(rtvCount <= k_maxRTVs, "VKCommandList: max 8 RTVs");
 
@@ -214,17 +214,20 @@ void VKCommandList::SetRenderTargets(u32 rtvCount, const DescriptorHandle* rtvs,
 		m_inRenderPass = false;
 	}
 
+	// Resolve the depth texture to a descriptor handle.
+	DescriptorHandle dsvHandle = dsv ? dsv->GetDSV() : DescriptorHandle{};
+
 	// Store the current render targets for ClearRenderTarget / ClearDepthStencil.
 	for (u32 i = 0; i < rtvCount; ++i)
 	{
 		m_currentRTVs[i] = rtvs[i];
 	}
 	m_rtvCount   = rtvCount;
-	m_currentDSV = dsv;
+	m_currentDSV = dsvHandle;
 
 	// Derive the render area from the first attachment's stored extent.
-	u32 areaWidth  = (rtvCount > 0) ? rtvs[0].width  : dsv.width;
-	u32 areaHeight = (rtvCount > 0) ? rtvs[0].height : dsv.height;
+	u32 areaWidth  = (rtvCount > 0) ? rtvs[0].width  : (dsv ? dsv->GetWidth()  : 0);
+	u32 areaHeight = (rtvCount > 0) ? rtvs[0].height : (dsv ? dsv->GetHeight() : 0);
 
 	// Build colour attachment infos (load = LOAD so explicit clears work via vkCmdClearAttachments).
 	VkRenderingAttachmentInfoKHR colourAttachments[k_maxRTVs] = {};
@@ -239,10 +242,10 @@ void VKCommandList::SetRenderTargets(u32 rtvCount, const DescriptorHandle* rtvs,
 
 	// Depth attachment info.
 	VkRenderingAttachmentInfoKHR depthAttachment = {};
-	if (dsv.IsValid())
+	if (dsvHandle.IsValid())
 	{
 		depthAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
-		depthAttachment.imageView   = reinterpret_cast<VkImageView>(static_cast<uintptr_t>(dsv.ptr));
+		depthAttachment.imageView   = reinterpret_cast<VkImageView>(static_cast<uintptr_t>(dsvHandle.ptr));
 		depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		depthAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
 		depthAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
@@ -255,7 +258,7 @@ void VKCommandList::SetRenderTargets(u32 rtvCount, const DescriptorHandle* rtvs,
 	renderingInfo.layerCount           = 1;
 	renderingInfo.colorAttachmentCount = rtvCount;
 	renderingInfo.pColorAttachments    = colourAttachments;
-	renderingInfo.pDepthAttachment     = dsv.IsValid() ? &depthAttachment : nullptr;
+	renderingInfo.pDepthAttachment     = dsvHandle.IsValid() ? &depthAttachment : nullptr;
 
 	vkCmdBeginRendering(m_cmdBuf, &renderingInfo);
 	m_inRenderPass = true;
@@ -290,7 +293,7 @@ void VKCommandList::ClearRenderTarget(DescriptorHandle rtv, f32 r, f32 g, f32 b,
 	vkCmdClearAttachments(m_cmdBuf, 1, &clearAtt, 1, &clearRect);
 }
 
-void VKCommandList::ClearDepthStencil(DescriptorHandle dsv, f32 depth, u8 stencil)
+void VKCommandList::ClearDepthStencil(Texture* dsv, f32 depth, u8 stencil)
 {
 	VkClearAttachment clearAtt = {};
 	clearAtt.aspectMask                     = VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -298,7 +301,7 @@ void VKCommandList::ClearDepthStencil(DescriptorHandle dsv, f32 depth, u8 stenci
 	clearAtt.clearValue.depthStencil.stencil= stencil;
 
 	VkClearRect clearRect = {};
-	clearRect.rect           = { {0, 0}, { dsv.width, dsv.height } };
+	clearRect.rect           = { {0, 0}, { dsv->GetWidth(), dsv->GetHeight() } };
 	clearRect.baseArrayLayer = 0;
 	clearRect.layerCount     = 1;
 

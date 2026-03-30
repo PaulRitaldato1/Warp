@@ -135,7 +135,7 @@ void D3D12CommandList::SetScissorRect(u32 left, u32 top, u32 right, u32 bottom)
 // ---------------------------------------------------------------------------
 
 void D3D12CommandList::SetRenderTargets(u32 rtvCount, const DescriptorHandle* rtvs,
-                                         DescriptorHandle dsv)
+                                         Texture* dsv)
 {
 	DYNAMIC_ASSERT(rtvCount <= 8, "D3D12CommandList::SetRenderTargets: max 8 RTVs");
 
@@ -146,10 +146,14 @@ void D3D12CommandList::SetRenderTargets(u32 rtvCount, const DescriptorHandle* rt
 	}
 
 	D3D12_CPU_DESCRIPTOR_HANDLE d3dDsv = {};
-	d3dDsv.ptr = static_cast<SIZE_T>(dsv.ptr);
+	if (dsv)
+	{
+		DescriptorHandle dsvHandle = dsv->GetDSV();
+		d3dDsv.ptr = static_cast<SIZE_T>(dsvHandle.ptr);
+	}
 
 	m_list->OMSetRenderTargets(rtvCount, d3dRtvs, FALSE,
-	                            dsv.IsValid() ? &d3dDsv : nullptr);
+	                            dsv ? &d3dDsv : nullptr);
 }
 
 void D3D12CommandList::ClearRenderTarget(DescriptorHandle rtv,
@@ -161,10 +165,11 @@ void D3D12CommandList::ClearRenderTarget(DescriptorHandle rtv,
 	m_list->ClearRenderTargetView(handle, color, 0, nullptr);
 }
 
-void D3D12CommandList::ClearDepthStencil(DescriptorHandle dsv, f32 depth, u8 stencil)
+void D3D12CommandList::ClearDepthStencil(Texture* dsv, f32 depth, u8 stencil)
 {
+	DescriptorHandle dsvHandle = dsv->GetDSV();
 	D3D12_CPU_DESCRIPTOR_HANDLE handle = {};
-	handle.ptr = static_cast<SIZE_T>(dsv.ptr);
+	handle.ptr = static_cast<SIZE_T>(dsvHandle.ptr);
 	m_list->ClearDepthStencilView(handle,
 	    D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
 	    depth, stencil, 0, nullptr);

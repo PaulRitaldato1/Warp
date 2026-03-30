@@ -28,7 +28,7 @@ struct SkyParameters
 	Vec3 groundColor;
 	float groundFade;       // how quickly ground color blends below horizon
 	Vec3 sunColor;
-	int32 enabled;    // 1 = render sky, 0 = black background
+	float brightness; // 0 = sky disabled (black), >0 = scales entire sky output
 };
 
 struct LightPassConstants
@@ -37,4 +37,7 @@ struct LightPassConstants
 	Vec3 cameraPosition;
 	int32 lightCount;
 	SkyParameters sky;
+	Mat4 lightViewProj;
+	float shadowBias;
+	Vec3 shadowPadding;
 };

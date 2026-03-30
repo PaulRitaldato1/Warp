@@ -177,7 +177,7 @@ struct ComponentUI<SkyLightComponent>
 		ImGui::DragFloat("Sun Disc Size", &sun.sunDiscSize, 0.0001f, 0.99f, 1.0f, "%.4f");
 
 		ImGui::SeparatorText("Directional Light");
-		ImGui::DragFloat("Light Intensity", &sun.lightIntensity, 0.1f, 0.0f, 100.0f);
+		ImGui::DragFloat("Light Intensity", &sun.lightIntensity, 0.01f, 0.0f, 100.0f);
 
 		ImGui::SeparatorText("Info");
 		ImGui::TextDisabled("Sun direction comes from this entity's Transform rotation.");

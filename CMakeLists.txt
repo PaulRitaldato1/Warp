@@ -225,6 +225,11 @@ add_custom_command(TARGET Warp POST_BUILD
     COMMENT "Copying Resources and Shaders to output directory"
 )
 
+# Make shader edits trigger a rebuild so the POST_BUILD copy always runs.
+file(GLOB_RECURSE WARP_SHADER_FILES "${Warp_SOURCE_DIR}/Warp/Shaders/*.hlsl")
+target_sources(Warp PRIVATE ${WARP_SHADER_FILES})
+set_source_files_properties(${WARP_SHADER_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
+
 if(MSVC_IDE)
     #create virtual folders for VS because they still do this for some reason
     foreach(source IN LISTS TESTBED_SRCS TESTBED_HDRS)

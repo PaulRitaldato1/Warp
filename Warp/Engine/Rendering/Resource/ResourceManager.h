@@ -60,15 +60,18 @@ public:
 	Texture* GetDefaultTexture();
 
 	// Returns a flat default texture for non-albedo material slots.
-	// MetallicRoughness: (0, 1, 0) = non-metallic, fully rough.
-	// Normal/Occlusion/Emissive all get sensible neutral values from white.
+	// MetallicRoughness: (255, 255, 0) = full occlusion, fully rough, non-metallic.
 	Texture* GetDefaultMaterialTexture();
+
+	// Returns a flat normal map (128, 128, 255) = tangent-space (0, 0, 1).
+	Texture* GetDefaultNormalTexture();
 
 
 private:
 	u32  RegisterMesh(const String& name, URef<Mesh> mesh);
 	void CreateDefaultTexture();
 	void CreateDefaultMaterialTexture();
+	void CreateDefaultNormalTexture();
 	void BeginMeshLoad(const String& path);
 	u32  BeginTextureLoad(const String& path);
 
@@ -94,8 +97,11 @@ private:
 	// Fallback checkerboard texture used for BaseColor when no texture is assigned.
 	u32 m_defaultTextureHandle = ~0u;
 
-	// Flat default texture for non-albedo material slots (metallic-roughness, normal, etc.).
+	// Flat default texture for non-albedo material slots (metallic-roughness, occlusion, emissive).
 	u32 m_defaultMaterialTextureHandle = ~0u;
+
+	// Flat normal map default: (128, 128, 255) = tangent-space (0, 0, 1).
+	u32 m_defaultNormalTextureHandle = ~0u;
 
 	// Pending async loads tracked via futures.
 	HashMap<String, std::future<URef<Mesh>>>        m_pendingMeshLoads;

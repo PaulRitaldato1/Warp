@@ -37,6 +37,7 @@ struct TempGame : public UserApplicationBase
 		Entity helmet = world.CreateEntity<TransformComponent, MeshComponent>();
 		world.GetComponent<MeshComponent>(helmet).SetPath("Resources/DamagedHelmet/DamagedHelmet.gltf");
 		world.GetComponent<TransformComponent>(helmet).Move({ 0.f, 0.f, 0.f });
+		world.GetComponent<TransformComponent>(helmet).Rotate({ 90.f, 180.f, 0.f });
 
 		Entity avocado = world.CreateEntity<TransformComponent, MeshComponent>();
 		world.GetComponent<MeshComponent>(avocado).SetPath("Resources/Avocado/Avocado.gltf");

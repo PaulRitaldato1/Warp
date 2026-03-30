@@ -17,6 +17,7 @@
 #include <Core/ECS/Components/LightComponent.h>
 #include <Core/ECS/Components/SkyLightComponent.h>
 #include <Rendering/Mesh/Mesh.h>
+#include <Rendering/Renderer/DrawList.h>
 #include <Rendering/Window/Window.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
@@ -28,6 +29,14 @@ struct PerDrawConstants
 	Mat4 viewProj;
 	Mat4 model;
 	Mat4 modelInvTranspose;
+	Vec3 emissiveFactor;
+	f32 padding;
+};
+
+struct ShadowCB
+{
+	Mat4 lightViewProj;
+	Mat4 model;
 };
 
 Renderer::~Renderer() = default;
@@ -153,12 +162,12 @@ void Renderer::OnResize(u32 width, u32 height)
 	m_swapChain->Resize(width, height);
 
 	m_depthTexture.reset();
-	m_depthHandle = {};
 	CreateDepthBuffer(width, height);
 
 	m_gbufferSimple.albedo.reset();
 	m_gbufferSimple.normal.reset();
 	m_gbufferSimple.material.reset();
+	m_gbufferSimple.emissive.reset();
 
 	LOG_DEBUG("Renderer resized: {}x{}", width, height);
 }
@@ -172,7 +181,6 @@ void Renderer::CreateDepthBuffer(u32 width, u32 height)
 	depthDesc.format = TextureFormat::Depth32F;
 	depthDesc.usage	 = TextureUsage::DepthStencilSampled;
 	m_depthTexture	 = m_device->CreateTexture(depthDesc);
-	m_depthHandle	 = m_depthTexture->GetDSV();
 }
 
 void Renderer::BeginFrame()
@@ -444,41 +452,23 @@ void Renderer::DrawDeferred()
 		InitGBufferTextures();
 	}
 
-	// Bind and clear the back buffer + depth.
-	Array<DescriptorHandle, 3> GBuffer{ m_gbufferSimple.albedo->GetRTV(), m_gbufferSimple.normal->GetRTV(),
-										m_gbufferSimple.material->GetRTV() };
-
-	cmd.TransitionTexture(m_gbufferSimple.albedo.get(), ResourceState::RenderTarget);
-	cmd.TransitionTexture(m_gbufferSimple.normal.get(), ResourceState::RenderTarget);
-	cmd.TransitionTexture(m_gbufferSimple.material.get(), ResourceState::RenderTarget);
-
-	cmd.SetRenderTargets(3, GBuffer.data(), m_depthHandle);
-
-	cmd.ClearRenderTarget(GBuffer[0], 0.0f, 0.0f, 0.0f, 0.0f);
-	cmd.ClearRenderTarget(GBuffer[1], 0.0f, 0.0f, 0.0f, 0.0f);
-	cmd.ClearRenderTarget(GBuffer[2], 0.0f, 0.0f, 0.0f, 0.0f);
-
-	if (m_depthHandle.IsValid())
+	if (!m_directionalShadowPSO)
 	{
-		cmd.ClearDepthStencil(m_depthHandle, 1.f, 0);
+		InitShadowPass();
 	}
 
-	// Full-screen viewport and scissor.
-	const f32 swapChainWidth  = static_cast<f32>(m_swapChain->GetWidth());
-	const f32 swapChainHeight = static_cast<f32>(m_swapChain->GetHeight());
-	cmd.SetViewport(0.f, 0.f, swapChainWidth, swapChainHeight);
-	cmd.SetScissorRect(0, 0, m_swapChain->GetWidth(), m_swapChain->GetHeight());
-
-	// Deferred geometry pass
-	cmd.SetPipelineState(m_deferredGeomPSO.get());
-	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
+	// ---------------------------------------------------------------------------
+	// Gather draw list and light list from the ECS (single pass each).
+	// These lists decouple the ECS from the renderer for the rest of the frame.
+	// ---------------------------------------------------------------------------
 
 	Texture* defaultTexture			= m_resourceManager->GetDefaultTexture();
 	Texture* defaultMaterialTexture = m_resourceManager->GetDefaultMaterialTexture();
+	Texture* defaultNormalTexture	= m_resourceManager->GetDefaultNormalTexture();
 
+	DrawList drawList;
 	m_world->Each<TransformComponent, MeshComponent>(
-		[&cmd, &viewProj, &defaultTexture, &defaultMaterialTexture, this](Entity entity, TransformComponent& transform,
-																		  MeshComponent& meshComp)
+		[&](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
 		{
 			if (!meshComp.HasRenderFlag(RenderFlags_Visible))
 			{
@@ -509,25 +499,17 @@ void Renderer::DrawDeferred()
 				return;
 			}
 
-			PerDrawConstants constants;
-			constants.viewProj = viewProj;
+			Mat4 model;
+			Mat4 modelInvTranspose;
 			{
 				using namespace DirectX;
 				SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
 				SimdMat R = XMMatrixRotationQuaternion(XMLoadFloat4(&transform.rotation));
 				SimdMat T = XMMatrixTranslation(transform.position.x, transform.position.y, transform.position.z);
 				SimdMat M = XMMatrixMultiply(XMMatrixMultiply(S, R), T);
-				XMStoreFloat4x4(&constants.model, M);
-				XMStoreFloat4x4(&constants.modelInvTranspose, XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
+				XMStoreFloat4x4(&model, M);
+				XMStoreFloat4x4(&modelInvTranspose, XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
 			}
-
-			UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(PerDrawConstants), 256);
-			cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
-
-			cmd.SetVertexBuffer(resource->vertexBuffer.get());
-			cmd.SetIndexBuffer(resource->indexBuffer.get());
-
-			Vector<Texture*> materialTextures(TextureSlot::TextureSlotCount, nullptr);
 
 			for (const Submesh& submesh : resource->mesh->submeshes)
 			{
@@ -539,30 +521,240 @@ void Renderer::DrawDeferred()
 				const Material& material   = resource->mesh->materials[submesh.materialIndex];
 				const Vector<u32>& handles = resource->textureHandles;
 
-				auto tryFillSlot = [&](int32 texIdx, u32 slot)
+				DrawItem item;
+				item.model			   = model;
+				item.modelInvTranspose = modelInvTranspose;
+				item.vertexBuffer	   = resource->vertexBuffer.get();
+				item.indexBuffer	   = resource->indexBuffer.get();
+				item.indexCount		   = submesh.indexCount;
+				item.indexOffset	   = submesh.indexOffset;
+				item.vertexOffset	   = submesh.vertexOffset;
+				item.emissiveFactor	   = material.emissiveFactor;
+				item.renderFlags	   = meshComp.renderFlags;
+
+				for (int slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
 				{
-					materialTextures[slot] = (slot == TextureSlot::BaseColor) ? defaultTexture : defaultMaterialTexture;
+					if (slot == TextureSlot::BaseColor)
+					{
+						item.textures[slot] = defaultTexture;
+					}
+					else if (slot == TextureSlot::Normal)
+					{
+						item.textures[slot] = defaultNormalTexture;
+					}
+					else
+					{
+						item.textures[slot] = defaultMaterialTexture;
+					}
+
+					int32 texIdx = material.TextureIndices[slot];
 					if (texIdx >= 0 && texIdx < static_cast<int32>(handles.size()))
 					{
 						TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(handles[texIdx]);
 						if (tex)
 						{
-							materialTextures[slot] = tex->gpuTexture.get();
+							item.textures[slot] = tex->gpuTexture.get();
 						}
 					}
-				};
-
-				for (int slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
-				{
-					tryFillSlot(material.TextureIndices[slot], slot);
 				}
 
-				cmd.SetShaderResources(1, materialTextures);
-				cmd.DrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, 0);
+				u32 itemIndex = static_cast<u32>(drawList.items.size());
+				drawList.items.push_back(item);
+
+				if (meshComp.HasRenderFlag(RenderFlags_CastShadow))
+				{
+					drawList.shadowCasters.push_back(itemIndex);
+				}
+
+				if (meshComp.HasRenderFlag(RenderFlags_Unlit))
+				{
+					drawList.unlitMeshes.push_back(itemIndex);
+				}
+				else
+				{
+					drawList.litMeshes.push_back(itemIndex);
+				}
 			}
 		});
 
-	// DrawMeshesUnlit(cmd);
+	LightList lightList;
+	m_world->Each<TransformComponent, LightComponent>(
+		[&](Entity entity, TransformComponent& transform, LightComponent& lightComp)
+		{
+			LightItem item;
+			item.position		= transform.position;
+			item.direction		= transform.Forward();
+			item.color			= lightComp.color;
+			item.intensity		= lightComp.intensity;
+			item.range			= lightComp.range;
+			item.innerConeAngle = lightComp.innerConeAngle;
+			item.outerConeAngle = lightComp.outerConeAngle;
+			item.type			= lightComp.type;
+			item.castShadows	= lightComp.castShadows;
+
+			u32 itemIndex = static_cast<u32>(lightList.items.size());
+			lightList.items.push_back(item);
+
+			if (lightComp.castShadows)
+			{
+				lightList.shadowCasters.push_back(itemIndex);
+			}
+		});
+
+	// Gather sky light — drives procedural sky and emits a directional light.
+	SkyParameters skyParameters{};
+	Vector<LightInfo> skyLightInfos;
+
+	m_world->Each<TransformComponent, SkyLightComponent>(
+		[&](Entity entity, TransformComponent& transform, SkyLightComponent& skyComp)
+		{
+			if (skyParameters.brightness)
+			{
+				return; // use the first one
+			}
+
+			skyParameters.skyColorZenith   = skyComp.skyColorZenith;
+			skyParameters.skyColorHorizon  = skyComp.skyColorHorizon;
+			skyParameters.horizonSharpness = skyComp.horizonSharpness;
+			skyParameters.groundColor	   = skyComp.groundColor;
+			skyParameters.groundFade	   = skyComp.groundFade;
+			skyParameters.sunColor		   = skyComp.sunColor;
+			skyParameters.sunIntensity	   = skyComp.sunIntensity;
+			skyParameters.sunDiscSize	   = skyComp.sunDiscSize;
+			skyParameters.brightness	   = skyComp.lightIntensity;
+
+			Vec3 sunDirection = transform.Forward();
+			{
+				using namespace DirectX;
+				XMVECTOR sunDir = XMVector3Normalize(XMLoadFloat3(&sunDirection));
+				XMStoreFloat3(&skyParameters.sunDirection, XMVectorNegate(sunDir));
+			}
+
+			LightInfo sunLight;
+			sunLight.position		= {};
+			sunLight.range			= 0.f;
+			sunLight.color			= skyComp.sunColor;
+			sunLight.intensity		= skyComp.lightIntensity;
+			sunLight.direction		= sunDirection;
+			sunLight.type			= 1; // Directional
+			sunLight.innerConeAngle = 0.f;
+			sunLight.outerConeAngle = 0.f;
+			sunLight.padding		= {};
+			skyLightInfos.push_back(sunLight);
+		});
+
+	// ---------------------------------------------------------------------------
+	// Shadow pass — render depth from each shadow-casting directional light's POV
+	// ---------------------------------------------------------------------------
+
+	cmd.TransitionTexture(m_shadowTextures.directionalShadowMap.get(), ResourceState::DepthWrite);
+	cmd.SetRenderTargets(0, nullptr, m_shadowTextures.directionalShadowMap.get());
+	cmd.ClearDepthStencil(m_shadowTextures.directionalShadowMap.get(), 1.f, 0);
+
+	cmd.SetViewport(0.f, 0.f, static_cast<f32>(m_shadowResolution), static_cast<f32>(m_shadowResolution));
+	cmd.SetScissorRect(0, 0, m_shadowResolution, m_shadowResolution);
+
+	cmd.SetPipelineState(m_directionalShadowPSO.get());
+	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
+
+	// Build the light view-projection for each directional shadow caster.
+	// For now this handles the sky light's directional light.
+	// Store the last computed lightViewProj for the lighting pass.
+	Mat4 directionalLightViewProj = {};
+
+	for (const LightInfo& skyLight : skyLightInfos)
+	{
+		using namespace DirectX;
+
+		XMVECTOR lightDir = XMVector3Normalize(XMLoadFloat3(&skyLight.direction));
+		XMVECTOR lightPos = XMVectorScale(XMVectorNegate(lightDir), 50.f);
+		XMVECTOR up       = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+
+		// Avoid degenerate up vector when light points nearly straight up or down.
+		if (fabsf(XMVectorGetY(lightDir)) > 0.99f)
+		{
+			up = XMVectorSet(1.f, 0.f, 0.f, 0.f);
+		}
+
+		XMMATRIX lightView = XMMatrixLookToLH(lightPos, lightDir, up);
+
+		float orthoHalfSize = 30.f;
+		float nearPlane     = 0.1f;
+		float farPlane      = 100.f;
+		XMMATRIX lightProj  = XMMatrixOrthographicLH(orthoHalfSize * 2.f, orthoHalfSize * 2.f, nearPlane, farPlane);
+
+		XMStoreFloat4x4(&directionalLightViewProj, XMMatrixMultiply(lightView, lightProj));
+
+		for (u32 shadowCasterIndex : drawList.shadowCasters)
+		{
+			const DrawItem& item = drawList.items[shadowCasterIndex];
+
+			ShadowCB shadowConstants;
+			shadowConstants.lightViewProj = directionalLightViewProj;
+			shadowConstants.model         = item.model;
+
+			UploadResult upload = m_uploadBuffer->AllocAndCopy(&shadowConstants, sizeof(ShadowCB), 256);
+			cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
+
+			cmd.SetVertexBuffer(item.vertexBuffer);
+			cmd.SetIndexBuffer(item.indexBuffer);
+			cmd.DrawIndexed(item.indexCount, 1, item.indexOffset, item.vertexOffset, 0);
+		}
+	}
+
+	// Transition shadow map for later use in the lighting pass.
+	cmd.TransitionTexture(m_shadowTextures.directionalShadowMap.get(), ResourceState::ShaderResource);
+
+	// ---------------------------------------------------------------------------
+	// GBuffer geometry pass
+	// ---------------------------------------------------------------------------
+
+	Array<DescriptorHandle, 4> GBuffer{ m_gbufferSimple.albedo->GetRTV(), m_gbufferSimple.normal->GetRTV(),
+										m_gbufferSimple.material->GetRTV(), m_gbufferSimple.emissive->GetRTV() };
+
+	cmd.TransitionTexture(m_gbufferSimple.albedo.get(), ResourceState::RenderTarget);
+	cmd.TransitionTexture(m_gbufferSimple.normal.get(), ResourceState::RenderTarget);
+	cmd.TransitionTexture(m_gbufferSimple.material.get(), ResourceState::RenderTarget);
+	cmd.TransitionTexture(m_gbufferSimple.emissive.get(), ResourceState::RenderTarget);
+
+	cmd.SetRenderTargets(4, GBuffer.data(), m_depthTexture.get());
+
+	cmd.ClearRenderTarget(GBuffer[0], 0.0f, 0.0f, 0.0f, 0.0f);
+	cmd.ClearRenderTarget(GBuffer[1], 0.0f, 0.0f, 0.0f, 0.0f);
+	cmd.ClearRenderTarget(GBuffer[2], 0.0f, 0.0f, 0.0f, 0.0f);
+	cmd.ClearRenderTarget(GBuffer[3], 0.0f, 0.0f, 0.0f, 0.0f);
+
+	if (m_depthTexture)
+	{
+		cmd.ClearDepthStencil(m_depthTexture.get(), 1.f, 0);
+	}
+
+	const f32 swapChainWidth  = static_cast<f32>(m_swapChain->GetWidth());
+	const f32 swapChainHeight = static_cast<f32>(m_swapChain->GetHeight());
+	cmd.SetViewport(0.f, 0.f, swapChainWidth, swapChainHeight);
+	cmd.SetScissorRect(0, 0, m_swapChain->GetWidth(), m_swapChain->GetHeight());
+
+	cmd.SetPipelineState(m_deferredGeomPSO.get());
+	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
+
+	for (const DrawItem& item : drawList.items)
+	{
+		PerDrawConstants constants;
+		constants.viewProj			= viewProj;
+		constants.model				= item.model;
+		constants.modelInvTranspose = item.modelInvTranspose;
+		constants.emissiveFactor	= item.emissiveFactor;
+
+		UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(PerDrawConstants), 256);
+		cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
+
+		cmd.SetVertexBuffer(item.vertexBuffer);
+		cmd.SetIndexBuffer(item.indexBuffer);
+		cmd.SetShaderResources(1, { item.textures[TextureSlot::BaseColor], item.textures[TextureSlot::Normal],
+									item.textures[TextureSlot::MetallicRoughness],
+									item.textures[TextureSlot::Occlusion], item.textures[TextureSlot::Emissive] });
+		cmd.DrawIndexed(item.indexCount, 1, item.indexOffset, item.vertexOffset, 0);
+	}
 
 	// GBuffer Lighting Pass
 	if (!m_deferredLightPSO)
@@ -573,6 +765,7 @@ void Renderer::DrawDeferred()
 	cmd.TransitionTexture(m_gbufferSimple.albedo.get(), ResourceState::ShaderResource);
 	cmd.TransitionTexture(m_gbufferSimple.normal.get(), ResourceState::ShaderResource);
 	cmd.TransitionTexture(m_gbufferSimple.material.get(), ResourceState::ShaderResource);
+	cmd.TransitionTexture(m_gbufferSimple.emissive.get(), ResourceState::ShaderResource);
 	cmd.TransitionTexture(m_depthTexture.get(), ResourceState::ShaderResource);
 
 	cmd.SetPipelineState(m_deferredLightPSO.get());
@@ -580,7 +773,7 @@ void Renderer::DrawDeferred()
 
 	m_swapChain->TransitionToRenderTarget(cmd);
 	DescriptorHandle backBufferRTV = m_swapChain->GetCurrentRTV();
-	cmd.SetRenderTargets(1, &backBufferRTV, DescriptorHandle{});
+	cmd.SetRenderTargets(1, &backBufferRTV, nullptr);
 
 	LightPassConstants lightConstants;
 	{
@@ -591,76 +784,37 @@ void Renderer::DrawDeferred()
 	}
 	lightConstants.cameraPosition = cameraPosition;
 
-	// TODO handle this better, we should allocate once and re-use rather than this, just want to get this stood up
+	// Convert gathered LightList to GPU-ready LightInfo array.
 	Vector<LightInfo> lightInfos;
+	lightInfos.reserve(lightList.items.size() + 1); // +1 for potential sky directional light
 
-	m_world->Each<TransformComponent, LightComponent>(
-		[&lightInfos](Entity entity, TransformComponent& transform, LightComponent& lightComp)
-		{
-			LightInfo info;
-			info.position		= transform.position;
-			info.range			= lightComp.range;
-			info.color			= lightComp.color;
-			info.intensity		= lightComp.intensity;
-			info.direction		= transform.Forward();
-			info.type			= static_cast<int32>(lightComp.type);
-			info.innerConeAngle = lightComp.innerConeAngle;
-			info.outerConeAngle = lightComp.outerConeAngle;
-
-			lightInfos.push_back(info);
-		});
-
-	Vec3 sunDirection = { 0.f, -1.f, 0.f }; // default: straight down
-
-	// Look for a SkyLightComponent to drive the procedural sky and its built-in directional light.
-	// Sky is disabled (black background) if no SkyLightComponent exists.
+	for (const LightItem& light : lightList.items)
 	{
-		SkyParameters sky{};
-
-		m_world->Each<TransformComponent, SkyLightComponent>(
-			[&](Entity entity, TransformComponent& transform, SkyLightComponent& skyComp)
-			{
-				if (sky.enabled)
-				{
-					return; // use the first one
-				}
-
-				sky.skyColorZenith	 = skyComp.skyColorZenith;
-				sky.skyColorHorizon	 = skyComp.skyColorHorizon;
-				sky.horizonSharpness = skyComp.horizonSharpness;
-				sky.groundColor		 = skyComp.groundColor;
-				sky.groundFade		 = skyComp.groundFade;
-				sky.sunColor		 = skyComp.sunColor;
-				sky.sunIntensity	 = skyComp.sunIntensity;
-				sky.sunDiscSize		 = skyComp.sunDiscSize;
-				sky.enabled			 = 1;
-
-				sunDirection = transform.Forward();
-
-				// Emit a directional light from the sky's sun — color and intensity
-				// are owned by the SkyLightComponent, direction comes from the transform.
-				LightInfo sunLight;
-				sunLight.position		= {};
-				sunLight.range			= 0.f;
-				sunLight.color			= skyComp.sunColor;
-				sunLight.intensity		= skyComp.lightIntensity;
-				sunLight.direction		= transform.Forward();
-				sunLight.type			= 1; // Directional
-				sunLight.innerConeAngle = 0.f;
-				sunLight.outerConeAngle = 0.f;
-				sunLight.padding		= {};
-				lightInfos.push_back(sunLight);
-			});
-
-		if (sky.enabled)
-		{
-			using namespace DirectX;
-			XMVECTOR sunDir = XMVector3Normalize(XMLoadFloat3(&sunDirection));
-			XMStoreFloat3(&sky.sunDirection, XMVectorNegate(sunDir));
-		}
-
-		lightConstants.sky = sky;
+		LightInfo info;
+		info.position		= light.position;
+		info.range			= light.range;
+		info.color			= light.color;
+		info.intensity		= light.intensity;
+		info.direction		= light.direction;
+		info.type			= static_cast<int32>(light.type);
+		info.innerConeAngle = light.innerConeAngle;
+		info.outerConeAngle = light.outerConeAngle;
+		lightInfos.push_back(info);
 	}
+
+	// Sky light — still gathered from ECS here since it's a unique component
+	// that drives both the procedural sky and a directional light.
+	lightConstants.sky = skyParameters;
+	if (!skyLightInfos.empty())
+	{
+		for (const LightInfo& sunLight : skyLightInfos)
+		{
+			lightInfos.push_back(sunLight);
+		}
+	}
+
+	lightConstants.lightViewProj = directionalLightViewProj;
+	lightConstants.shadowBias   = 0.005f;
 
 	lightConstants.lightCount		  = static_cast<int32>(lightInfos.size());
 	UploadResult lightConstantsUpload = m_uploadBuffer->AllocAndCopy(&lightConstants, sizeof(LightPassConstants), 256);
@@ -668,7 +822,7 @@ void Renderer::DrawDeferred()
 							  lightConstantsUpload.size);
 
 	cmd.SetShaderResources(1, { m_gbufferSimple.albedo.get(), m_gbufferSimple.normal.get(),
-								m_gbufferSimple.material.get(), m_depthTexture.get() });
+								m_gbufferSimple.material.get(), m_depthTexture.get(), m_gbufferSimple.emissive.get() });
 
 	if (!lightInfos.empty())
 	{
@@ -676,6 +830,8 @@ void Renderer::DrawDeferred()
 			m_uploadBuffer->AllocAndCopy(lightInfos.data(), lightInfos.size() * sizeof(LightInfo));
 		cmd.SetShaderResourceBuffer(2, m_uploadBuffer->GetBackingBuffer(), lightUpload.offset);
 	}
+
+	cmd.SetShaderResources(3, { m_shadowTextures.directionalShadowMap.get() });
 
 	cmd.Draw(3);
 
@@ -761,6 +917,9 @@ void Renderer::CreateMeshPipeline()
 		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — per-draw constants
 		{ BindingType::TextureTable, 0, TextureSlot::TextureSlotCount }, // rootIndex 1: t0-t4 — material textures
 	};
+	meshDesc.samplers = {
+		{ 0, SamplerFilter::Linear, SamplerAddressMode::Wrap },
+	};
 	m_meshPSO = m_device->CreatePipelineState(meshDesc);
 
 	LOG_DEBUG("Renderer: mesh PSO ready");
@@ -792,7 +951,8 @@ void Renderer::CreateDeferredGeometryPipeline()
 		 { "TEXCOORD", 1, TextureFormat::RG32F, 0, InputElement::AppendAligned },
 		 { "COLOR", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
 	};
-	meshDesc.renderTargetFormats  = { TextureFormat::RGBA8, TextureFormat::RGBA16F, TextureFormat::RGBA8 };
+	meshDesc.renderTargetFormats  = { TextureFormat::RGBA8, TextureFormat::RGBA16F, TextureFormat::RGBA8,
+									  TextureFormat::RGBA8 };
 	meshDesc.depthFormat		  = TextureFormat::Depth32F;
 	meshDesc.topology			  = PrimitiveTopology::TriangleList;
 	meshDesc.enableDepthTest	  = true;
@@ -804,6 +964,9 @@ void Renderer::CreateDeferredGeometryPipeline()
 	meshDesc.bindings			  = {
 		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — per-draw constants
 		{ BindingType::TextureTable, 0, TextureSlot::TextureSlotCount }, // rootIndex 1: t0-t4 — material textures
+	};
+	meshDesc.samplers = {
+		{ 0, SamplerFilter::Linear, SamplerAddressMode::Wrap },
 	};
 	m_deferredGeomPSO = m_device->CreatePipelineState(meshDesc);
 
@@ -838,9 +1001,14 @@ void Renderer::CreateDeferredLightingPipeline()
 	desc.rasterState.cullMode = RasterizerState::CullMode::None;
 	desc.rasterState.fillMode = RasterizerState::FillMode::Solid;
 	desc.bindings			  = {
-		{ BindingType::ConstantBuffer, 0, 1 },	// rootIndex 0: b0 — lighting constants
-		{ BindingType::TextureTable, 0, 4 },	// rootIndex 1: t0-t3 — GBuffer textures
-		{ BindingType::StructuredBuffer, 4, 1 } // rootIndex 2: t4 - Light Infos buffer
+		{ BindingType::ConstantBuffer, 0, 1 },   // rootIndex 0: b0 — lighting constants
+		{ BindingType::TextureTable, 0, 5 },     // rootIndex 1: t0-t4 — GBuffer textures (albedo, normal, material, depth, emissive)
+		{ BindingType::StructuredBuffer, 5, 1 }, // rootIndex 2: t5 — Light Infos buffer
+		{ BindingType::TextureTable, 6, 1 },     // rootIndex 3: t6 — Shadow map
+	};
+	desc.samplers = {
+		{ 0, SamplerFilter::Point,            SamplerAddressMode::Clamp },  // s0 — GBuffer sampling
+		{ 2, SamplerFilter::ComparisonLinear,  SamplerAddressMode::Border }, // s2 — Shadow map comparison
 	};
 	m_deferredLightPSO = m_device->CreatePipelineState(desc);
 
@@ -902,126 +1070,84 @@ void Renderer::InitGBufferTextures()
 	materialDesc.format = TextureFormat::RGBA8;
 	materialDesc.usage	= TextureUsage::RenderTarget;
 
+	TextureDesc emissiveDesc;
+	emissiveDesc.width	= w;
+	emissiveDesc.height = h;
+	emissiveDesc.format = TextureFormat::RGBA8;
+	emissiveDesc.usage	= TextureUsage::RenderTarget;
+
 	m_gbufferSimple.albedo	 = m_device->CreateTexture(albedoDesc);
 	m_gbufferSimple.normal	 = m_device->CreateTexture(normalDesc);
 	m_gbufferSimple.material = m_device->CreateTexture(materialDesc);
+	m_gbufferSimple.emissive = m_device->CreateTexture(emissiveDesc);
 
 	LOG_DEBUG("Renderer: G-buffer textures ready");
 }
 
-void Renderer::DrawMeshesUnlit(CommandList& cmd)
+void Renderer::InitShadowPass()
 {
-	Mat4 viewProj		= {};
-	Vec3 cameraPosition = {};
-	bool hasCamera		= false;
-
-	if (m_world)
+	if (!m_directionalShadowPSO)
 	{
-		m_world->Each<TransformComponent, CameraComponent>(
-			[&](Entity entity, TransformComponent& transform, CameraComponent& camera)
-			{
-				if (camera.isActive)
-				{
-					viewProj	   = camera.viewProj;
-					cameraPosition = transform.position;
-					hasCamera	   = true;
-				}
-			});
+		InitShadowPSO();
 	}
 
-	if (!m_meshPSO)
+	if (!m_shadowTextures.IsInitialized())
 	{
-		CreateMeshPipeline();
+		InitShadowTextures();
 	}
+}
 
-	if (m_world && m_resourceManager && m_meshPSO && hasCamera)
-	{
-		cmd.SetPipelineState(m_meshPSO.get());
-		cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
+void Renderer::InitShadowPSO()
+{
+	ShaderDesc vsDesc;
+	vsDesc.type			  = ShaderType::Vertex;
+	vsDesc.entryPoint	  = "VSMain";
+	vsDesc.filePath		  = "Shaders/DirectionalShadow.hlsl";
+	m_directionalShadowVS = m_device->CreateShader(vsDesc);
 
-		m_world->Each<TransformComponent, MeshComponent>(
-			[&cmd, &viewProj, this](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
-			{
-				if (!(meshComp.renderFlags & RenderFlags_Visible))
-				{
-					return;
-				}
+	PipelineDesc desc;
+	desc.vertexShader = m_directionalShadowVS.get();
+	desc.pixelShader  = nullptr;
+	desc.inputLayout  = {
+		 { "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
+		 { "NORMAL", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
+		 { "TANGENT", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
+		 { "TEXCOORD", 0, TextureFormat::RG32F, 0, InputElement::AppendAligned },
+		 { "TEXCOORD", 1, TextureFormat::RG32F, 0, InputElement::AppendAligned },
+		 { "COLOR", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
+	};
+	desc.renderTargetFormats  = {};
+	desc.depthFormat		  = TextureFormat::Depth32F;
+	desc.topology			  = PrimitiveTopology::TriangleList;
+	desc.enableDepthTest	  = true;
+	desc.enableDepthWrite	  = true;
+	desc.enableStencilTest	  = false;
+	desc.enableBlending		  = false;
+	desc.rasterState.cullMode = RasterizerState::CullMode::None;
+	desc.rasterState.fillMode = RasterizerState::FillMode::Solid;
+	desc.bindings			  = {
+		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — Shadow Constants
+	};
 
-				if (meshComp.path[0] == '\0')
-				{
-					return; // No path set
-				}
+	m_directionalShadowPSO = m_device->CreatePipelineState(desc);
 
-				MeshResource* resource = nullptr;
-				if (meshComp.IsHandleValid())
-				{
-					resource = m_resourceManager->GetMeshResourceByHandle(meshComp.meshHandle);
-				}
-				else
-				{
-					resource = m_resourceManager->GetMeshResource(meshComp.path);
-					if (resource)
-					{
-						meshComp.meshHandle = resource->handle;
-					}
-				}
+	LOG_DEBUG("Renderer: deferred lighting PSO ready");
+}
 
-				if (!resource || resource->state != AssetState::Ready)
-				{
-					return; // Still loading or uploading — skip this frame
-				}
+void Renderer::InitShadowTextures()
+{
+	TextureDesc directionalShadowDesc;
+	directionalShadowDesc.width	 = m_shadowResolution;
+	directionalShadowDesc.height = m_shadowResolution;
+	directionalShadowDesc.format = TextureFormat::Depth32F;
+	directionalShadowDesc.usage	 = TextureUsage::DepthStencilSampled;
 
-				// Build model matrix from TransformComponent (scale → rotate → translate).
-				PerDrawConstants constants;
-				constants.viewProj = viewProj;
-				{
-					using namespace DirectX;
-					SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
-					SimdMat R = XMMatrixRotationQuaternion(XMLoadFloat4(&transform.rotation));
-					SimdMat T = XMMatrixTranslation(transform.position.x, transform.position.y, transform.position.z);
-					SimdMat M = XMMatrixMultiply(XMMatrixMultiply(S, R), T);
-					XMStoreFloat4x4(&constants.model, M);
-					XMStoreFloat4x4(&constants.modelInvTranspose, XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
-				}
+	TextureDesc spotShadowMap;
+	spotShadowMap.width	 = m_shadowResolution;
+	spotShadowMap.height = m_shadowResolution;
+	spotShadowMap.format = TextureFormat::Depth32F;
+	spotShadowMap.usage	 = TextureUsage::DepthStencilSampled;
 
-				UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(PerDrawConstants), 256);
-				cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
-
-				cmd.SetVertexBuffer(resource->vertexBuffer.get());
-				cmd.SetIndexBuffer(resource->indexBuffer.get());
-
-				Vector<Texture*> matTextures(TextureSlot::TextureSlotCount, nullptr);
-
-				for (const Submesh& submesh : resource->mesh->submeshes)
-				{
-					if (submesh.materialIndex >= 0)
-					{
-						const Material& mat		   = resource->mesh->materials[submesh.materialIndex];
-						const Vector<u32>& handles = resource->textureHandles;
-
-						auto tryFillSlot = [&](int32 texIdx, u32 slot)
-						{
-							matTextures[slot] = nullptr;
-							if (texIdx >= 0 && texIdx < static_cast<int32>(handles.size()))
-							{
-								TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(handles[texIdx]);
-								if (tex)
-								{
-									matTextures[slot] = tex->gpuTexture.get();
-								}
-							}
-						};
-
-						for (int32 slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
-						{
-							tryFillSlot(mat.TextureIndices[slot], slot);
-						}
-
-						cmd.SetShaderResources(1, matTextures);
-					}
-
-					cmd.DrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, 0);
-				}
-			});
-	}
+	m_shadowTextures.directionalShadowMap = m_device->CreateTexture(directionalShadowDesc);
+	m_shadowTextures.spotShadowMap		  = m_device->CreateTexture(spotShadowMap);
 }

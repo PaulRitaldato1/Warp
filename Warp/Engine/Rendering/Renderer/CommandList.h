@@ -47,16 +47,16 @@ public:
 	// ---------------------------------------------------------------------------
 
 	// Bind up to 8 render-target views and an optional depth/stencil view.
-	// Pass an invalid DescriptorHandle for dsv to render without depth.
+	// Pass nullptr for dsv to render without depth.
 	virtual void SetRenderTargets(u32 rtvCount, const DescriptorHandle* rtvs,
-	                              DescriptorHandle dsv) = 0;
+	                              Texture* dsv) = 0;
 
 	// Fill a render target with a solid colour.
 	virtual void ClearRenderTarget(DescriptorHandle rtv,
 	                               f32 r, f32 g, f32 b, f32 a) = 0;
 
 	// Clear depth and/or stencil to the given values.
-	virtual void ClearDepthStencil(DescriptorHandle dsv,
+	virtual void ClearDepthStencil(Texture* dsv,
 	                               f32 depth = 1.f, u8 stencil = 0) = 0;
 
 	// ---------------------------------------------------------------------------
