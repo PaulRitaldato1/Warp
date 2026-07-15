@@ -97,6 +97,11 @@ public:
 	// Use for StructuredBuffer<T> in HLSL.
 	virtual void SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 offset) = 0;
 
+	// Bind an instance buffer (structured data) as an SRV at rootIndex.
+	// Used for per-instance data (transforms, colors, etc.) read in the vertex shader.
+	// D3D12: SetGraphicsRootShaderResourceView.  Vulkan: push descriptor SSBO bind.
+	virtual void SetInstanceBuffer(u32 rootIndex, Buffer* buffer) = 0;
+
 	// ---------------------------------------------------------------------------
 	// Copy / transfer
 	// ---------------------------------------------------------------------------

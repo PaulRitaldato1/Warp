@@ -70,9 +70,7 @@ private:
 	SwapChainFormat m_format       = SwapChainFormat::BGRA8;
 	bool            m_vsync        = false;
 
-	// Window handles — stored for resize
-	void* m_nativeWindow  = nullptr;  // X11 Window (uintptr_t)
-	void* m_nativeDisplay = nullptr;  // X11 Display*
+	void* m_nativeWindow = nullptr; // GLFWwindow* — stored for resize
 };
 
 #endif // WARP_BUILD_VK

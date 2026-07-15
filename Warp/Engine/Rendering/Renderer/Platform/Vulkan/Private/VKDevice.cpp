@@ -13,6 +13,10 @@
 #include <Debugging/Logging.h>
 #include <vector>
 #include <cstring>
+#ifdef WARP_LINUX
+#   define GLFW_INCLUDE_NONE
+#   include <GLFW/glfw3.h>
+#endif
 
 // ---------------------------------------------------------------------------
 // Debug messenger callback
@@ -89,12 +93,18 @@ void VKDevice::Initialize(const DeviceDesc& desc)
 	appInfo.engineVersion	   = VK_MAKE_VERSION(1, 0, 0);
 	appInfo.apiVersion		   = VK_API_VERSION_1_3;
 
-	std::vector<const char*> instExtensions = {
-		VK_KHR_SURFACE_EXTENSION_NAME,
+	std::vector<const char*> instExtensions;
 #ifdef WARP_LINUX
-		VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
+	{
+		// GLFW returns VK_KHR_surface + the platform surface extension (X11 or Wayland)
+		// based on the active session — avoids hardcoding either.
+		u32 glfwExtCount        = 0;
+		const char** glfwExts   = glfwGetRequiredInstanceExtensions(&glfwExtCount);
+		instExtensions.assign(glfwExts, glfwExts + glfwExtCount);
+	}
+#else
+	instExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 #endif
-	};
 
 	std::vector<const char*> layers;
 

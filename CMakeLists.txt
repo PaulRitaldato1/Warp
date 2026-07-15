@@ -86,7 +86,19 @@ FetchContent_Declare(
     SOURCE_SUBDIR  "_none"
 )
 
-FetchContent_MakeAvailable(DirectXMath fastgltf VulkanMemoryAllocator tinyddsloader stb imgui)
+set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL        OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG        3.4
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(DirectXMath fastgltf VulkanMemoryAllocator tinyddsloader stb imgui glfw)
 
 # DirectXMath includes sal.h which is a Windows-only SAL annotation header.
 # Provide a no-op stub for non-Windows builds. configure_file runs on every
@@ -155,6 +167,11 @@ if(WIN32)
         ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp
     )
+elseif(UNIX AND NOT APPLE)
+    list(APPEND IMGUI_SRCS
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+    )
 endif()
 
 #TODO
@@ -197,7 +214,7 @@ if(WIN32)
 #Linux
 elseif(UNIX AND NOT APPLE)
     find_package(Vulkan REQUIRED)
-    target_link_libraries(WarpEngine PRIVATE X11 Vulkan::Vulkan shaderc_shared)
+    target_link_libraries(WarpEngine PRIVATE glfw Vulkan::Vulkan shaderc_shared)
     target_link_libraries(Warp PUBLIC WarpEngine)
 
 #Apple

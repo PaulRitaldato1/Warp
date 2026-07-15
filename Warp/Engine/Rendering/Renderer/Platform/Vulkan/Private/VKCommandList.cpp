@@ -637,6 +637,31 @@ void VKCommandList::SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 o
 	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, 1, &write);
 }
 
+void VKCommandList::SetInstanceBuffer(u32 rootIndex, Buffer* buffer)
+{
+	DYNAMIC_ASSERT(m_pushDescriptorFn, "VKCommandList::SetInstanceBuffer: push descriptors not available");
+	DYNAMIC_ASSERT(buffer, "VKCommandList::SetInstanceBuffer: buffer is null");
+	DYNAMIC_ASSERT(m_currentLayout != VK_NULL_HANDLE, "VKCommandList::SetInstanceBuffer: no pipeline bound");
+	DYNAMIC_ASSERT(m_currentBindingMap && rootIndex < m_currentBindingMap->size(),
+		"VKCommandList::SetInstanceBuffer: rootIndex out of range");
+
+	VKBuffer* vkBuf = static_cast<VKBuffer*>(buffer);
+
+	VkDescriptorBufferInfo bufInfo = {};
+	bufInfo.buffer = vkBuf->GetNativeBuffer();
+	bufInfo.offset = 0;
+	bufInfo.range  = VK_WHOLE_SIZE;
+
+	VkWriteDescriptorSet write = {};
+	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstBinding      = (*m_currentBindingMap)[rootIndex];
+	write.descriptorCount = 1;
+	write.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	write.pBufferInfo     = &bufInfo;
+
+	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, 1, &write);
+}
+
 // ---------------------------------------------------------------------------
 // Draw / dispatch
 // ---------------------------------------------------------------------------

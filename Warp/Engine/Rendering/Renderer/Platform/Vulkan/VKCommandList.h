@@ -95,6 +95,7 @@ public:
 	void SetShaderResource(u32 rootIndex, Texture* texture)                  override;
 	void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures) override;
 	void SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 offset)  override;
+	void SetInstanceBuffer(u32 rootIndex, Buffer* buffer)                     override;
 
 	// ---------------------------------------------------------------------------
 	// Draw / dispatch
@@ -118,7 +119,7 @@ private:
 
 	// Push descriptor support
 	PFN_vkCmdPushDescriptorSetKHR m_pushDescriptorFn = nullptr;
-	VkSampler                     m_defaultSampler    = VK_NULL_HANDLE;
+	VkSampler m_defaultSampler = VK_NULL_HANDLE;
 
 	// Current render-pass state (dynamic rendering)
 	static constexpr u32 k_maxRTVs = 8;

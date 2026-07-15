@@ -7,6 +7,7 @@ enum class BufferType
 	Vertex,
 	Index,
 	Constant,
+	Instance,
 };
 
 struct BufferDesc

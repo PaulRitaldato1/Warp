@@ -72,7 +72,7 @@ void D3D12SwapChain::InitializeWithFactory(ID3D12Device* device, IDXGIFactory4* 
 	swapChainDesc.Scaling				= DXGI_SCALING_STRETCH;
 	swapChainDesc.SwapEffect			= DXGI_SWAP_EFFECT_FLIP_DISCARD;
 	swapChainDesc.AlphaMode				= DXGI_ALPHA_MODE_UNSPECIFIED;
-	swapChainDesc.Flags					= 0;
+	swapChainDesc.Flags					= desc.bUseVsync ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 
 	ComRef<IDXGISwapChain1> swapChain1;
 	ThrowIfFailed(factory->CreateSwapChainForHwnd(queue, hwnd, &swapChainDesc, nullptr, nullptr, &swapChain1));
@@ -104,8 +104,9 @@ void D3D12SwapChain::Initialize(const SwapChainDesc& /*desc*/)
 void D3D12SwapChain::Present()
 {
 	DYNAMIC_ASSERT(m_swapChain, "D3D12SwapChain::Present: swap chain not initialized");
-	UINT syncInterval = m_vsync ? 1 : 0;
-	HRESULT hr		  = m_swapChain->Present(syncInterval, 0);
+	UINT syncInterval  = m_vsync ? 1 : 0;
+	UINT presentFlags  = m_vsync ? 0 : DXGI_PRESENT_ALLOW_TEARING;
+	HRESULT hr		   = m_swapChain->Present(syncInterval, presentFlags);
 
 	if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
 	{
@@ -133,7 +134,8 @@ void D3D12SwapChain::Resize(u32 width, u32 height)
 		buf.Reset();
 	}
 
-	ThrowIfFailed(m_swapChain->ResizeBuffers(m_bufferCount, width, height, m_format, 0));
+	UINT flags = m_vsync ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+	ThrowIfFailed(m_swapChain->ResizeBuffers(m_bufferCount, width, height, m_format, flags));
 
 	m_width	 = width;
 	m_height = height;

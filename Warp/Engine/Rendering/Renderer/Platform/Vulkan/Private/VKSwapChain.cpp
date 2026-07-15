@@ -1,5 +1,9 @@
 #include <string>
 #include <vulkan/vulkan_core.h>
+#ifdef WARP_LINUX
+#   define GLFW_INCLUDE_NONE
+#   include <GLFW/glfw3.h>
+#endif
 #ifdef WARP_BUILD_VK
 
 #include <Rendering/Renderer/Platform/Vulkan/VKSwapChain.h>
@@ -40,24 +44,16 @@ void VKSwapChain::Initialize(const SwapChainDesc& desc)
 	m_height		= desc.Height;
 	m_format		= desc.Format;
 	m_vsync			= desc.bUseVsync;
-	m_nativeWindow	= desc.Window->GetNativeHandle();
-	m_nativeDisplay = desc.Window->GetNativeDisplay();
+	m_nativeWindow = desc.Window->GetNativeHandle();
 
 	// -------------------------------------------------------------------------
 	// Create platform surface
 	// -------------------------------------------------------------------------
 
 #ifdef WARP_LINUX
-	DYNAMIC_ASSERT(m_nativeDisplay, "VKSwapChain: X11 Display* is null");
-	DYNAMIC_ASSERT(m_nativeWindow, "VKSwapChain: X11 Window handle is null");
-
-	VkXlibSurfaceCreateInfoKHR surfaceInfo = {};
-	surfaceInfo.sType					   = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-	surfaceInfo.dpy						   = static_cast<Display*>(m_nativeDisplay);
-	surfaceInfo.window					   = static_cast<::Window>(reinterpret_cast<uintptr_t>(m_nativeWindow));
-
-	VK_CHECK(vkCreateXlibSurfaceKHR(m_instance, &surfaceInfo, nullptr, &m_surface),
-			 "VKSwapChain: vkCreateXlibSurfaceKHR failed");
+	DYNAMIC_ASSERT(m_nativeWindow, "VKSwapChain: window handle is null");
+	VK_CHECK(glfwCreateWindowSurface(m_instance, static_cast<GLFWwindow*>(m_nativeWindow), nullptr, &m_surface),
+			 "VKSwapChain: glfwCreateWindowSurface failed");
 #else
 	FATAL_ASSERT(false, "VKSwapChain: surface creation not implemented on this platform");
 #endif
@@ -111,10 +107,14 @@ void VKSwapChain::CreateSwapChain(const SwapChainDesc& desc)
 	{
 		for (VkPresentModeKHR pm : presentModes)
 		{
-			if (pm == VK_PRESENT_MODE_MAILBOX_KHR)
+			if (pm == VK_PRESENT_MODE_IMMEDIATE_KHR)
 			{
 				presentMode = pm;
 				break;
+			}
+			if (pm == VK_PRESENT_MODE_MAILBOX_KHR)
+			{
+				presentMode = pm;
 			}
 		}
 	}

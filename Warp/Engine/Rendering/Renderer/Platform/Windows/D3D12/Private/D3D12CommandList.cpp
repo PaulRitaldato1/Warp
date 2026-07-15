@@ -254,6 +254,13 @@ void D3D12CommandList::SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u6
 	m_list->SetGraphicsRootShaderResourceView(rootIndex, address);
 }
 
+void D3D12CommandList::SetInstanceBuffer(u32 rootIndex, Buffer* buffer)
+{
+	DYNAMIC_ASSERT(buffer, "D3D12CommandList::SetInstanceBuffer: buffer is null");
+	D3D12_GPU_VIRTUAL_ADDRESS address = static_cast<D3D12Buffer*>(buffer)->GetGPUAddress();
+	m_list->SetGraphicsRootShaderResourceView(rootIndex, address);
+}
+
 // ---------------------------------------------------------------------------
 // Copy / transfer
 // ---------------------------------------------------------------------------

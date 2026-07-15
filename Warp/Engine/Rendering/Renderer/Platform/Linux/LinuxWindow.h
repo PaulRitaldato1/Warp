@@ -4,7 +4,8 @@
 
 #ifdef WARP_LINUX
 
-#include <X11/Xlib.h>
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 
 class LinuxWindow : public IWindow
 {
@@ -23,17 +24,24 @@ public:
 	virtual void Destroy() final;
 	virtual bool PumpMessages() final;
 
-	void* GetNativeHandle()  const override { return (void*)(uintptr_t)m_window; }
-	void* GetNativeDisplay() const override { return (void*)m_display; }
+	void* GetNativeHandle() const override { return (void*)m_glfwWindow; }
 
-	void CaptureMouse() override;
-	void ReleaseMouse() override;
+	void CaptureMouse()       override;
+	void ReleaseMouse()       override;
+	void ToggleMouseCapture() override;
+	bool IsMouseCaptured()    const override;
 
 private:
-	Display* m_display          = nullptr;
-	::Window  m_window          = 0;
-	Atom      m_wmDeleteMessage = 0;
-	Cursor    m_invisibleCursor = 0;
+	static void KeyCallback(GLFWwindow* win, int key, int scancode, int action, int mods);
+	static void MouseButtonCallback(GLFWwindow* win, int button, int action, int mods);
+	static void CursorPosCallback(GLFWwindow* win, double xpos, double ypos);
+	static void WindowSizeCallback(GLFWwindow* win, int width, int height);
+	static void WindowCloseCallback(GLFWwindow* win);
+
+	GLFWwindow* m_glfwWindow = nullptr;
+	double      m_lastMouseX = 0.0;
+	double      m_lastMouseY = 0.0;
+	bool        m_firstMouse = true;
 };
 
 #endif

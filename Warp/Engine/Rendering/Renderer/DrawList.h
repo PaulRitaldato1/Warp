@@ -55,6 +55,10 @@ struct DrawItem
 	u32 indexOffset	 = 0;
 	u32 vertexOffset = 0;
 
+	// Batching keys
+	u32 meshHandle = 0;
+	u32 materialHandle = 0;
+
 	// Material
 	Vec3 emissiveFactor						   = { 0.f, 0.f, 0.f };
 	Array<Texture*, TextureSlotCount> textures = {};
@@ -81,4 +85,33 @@ struct DrawList
 		litMeshes.clear();
 		unlitMeshes.clear();
 	}
+};
+
+struct BatchKey
+{
+	u32 meshHandle;
+	u32 materialHandle;
+
+	bool operator==(const BatchKey& other) const
+	{
+		return meshHandle == other.meshHandle && materialHandle == other.materialHandle;
+	}
+};
+
+// Linear hash combining two u32 values.
+static inline u32 batchKeyHash(const BatchKey& key)
+{
+	u32 h = key.meshHandle;
+	h ^= key.materialHandle + 0x9e3779b9 + (h << 6) + (h >> 2);
+	return h;
+}
+
+struct DrawBatch
+{
+	BatchKey             key;
+	u32                  indexCount     = 0;
+	u32                  indexOffset    = 0;
+	u32                  vertexOffset   = 0;
+	u32                  instanceCount  = 0;
+	Vector<u32>          itemIndices;
 };
