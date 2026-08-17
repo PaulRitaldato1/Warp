@@ -17,10 +17,6 @@ struct MeshResource
 	URef<Buffer> vertexBuffer;
 	URef<Buffer> indexBuffer;
 
-	// Frame counter for tracking upload completion.
-	// After k_framesInFlight frames in Uploading state, transitions to Ready.
-	u32 uploadFrameCounter = 0;
-
 	// Texture handles — one per Mesh::texturePaths entry, resolved at mesh load time.
 	// Index matches the texture indices stored in each Material.
 	Vector<u32> textureHandles;

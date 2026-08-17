@@ -33,13 +33,29 @@ public:
 
 	~ThreadPool()
 	{
-		m_shutdown.store(true, std::memory_order_relaxed);
+		{
+			std::scoped_lock<std::mutex> lock(m_jobMutex);
+			m_shutdown.store(true, std::memory_order_relaxed);
+		}
 		m_notifier.notify_all();
 
 		for (std::thread& th : m_threads)
 		{
 			th.join();
 		}
+	}
+
+	using Job = std::function<void()>;
+
+	// Enqueue a job with no result. Skips the packaged_task and shared state that
+	// enqueue() allocates, which matters for coroutine resumes.
+	void Post(Job job)
+	{
+		{
+			std::scoped_lock<std::mutex> lock(m_jobMutex);
+			m_jobQueue.push(std::move(job));
+		}
+		m_notifier.notify_one();
 	}
 
 	//add any arg # function to queue
@@ -78,7 +94,6 @@ public:
 
 private:
 
-	using Job = std::function<void()>;
 	std::vector<std::thread> m_threads;
 	std::queue<Job> m_jobQueue;
 	std::condition_variable m_notifier;
@@ -100,9 +115,15 @@ private:
 							std::unique_lock<std::mutex> lock(m_jobMutex);
 							m_notifier.wait(lock, [this] { return !m_jobQueue.empty() || m_shutdown.load(std::memory_order_relaxed); });
 
-							if (m_shutdown.load(std::memory_order_relaxed))
+							// Drain the queue before exiting. Dropping a queued job leaks
+							// the coroutine frame whose resume it was carrying.
+							if (m_jobQueue.empty())
 							{
-								break;
+								if (m_shutdown.load(std::memory_order_relaxed))
+								{
+									break;
+								}
+								continue;
 							}
 
 							job = std::move(m_jobQueue.front());

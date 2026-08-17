@@ -7,8 +7,10 @@
 #include <Rendering/Resource/TextureResource.h>
 #include <Rendering/Renderer/Buffer.h>
 #include <Rendering/Renderer/TextureUpload.h>
+#include <Threading/Executor.h>
+#include <Threading/Task.h>
 
-#include <future>
+#include <atomic>
 
 class Device;
 class ThreadPool;
@@ -23,9 +25,13 @@ public:
 	void Initialize(Device* device, ThreadPool* threadPool);
 	void Shutdown();
 
-	// Called by Renderer each frame to advance upload state machines.
-	// Checks async load futures, creates GPU buffers, calls UploadData().
-	void ProcessPendingUploads();
+	// Called by Renderer each frame. Resumes load tasks waiting on the GPU thread,
+	// and releases those whose upload copy has retired.
+	void ProcessPendingUploads(u64 completedCopyValue);
+
+	// Called by Renderer after submitting the frame's copy list, so uploads queued
+	// this frame can be tied to the fence value that covers them.
+	void OnCopySubmitted(u64 fenceValue);
 
 	// Drains completed staging uploads for the Renderer to queue.
 	// Renderer calls this in BeginFrame and passes each to QueueStagingUpload().
@@ -77,16 +83,23 @@ private:
 	void BeginMeshLoad(const String& path);
 	u32  BeginTextureLoad(const String& path);
 
+	// The whole load pipeline for one asset, start to Ready. Each co_await moves
+	// execution to the thread that step needs.
+	DetachedTask LoadMeshTask(String path);
+	DetachedTask LoadTextureTask(String path);
+
+	// Marks a resource Ready once its already-queued upload has had time to land.
+	// Used by the procedural and builtin paths, which skip the load step.
+	DetachedTask MarkMeshReadyTask(String path);
+	DetachedTask MarkTextureReadyTask(String path);
+
 	// Transition Loading -> Uploading: create GPU buffers, call UploadData().
-	void FinalizeMeshUpload(const String& path, MeshResource& resource);
-	void FinalizeTextureUpload(const String& path, TextureResource& resource);
+	// Return false if nothing was queued, in which case there is no copy to wait on.
+	bool FinalizeMeshUpload(const String& path, MeshResource& resource);
+	bool FinalizeTextureUpload(const String& path, TextureResource& resource);
 
 	Device*     m_device     = nullptr;
 	ThreadPool* m_threadPool = nullptr;
-
-	// How many frames to wait after uploading before marking Ready.
-	// Must match Renderer::k_framesInFlight so deferred copies complete.
-	static constexpr u32 k_uploadWaitFrames = 3;
 
 	// Cache: path -> resource. Entries persist for the lifetime of the manager.
 	HashMap<String, URef<MeshResource>>    m_meshCache;
@@ -105,9 +118,15 @@ private:
 	// Flat normal map default: (128, 128, 255) = tangent-space (0, 0, 1).
 	u32 m_defaultNormalTextureHandle = ~0u;
 
-	// Pending async loads tracked via futures.
-	HashMap<String, std::future<MeshLoadResult>>    m_pendingMeshLoads;
-	HashMap<String, std::future<TextureLoadResult>> m_pendingTextureLoads;
+	// Coroutine scheduling. m_poolExecutor runs blocking file work, m_gpuExecutor
+	// runs anything touching Device, m_uploadFence gates on the copy retiring.
+	URef<ThreadPoolExecutor> m_poolExecutor;
+	SerialExecutor           m_gpuExecutor;
+	UploadFenceScheduler     m_uploadFence;
+
+	// Load tasks are detached, so liveness is tracked separately for shutdown.
+	std::atomic<u32>  m_inFlightLoads{ 0 };
+	std::atomic<bool> m_shuttingDown{ false };
 
 	// Staging uploads ready for Renderer to pick up.
 	Vector<PendingStagingUpload>  m_readyStagingUploads;

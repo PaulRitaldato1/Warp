@@ -241,7 +241,7 @@ void Renderer::BeginFrame()
 	// Process ResourceManager: check async loads, create GPU buffers, drain uploads.
 	if (m_resourceManager)
 	{
-		m_resourceManager->ProcessPendingUploads();
+		m_resourceManager->ProcessPendingUploads(m_copyQueue->GetCompletedValue());
 
 		for (PendingStagingUpload& upload : m_resourceManager->DrainStagingUploads())
 		{
@@ -367,6 +367,12 @@ void Renderer::EndFrame()
 		}
 
 		lastCopyFenceValue = deferredFenceValue;
+
+		// Ties load tasks parked this frame to the fence value covering their copy.
+		if (m_resourceManager)
+		{
+			m_resourceManager->OnCopySubmitted(deferredFenceValue);
+		}
 	}
 
 	m_deferredUploads.clear();

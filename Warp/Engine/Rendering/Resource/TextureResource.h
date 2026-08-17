@@ -19,7 +19,4 @@ struct TextureResource
 
 	// SRV handle for shader binding.
 	DescriptorHandle descriptor;
-
-	// Frame counter for tracking upload completion.
-	u32 uploadFrameCounter = 0;
 };

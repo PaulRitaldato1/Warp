@@ -11,6 +11,7 @@
 #include <Debugging/Logging.h>
 #include <Debugging/Assert.h>
 #include <cstring>
+#include <thread>
 
 void ResourceManager::Initialize(Device* device, ThreadPool* threadPool)
 {
@@ -19,6 +20,8 @@ void ResourceManager::Initialize(Device* device, ThreadPool* threadPool)
 
 	m_device	 = device;
 	m_threadPool = threadPool;
+
+	m_poolExecutor = std::make_unique<ThreadPoolExecutor>(*threadPool);
 
 	CreateDefaultTexture();
 	CreateDefaultMaterialTexture();
@@ -73,6 +76,8 @@ void ResourceManager::CreateDefaultTexture()
 	TextureResource* rawPtr = resource.get();
 	m_textureByHandle.push_back(rawPtr);
 	m_textureCache["builtin://checkerboard"] = std::move(resource);
+
+	MarkTextureReadyTask("builtin://checkerboard");
 }
 
 void ResourceManager::CreateDefaultMaterialTexture()
@@ -113,6 +118,8 @@ void ResourceManager::CreateDefaultMaterialTexture()
 	TextureResource* rawPtr = resource.get();
 	m_textureByHandle.push_back(rawPtr);
 	m_textureCache["builtin://default_material"] = std::move(resource);
+
+	MarkTextureReadyTask("builtin://default_material");
 }
 
 void ResourceManager::CreateDefaultNormalTexture()
@@ -152,28 +159,23 @@ void ResourceManager::CreateDefaultNormalTexture()
 	TextureResource* rawPtr = resource.get();
 	m_textureByHandle.push_back(rawPtr);
 	m_textureCache["builtin://default_normal"] = std::move(resource);
+
+	MarkTextureReadyTask("builtin://default_normal");
 }
 
 void ResourceManager::Shutdown()
 {
-	// Wait for all pending loads to finish before clearing caches.
-	for (auto& [path, future] : m_pendingMeshLoads)
+	m_shuttingDown.store(true, std::memory_order_release);
+
+	// In-flight tasks unwind at their next resume point. Pool-side steps finish on
+	// their own; GPU-side and frame-wait continuations only run when pumped here.
+	while (m_inFlightLoads.load(std::memory_order_acquire) > 0)
 	{
-		if (future.valid())
-		{
-			future.wait();
-		}
-	}
-	for (auto& [path, future] : m_pendingTextureLoads)
-	{
-		if (future.valid())
-		{
-			future.wait();
-		}
+		m_gpuExecutor.Drain();
+		m_uploadFence.ReleaseAll();
+		std::this_thread::yield();
 	}
 
-	m_pendingMeshLoads.clear();
-	m_pendingTextureLoads.clear();
 	m_meshCache.clear();
 	m_textureCache.clear();
 	m_readyStagingUploads.clear();
@@ -181,91 +183,133 @@ void ResourceManager::Shutdown()
 	LOG_DEBUG("ResourceManager shut down");
 }
 
-void ResourceManager::ProcessPendingUploads()
+void ResourceManager::ProcessPendingUploads(u64 completedCopyValue)
 {
-	// Check mesh load futures — transition Loading -> Uploading.
-	Vector<String> completedMeshLoads;
-	for (auto& [path, future] : m_pendingMeshLoads)
+	// Everything that was a polling loop now lives inside the load coroutines.
+	// This just gives them somewhere to resume.
+	m_gpuExecutor.Drain();
+	m_uploadFence.Poll(completedCopyValue);
+}
+
+void ResourceManager::OnCopySubmitted(u64 fenceValue)
+{
+	m_uploadFence.OnSubmitted(fenceValue);
+}
+
+// ---------------------------------------------------------------------------
+// Load tasks
+// ---------------------------------------------------------------------------
+
+DetachedTask ResourceManager::LoadMeshTask(String path)
+{
+	m_inFlightLoads.fetch_add(1, std::memory_order_acq_rel);
+
+	co_await ResumeOn{ *m_poolExecutor };
+	MeshLoadResult result = MeshLoader::Load(path);
+
+	// Device calls are not thread safe, so everything below runs on the owning thread.
+	co_await ResumeOn{ m_gpuExecutor };
+
+	if (!m_shuttingDown.load(std::memory_order_acquire))
 	{
-		if (future.valid() && future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+		if (result)
 		{
-			MeshLoadResult result = future.get();
-			if (result)
+			MeshResource& resource = *m_meshCache[path];
+			resource.mesh		   = std::move(*result);
+
+			if (FinalizeMeshUpload(path, resource))
 			{
-				MeshResource& resource = *m_meshCache[path];
-				resource.mesh		   = std::move(*result);
-				FinalizeMeshUpload(path, resource);
 				LOG_DEBUG("Mesh loaded and upload queued: {}", path);
+
+				co_await UploadComplete{ m_uploadFence };
+
+				if (!m_shuttingDown.load(std::memory_order_acquire))
+				{
+					resource.state = AssetState::Ready;
+					LOG_DEBUG("Mesh ready: {}", path);
+				}
 			}
-			else
-			{
-				const LoadError& error = result.error();
-				LOG_ERROR("Failed to load mesh '{}': [{}] {}", path, ToString(error.code), error.message);
-			}
-			completedMeshLoads.push_back(path);
+		}
+		else
+		{
+			const LoadError& error = result.error();
+			LOG_ERROR("Failed to load mesh '{}': [{}] {}", path, ToString(error.code), error.message);
 		}
 	}
 
-	for (const String& path : completedMeshLoads)
-	{
-		m_pendingMeshLoads.erase(path);
-	}
+	m_inFlightLoads.fetch_sub(1, std::memory_order_acq_rel);
+}
 
-	// Check texture load futures — transition Loading -> Uploading.
-	Vector<String> completedTextureLoads;
-	for (auto& [path, future] : m_pendingTextureLoads)
+DetachedTask ResourceManager::LoadTextureTask(String path)
+{
+	m_inFlightLoads.fetch_add(1, std::memory_order_acq_rel);
+
+	co_await ResumeOn{ *m_poolExecutor };
+	TextureLoadResult result = TextureLoader::Load(path);
+
+	co_await ResumeOn{ m_gpuExecutor };
+
+	if (!m_shuttingDown.load(std::memory_order_acquire))
 	{
-		if (future.valid() && future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+		if (result)
 		{
-			TextureLoadResult result = future.get();
-			if (result)
+			TextureResource& resource = *m_textureCache[path];
+			resource.textureData	  = std::move(*result);
+
+			if (FinalizeTextureUpload(path, resource))
 			{
-				TextureResource& resource = *m_textureCache[path];
-				resource.textureData	  = std::move(*result);
-				FinalizeTextureUpload(path, resource);
 				LOG_DEBUG("Texture loaded and upload queued: {}", path);
+
+				co_await UploadComplete{ m_uploadFence };
+
+				if (!m_shuttingDown.load(std::memory_order_acquire))
+				{
+					resource.state = AssetState::Ready;
+					m_pendingTextureBarriers.push_back(resource.gpuTexture.get());
+					LOG_DEBUG("Texture ready: {}", path);
+				}
 			}
-			else
-			{
-				const LoadError& error = result.error();
-				LOG_ERROR("Failed to load texture '{}': [{}] {}", path, ToString(error.code), error.message);
-			}
-			completedTextureLoads.push_back(path);
 		}
-	}
-
-	for (const String& path : completedTextureLoads)
-	{
-		m_pendingTextureLoads.erase(path);
-	}
-
-	// Advance upload frame counters — transition Uploading -> Ready.
-	for (auto& [path, resource] : m_meshCache)
-	{
-		if (resource->state == AssetState::Uploading)
+		else
 		{
-			resource->uploadFrameCounter++;
-			if (resource->uploadFrameCounter >= k_uploadWaitFrames)
-			{
-				resource->state = AssetState::Ready;
-				LOG_DEBUG("Mesh ready: {}", path);
-			}
+			const LoadError& error = result.error();
+			LOG_ERROR("Failed to load texture '{}': [{}] {}", path, ToString(error.code), error.message);
 		}
 	}
 
-	for (auto& [path, resource] : m_textureCache)
+	m_inFlightLoads.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+DetachedTask ResourceManager::MarkMeshReadyTask(String path)
+{
+	m_inFlightLoads.fetch_add(1, std::memory_order_acq_rel);
+
+	co_await UploadComplete{ m_uploadFence };
+
+	if (!m_shuttingDown.load(std::memory_order_acquire))
 	{
-		if (resource->state == AssetState::Uploading)
-		{
-			resource->uploadFrameCounter++;
-			if (resource->uploadFrameCounter >= k_uploadWaitFrames)
-			{
-				resource->state = AssetState::Ready;
-				m_pendingTextureBarriers.push_back(resource->gpuTexture.get());
-				LOG_DEBUG("Texture ready: {}", path);
-			}
-		}
+		m_meshCache[path]->state = AssetState::Ready;
+		LOG_DEBUG("Mesh ready: {}", path);
 	}
+
+	m_inFlightLoads.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+DetachedTask ResourceManager::MarkTextureReadyTask(String path)
+{
+	m_inFlightLoads.fetch_add(1, std::memory_order_acq_rel);
+
+	co_await UploadComplete{ m_uploadFence };
+
+	if (!m_shuttingDown.load(std::memory_order_acquire))
+	{
+		TextureResource& resource = *m_textureCache[path];
+		resource.state			  = AssetState::Ready;
+		m_pendingTextureBarriers.push_back(resource.gpuTexture.get());
+		LOG_DEBUG("Texture ready: {}", path);
+	}
+
+	m_inFlightLoads.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 Vector<PendingStagingUpload> ResourceManager::DrainStagingUploads()
@@ -304,11 +348,12 @@ u32 ResourceManager::RegisterMesh(const String& name, URef<Mesh> mesh)
 	FinalizeMeshUpload(name, *resource);
 
 	resource->state = AssetState::Uploading;
-	resource->uploadFrameCounter = 0;
 
 	MeshResource* rawPtr = resource.get();
 	m_meshByHandle.push_back(rawPtr);
 	m_meshCache[name] = std::move(resource);
+
+	MarkMeshReadyTask(name);
 
 	LOG_DEBUG("ResourceManager: registered mesh '{}'", name);
 	return handle;
@@ -398,7 +443,7 @@ void ResourceManager::BeginMeshLoad(const String& path)
 	m_meshByHandle.push_back(resource.get());
 	m_meshCache[path] = std::move(resource);
 
-	m_pendingMeshLoads[path] = MeshLoader::LoadAsync(path, *m_threadPool);
+	LoadMeshTask(path);
 }
 
 MeshResource* ResourceManager::GetMeshResourceByHandle(u32 handle)
@@ -439,13 +484,14 @@ u32 ResourceManager::BeginTextureLoad(const String& path)
 	m_textureByHandle.push_back(resource.get());
 	m_textureCache[path]		   = std::move(resource);
 
-	m_pendingTextureLoads[path] = TextureLoader::LoadAsync(path, *m_threadPool);
+	LoadTextureTask(path);
 	return handle;
 }
 
-void ResourceManager::FinalizeMeshUpload(const String& path, MeshResource& resource)
+bool ResourceManager::FinalizeMeshUpload(const String& path, MeshResource& resource)
 {
 	const Mesh& mesh = *resource.mesh;
+	bool        queuedAnything = false;
 
 	// Create vertex buffer.
 	BufferDesc vertexDesc;
@@ -469,6 +515,7 @@ void ResourceManager::FinalizeMeshUpload(const String& path, MeshResource& resou
 	if (vertexUpload.IsValid())
 	{
 		m_readyStagingUploads.push_back(std::move(vertexUpload));
+		queuedAnything = true;
 	}
 
 	// Upload index data.
@@ -477,6 +524,7 @@ void ResourceManager::FinalizeMeshUpload(const String& path, MeshResource& resou
 	if (indexUpload.IsValid())
 	{
 		m_readyStagingUploads.push_back(std::move(indexUpload));
+		queuedAnything = true;
 	}
 
 	// Kick off texture loads for all textures referenced by this mesh.
@@ -499,11 +547,11 @@ void ResourceManager::FinalizeMeshUpload(const String& path, MeshResource& resou
 		resource.textureHandles[i] = BeginTextureLoad(fullPath);
 	}
 
-	resource.state				= AssetState::Uploading;
-	resource.uploadFrameCounter = 0;
+	resource.state = AssetState::Uploading;
+	return queuedAnything;
 }
 
-void ResourceManager::FinalizeTextureUpload(const String& path, TextureResource& resource)
+bool ResourceManager::FinalizeTextureUpload(const String& path, TextureResource& resource)
 {
 	const TextureData& texData = *resource.textureData;
 
@@ -540,7 +588,7 @@ void ResourceManager::FinalizeTextureUpload(const String& path, TextureResource&
 	if (totalBytes == 0)
 	{
 		LOG_ERROR("ResourceManager: zero staging size for texture '{}'", path);
-		return;
+		return false;
 	}
 
 	// Allocate the one-shot staging buffer.
@@ -586,6 +634,6 @@ void ResourceManager::FinalizeTextureUpload(const String& path, TextureResource&
 
 	m_readyTextureUploads.push_back(std::move(textureUpload));
 
-	resource.state              = AssetState::Uploading;
-	resource.uploadFrameCounter = 0;
+	resource.state = AssetState::Uploading;
+	return true;
 }
