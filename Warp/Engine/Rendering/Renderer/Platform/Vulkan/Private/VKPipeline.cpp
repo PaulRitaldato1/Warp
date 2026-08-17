@@ -142,6 +142,13 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	}
 	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 
+	// Vulkan gates all three bias values behind depthBiasEnable.
+	const bool biasEnabled = desc.rasterState.depthBias != 0 || desc.rasterState.slopeScaledDepthBias != 0.f;
+	rasterizer.depthBiasEnable         = biasEnabled ? VK_TRUE : VK_FALSE;
+	rasterizer.depthBiasConstantFactor = static_cast<float>(desc.rasterState.depthBias);
+	rasterizer.depthBiasClamp          = desc.rasterState.depthBiasClamp;
+	rasterizer.depthBiasSlopeFactor    = desc.rasterState.slopeScaledDepthBias;
+
 	// -------------------------------------------------------------------------
 	// Multisampling — disabled
 	// -------------------------------------------------------------------------

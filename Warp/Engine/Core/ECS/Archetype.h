@@ -29,27 +29,29 @@ public:
 	// or k_nullEntity if the removed entity was the last one.
 	Entity RemoveEntity(u32 row);
 
-	// Typed access to a component column.
-	template <IsComponent T> T* GetColumn()
+	// Typed access to a component column, sized to the current row count.
+	// Empty span if this archetype has no column for T.
+	// Invalidated by AddEntity/RemoveEntity.
+	template <IsComponent T> Span<T> GetColumn()
 	{
 		u32 componentId = ComponentID<T>::Get();
 		auto it			= m_idToColumn.find(componentId);
 		if (it == m_idToColumn.end())
 		{
-			return nullptr;
+			return {};
 		}
-		return reinterpret_cast<T*>(m_columns[it->second].data());
+		return { reinterpret_cast<T*>(m_columns[it->second].data()), m_entities.size() };
 	}
 
-	template <IsComponent T> const T* GetColumn() const
+	template <IsComponent T> Span<const T> GetColumn() const
 	{
 		u32 componentId = ComponentID<T>::Get();
 		auto it			= m_idToColumn.find(componentId);
 		if (it == m_idToColumn.end())
 		{
-			return nullptr;
+			return {};
 		}
-		return reinterpret_cast<const T*>(m_columns[it->second].data());
+		return { reinterpret_cast<const T*>(m_columns[it->second].data()), m_entities.size() };
 	}
 
 	// Raw byte access by component ID (for type-erased archetype migration).

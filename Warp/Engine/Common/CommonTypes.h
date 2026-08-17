@@ -10,6 +10,8 @@
 #include <utility>
 #include <queue>
 #include <mutex>
+#include <span>
+#include <expected>
 
 #if defined(_WIN64)
 #include <wrl/client.h>
@@ -42,6 +44,12 @@ template <typename T, typename J> using Pair = std::pair<T, J>;
 template <typename T, size_t J> using Array = std::array<T, J>;
 
 template <typename T> using Vector = std::vector<T>;
+
+// Non-owning view over a contiguous run of T. Does not own or extend lifetimes.
+template <typename T> using Span = std::span<T>;
+
+// Either a T or an error E. For expected failures, not for bugs.
+template <typename T, typename E> using Expected = std::expected<T, E>;
 
 template <typename T> using Ref = std::shared_ptr<T>;
 

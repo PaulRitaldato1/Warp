@@ -189,17 +189,18 @@ void ResourceManager::ProcessPendingUploads()
 	{
 		if (future.valid() && future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
 		{
-			URef<Mesh> mesh = future.get();
-			if (mesh)
+			MeshLoadResult result = future.get();
+			if (result)
 			{
 				MeshResource& resource = *m_meshCache[path];
-				resource.mesh		   = std::move(mesh);
+				resource.mesh		   = std::move(*result);
 				FinalizeMeshUpload(path, resource);
 				LOG_DEBUG("Mesh loaded and upload queued: {}", path);
 			}
 			else
 			{
-				LOG_ERROR("Failed to load mesh: {}", path);
+				const LoadError& error = result.error();
+				LOG_ERROR("Failed to load mesh '{}': [{}] {}", path, ToString(error.code), error.message);
 			}
 			completedMeshLoads.push_back(path);
 		}
@@ -216,17 +217,18 @@ void ResourceManager::ProcessPendingUploads()
 	{
 		if (future.valid() && future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
 		{
-			URef<TextureData> textureData = future.get();
-			if (textureData)
+			TextureLoadResult result = future.get();
+			if (result)
 			{
 				TextureResource& resource = *m_textureCache[path];
-				resource.textureData	  = std::move(textureData);
+				resource.textureData	  = std::move(*result);
 				FinalizeTextureUpload(path, resource);
 				LOG_DEBUG("Texture loaded and upload queued: {}", path);
 			}
 			else
 			{
-				LOG_ERROR("Failed to load texture: {}", path);
+				const LoadError& error = result.error();
+				LOG_ERROR("Failed to load texture '{}': [{}] {}", path, ToString(error.code), error.message);
 			}
 			completedTextureLoads.push_back(path);
 		}

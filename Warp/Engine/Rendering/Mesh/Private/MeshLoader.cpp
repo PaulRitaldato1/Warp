@@ -223,7 +223,7 @@ static void ExtractPrimitive(const fastgltf::Asset& asset, const fastgltf::Primi
 // MeshLoader::Load
 // ---------------------------------------------------------------------------
 
-URef<Mesh> MeshLoader::Load(const String& path)
+MeshLoadResult MeshLoader::Load(const String& path)
 {
 	namespace fs = std::filesystem;
 
@@ -234,8 +234,7 @@ URef<Mesh> MeshLoader::Load(const String& path)
 	fastgltf::GltfDataBuffer dataBuffer;
 	if (!dataBuffer.loadFromFile(fsPath))
 	{
-		LOG_ERROR("MeshLoader: failed to read file: {}", path);
-		return nullptr;
+		return MakeLoadError(LoadErrorCode::FileNotFound, "could not open file");
 	}
 
 	constexpr auto options = fastgltf::Options::DecomposeNodeMatrices | fastgltf::Options::LoadExternalBuffers;
@@ -243,8 +242,8 @@ URef<Mesh> MeshLoader::Load(const String& path)
 	auto result = parser.loadGltf(&dataBuffer, fsPath.parent_path(), options);
 	if (result.error() != fastgltf::Error::None)
 	{
-		LOG_ERROR("MeshLoader: failed to parse glTF: {}", fastgltf::getErrorMessage(result.error()));
-		return nullptr;
+		return MakeLoadError(LoadErrorCode::ParseFailed,
+		                     String(fastgltf::getErrorMessage(result.error())));
 	}
 
 	fastgltf::Asset& asset = result.get();
@@ -279,14 +278,14 @@ URef<Mesh> MeshLoader::Load(const String& path)
 	return mesh;
 }
 
-std::future<URef<Mesh>> MeshLoader::LoadAsync(const String& path, ThreadPool& pool)
+std::future<MeshLoadResult> MeshLoader::LoadAsync(const String& path, ThreadPool& pool)
 {
 	return pool.enqueue(Load, path);
 }
 
-Vector<std::future<URef<Mesh>>> MeshLoader::LoadBatch(const Vector<String>& paths, ThreadPool& pool)
+Vector<std::future<MeshLoadResult>> MeshLoader::LoadBatch(const Vector<String>& paths, ThreadPool& pool)
 {
-	Vector<std::future<URef<Mesh>>> futures;
+	Vector<std::future<MeshLoadResult>> futures;
 	futures.reserve(paths.size());
 
 	for (const auto& path : paths)

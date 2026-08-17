@@ -438,7 +438,6 @@ void Renderer::DrawDeferred()
 		if (!hasCamera)
 		{
 			LOG_ERROR("Renderer::DrawDeferred: No valid Camera in the world");
-			return;
 		}
 	}
 
@@ -668,7 +667,7 @@ void Renderer::DrawDeferred()
 
 		XMVECTOR lightDir = XMVector3Normalize(XMLoadFloat3(&skyLight.direction));
 		XMVECTOR lightPos = XMVectorScale(XMVectorNegate(lightDir), 50.f);
-		XMVECTOR up       = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+		XMVECTOR up		  = XMVectorSet(0.f, 1.f, 0.f, 0.f);
 
 		// Avoid degenerate up vector when light points nearly straight up or down.
 		if (fabsf(XMVectorGetY(lightDir)) > 0.99f)
@@ -679,9 +678,9 @@ void Renderer::DrawDeferred()
 		XMMATRIX lightView = XMMatrixLookToLH(lightPos, lightDir, up);
 
 		float orthoHalfSize = 30.f;
-		float nearPlane     = 0.1f;
-		float farPlane      = 100.f;
-		XMMATRIX lightProj  = XMMatrixOrthographicLH(orthoHalfSize * 2.f, orthoHalfSize * 2.f, nearPlane, farPlane);
+		float nearPlane		= 0.1f;
+		float farPlane		= 100.f;
+		XMMATRIX lightProj	= XMMatrixOrthographicLH(orthoHalfSize * 2.f, orthoHalfSize * 2.f, nearPlane, farPlane);
 
 		XMStoreFloat4x4(&directionalLightViewProj, XMMatrixMultiply(lightView, lightProj));
 
@@ -691,7 +690,7 @@ void Renderer::DrawDeferred()
 
 			ShadowCB shadowConstants;
 			shadowConstants.lightViewProj = directionalLightViewProj;
-			shadowConstants.model         = item.model;
+			shadowConstants.model		  = item.model;
 
 			UploadResult upload = m_uploadBuffer->AllocAndCopy(&shadowConstants, sizeof(ShadowCB), 256);
 			cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
@@ -814,7 +813,7 @@ void Renderer::DrawDeferred()
 	}
 
 	lightConstants.lightViewProj = directionalLightViewProj;
-	lightConstants.shadowBias   = 0.005f;
+	lightConstants.shadowBias	 = 0.005f;
 
 	lightConstants.lightCount		  = static_cast<int32>(lightInfos.size());
 	UploadResult lightConstantsUpload = m_uploadBuffer->AllocAndCopy(&lightConstants, sizeof(LightPassConstants), 256);
@@ -897,12 +896,12 @@ void Renderer::CreateMeshPipeline()
 	meshDesc.vertexShader = m_meshVS.get();
 	meshDesc.pixelShader  = m_meshPS.get();
 	meshDesc.inputLayout  = {
-		 { "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		 { "NORMAL", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		 { "TANGENT", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
-		 { "TEXCOORD", 0, TextureFormat::RG32F, 0, InputElement::AppendAligned },
-		 { "TEXCOORD", 1, TextureFormat::RG32F, 0, InputElement::AppendAligned },
-		 { "COLOR", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
+		{ "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
+		{ "NORMAL", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
+		{ "TANGENT", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
+		{ "TEXCOORD", 0, TextureFormat::RG32F, 0, InputElement::AppendAligned },
+		{ "TEXCOORD", 1, TextureFormat::RG32F, 0, InputElement::AppendAligned },
+		{ "COLOR", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
 	};
 	meshDesc.renderTargetFormats  = { TextureFormat::BGRA8 };
 	meshDesc.depthFormat		  = TextureFormat::Depth32F;
@@ -914,7 +913,7 @@ void Renderer::CreateMeshPipeline()
 	meshDesc.rasterState.cullMode = RasterizerState::CullMode::Back;
 	meshDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
 	meshDesc.bindings			  = {
-		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — per-draw constants
+		{ BindingType::ConstantBuffer, 0, 1 },							 // rootIndex 0: b0 — per-draw constants
 		{ BindingType::TextureTable, 0, TextureSlot::TextureSlotCount }, // rootIndex 1: t0-t4 — material textures
 	};
 	meshDesc.samplers = {
@@ -944,12 +943,12 @@ void Renderer::CreateDeferredGeometryPipeline()
 	meshDesc.vertexShader = m_deferredGeomVS.get();
 	meshDesc.pixelShader  = m_deferredGeomPS.get();
 	meshDesc.inputLayout  = {
-		 { "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		 { "NORMAL", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		 { "TANGENT", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
-		 { "TEXCOORD", 0, TextureFormat::RG32F, 0, InputElement::AppendAligned },
-		 { "TEXCOORD", 1, TextureFormat::RG32F, 0, InputElement::AppendAligned },
-		 { "COLOR", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
+		{ "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
+		{ "NORMAL", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
+		{ "TANGENT", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
+		{ "TEXCOORD", 0, TextureFormat::RG32F, 0, InputElement::AppendAligned },
+		{ "TEXCOORD", 1, TextureFormat::RG32F, 0, InputElement::AppendAligned },
+		{ "COLOR", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
 	};
 	meshDesc.renderTargetFormats  = { TextureFormat::RGBA8, TextureFormat::RGBA16F, TextureFormat::RGBA8,
 									  TextureFormat::RGBA8 };
@@ -962,7 +961,7 @@ void Renderer::CreateDeferredGeometryPipeline()
 	meshDesc.rasterState.cullMode = RasterizerState::CullMode::Back;
 	meshDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
 	meshDesc.bindings			  = {
-		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — per-draw constants
+		{ BindingType::ConstantBuffer, 0, 1 },							 // rootIndex 0: b0 — per-draw constants
 		{ BindingType::TextureTable, 0, TextureSlot::TextureSlotCount }, // rootIndex 1: t0-t4 — material textures
 	};
 	meshDesc.samplers = {
@@ -1001,14 +1000,15 @@ void Renderer::CreateDeferredLightingPipeline()
 	desc.rasterState.cullMode = RasterizerState::CullMode::None;
 	desc.rasterState.fillMode = RasterizerState::FillMode::Solid;
 	desc.bindings			  = {
-		{ BindingType::ConstantBuffer, 0, 1 },   // rootIndex 0: b0 — lighting constants
-		{ BindingType::TextureTable, 0, 5 },     // rootIndex 1: t0-t4 — GBuffer textures (albedo, normal, material, depth, emissive)
+		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — lighting constants
+		{ BindingType::TextureTable, 0,
+		  5 }, // rootIndex 1: t0-t4 — GBuffer textures (albedo, normal, material, depth, emissive)
 		{ BindingType::StructuredBuffer, 5, 1 }, // rootIndex 2: t5 — Light Infos buffer
-		{ BindingType::TextureTable, 6, 1 },     // rootIndex 3: t6 — Shadow map
+		{ BindingType::TextureTable, 6, 1 },	 // rootIndex 3: t6 — Shadow map
 	};
 	desc.samplers = {
-		{ 0, SamplerFilter::Point,            SamplerAddressMode::Clamp },  // s0 — GBuffer sampling
-		{ 2, SamplerFilter::ComparisonLinear,  SamplerAddressMode::Border }, // s2 — Shadow map comparison
+		{ 0, SamplerFilter::Point, SamplerAddressMode::Clamp },				// s0 — GBuffer sampling
+		{ 2, SamplerFilter::ComparisonLinear, SamplerAddressMode::Border }, // s2 — Shadow map comparison
 	};
 	m_deferredLightPSO = m_device->CreatePipelineState(desc);
 
@@ -1109,12 +1109,12 @@ void Renderer::InitShadowPSO()
 	desc.vertexShader = m_directionalShadowVS.get();
 	desc.pixelShader  = nullptr;
 	desc.inputLayout  = {
-		 { "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		 { "NORMAL", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		 { "TANGENT", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
-		 { "TEXCOORD", 0, TextureFormat::RG32F, 0, InputElement::AppendAligned },
-		 { "TEXCOORD", 1, TextureFormat::RG32F, 0, InputElement::AppendAligned },
-		 { "COLOR", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
+		{ "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
+		{ "NORMAL", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
+		{ "TANGENT", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
+		{ "TEXCOORD", 0, TextureFormat::RG32F, 0, InputElement::AppendAligned },
+		{ "TEXCOORD", 1, TextureFormat::RG32F, 0, InputElement::AppendAligned },
+		{ "COLOR", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
 	};
 	desc.renderTargetFormats  = {};
 	desc.depthFormat		  = TextureFormat::Depth32F;
@@ -1123,8 +1123,16 @@ void Renderer::InitShadowPSO()
 	desc.enableDepthWrite	  = true;
 	desc.enableStencilTest	  = false;
 	desc.enableBlending		  = false;
-	desc.rasterState.cullMode = RasterizerState::CullMode::None;
+
+	// Same depth values as CullMode::None here, at roughly half the rasterization.
+	desc.rasterState.cullMode = RasterizerState::CullMode::Back;
 	desc.rasterState.fillMode = RasterizerState::FillMode::Solid;
+
+	// Starting values. Tune against the scene.
+	desc.rasterState.depthBias			  = 100;
+	desc.rasterState.slopeScaledDepthBias = 2.f;
+	desc.rasterState.depthBiasClamp		  = 0.f;
+
 	desc.bindings			  = {
 		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — Shadow Constants
 	};

@@ -5,6 +5,8 @@
 #include <Debugging/Logging.h>
 #include <shaderc/shaderc.hpp>
 
+#include <fstream>
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -52,14 +54,17 @@ void VKShader::Initialize(const ShaderDesc& desc)
 	else if (!desc.filePath.empty())
 	{
 		sourceName = desc.filePath;
-		FILE* f = fopen(desc.filePath.c_str(), "rb");
-		DYNAMIC_ASSERT(f, ("VKShader: could not open file: " + desc.filePath).c_str());
-		fseek(f, 0, SEEK_END);
-		long len = ftell(f);
-		fseek(f, 0, SEEK_SET);
-		source.resize(static_cast<size_t>(len));
-		fread(source.data(), 1, static_cast<size_t>(len), f);
-		fclose(f);
+
+		// FATAL_ASSERT, not DYNAMIC_ASSERT: this must survive release builds.
+		std::ifstream file(desc.filePath, std::ios::binary | std::ios::ate);
+		FATAL_ASSERT(file, ("VKShader: could not open file: " + desc.filePath).c_str());
+
+		const std::streamsize length = file.tellg();
+		file.seekg(0, std::ios::beg);
+
+		source.resize(static_cast<size_t>(length));
+		FATAL_ASSERT(file.read(source.data(), length),
+		             ("VKShader: could not read file: " + desc.filePath).c_str());
 	}
 	else
 	{

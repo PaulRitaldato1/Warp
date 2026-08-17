@@ -121,7 +121,7 @@ static void GenerateNextMip(const u8* src, u32 srcWidth, u32 srcHeight,
 // LoadDDS — tinyddsloader path (existing logic)
 // ---------------------------------------------------------------------------
 
-static URef<TextureData> LoadDDS(const String& path)
+static TextureLoadResult LoadDDS(const String& path)
 {
 	namespace fs = std::filesystem;
 	using namespace tinyddsloader;
@@ -131,15 +131,23 @@ static URef<TextureData> LoadDDS(const String& path)
 
 	if (result != tinyddsloader::Success)
 	{
-		LOG_ERROR("TextureLoader: failed to load '{}'", path);
-		return nullptr;
+		switch (result)
+		{
+			case tinyddsloader::ErrorFileOpen:
+				return MakeLoadError(LoadErrorCode::FileNotFound, "could not open file");
+			case tinyddsloader::ErrorNotSupported:
+				return MakeLoadError(LoadErrorCode::UnsupportedFormat, "DDS feature not supported by tinyddsloader");
+			case tinyddsloader::ErrorMagicWord:
+				return MakeLoadError(LoadErrorCode::ParseFailed, "not a DDS file (bad magic word)");
+			default:
+				return MakeLoadError(LoadErrorCode::ParseFailed, "malformed or truncated DDS data");
+		}
 	}
 
 	const TextureFormat format = TranslateDXGIFormat(dds.GetFormat());
 	if (format == TextureFormat::Unknown)
 	{
-		LOG_ERROR("TextureLoader: unsupported DXGI format in '{}'", path);
-		return nullptr;
+		return MakeLoadError(LoadErrorCode::UnsupportedFormat, "unsupported DXGI format");
 	}
 
 	URef<TextureData> tex  = std::make_unique<TextureData>();
@@ -209,14 +217,16 @@ static URef<TextureData> LoadDDS(const String& path)
 // LoadSTB — PNG/JPG/BMP/TGA path with CPU mip generation
 // ---------------------------------------------------------------------------
 
-static URef<TextureData> LoadSTB(const String& path, TextureColorSpace colorSpace)
+static TextureLoadResult LoadSTB(const String& path, TextureColorSpace colorSpace)
 {
 	int w, h, channels;
 	u8* pixels = stbi_load(path.c_str(), &w, &h, &channels, 4); // force RGBA
 	if (!pixels)
 	{
-		LOG_ERROR("TextureLoader: stb_image failed to load '{}'", path);
-		return nullptr;
+		// stb_image reports "can't fopen" for a missing file and a decoder-specific
+		// reason otherwise, so pass its own message straight through.
+		const char* reason = stbi_failure_reason();
+		return MakeLoadError(LoadErrorCode::ParseFailed, reason ? reason : "stb_image failed");
 	}
 
 	u32 width  = static_cast<u32>(w);
@@ -303,7 +313,7 @@ static URef<TextureData> LoadSTB(const String& path, TextureColorSpace colorSpac
 // TextureLoader::Load
 // ---------------------------------------------------------------------------
 
-URef<TextureData> TextureLoader::Load(const String& path, TextureColorSpace colorSpace)
+TextureLoadResult TextureLoader::Load(const String& path, TextureColorSpace colorSpace)
 {
 	ImageFileFormat fmt = DetectFormat(path);
 	switch (fmt)
@@ -311,21 +321,21 @@ URef<TextureData> TextureLoader::Load(const String& path, TextureColorSpace colo
 		case ImageFileFormat::DDS: return LoadDDS(path);
 		case ImageFileFormat::STB: return LoadSTB(path, colorSpace);
 	}
-	return nullptr;
+	return MakeLoadError(LoadErrorCode::UnsupportedFormat, "unrecognised file extension");
 }
 
-std::future<URef<TextureData>> TextureLoader::LoadAsync(const String& path, ThreadPool& pool,
+std::future<TextureLoadResult> TextureLoader::LoadAsync(const String& path, ThreadPool& pool,
                                                        TextureColorSpace colorSpace)
 {
 	return pool.enqueue([](const String& p, TextureColorSpace cs) { return Load(p, cs); },
 	                    path, colorSpace);
 }
 
-Vector<std::future<URef<TextureData>>> TextureLoader::LoadBatch(const Vector<String>& paths,
+Vector<std::future<TextureLoadResult>> TextureLoader::LoadBatch(const Vector<String>& paths,
                                                                ThreadPool& pool,
                                                                TextureColorSpace colorSpace)
 {
-	Vector<std::future<URef<TextureData>>> futures;
+	Vector<std::future<TextureLoadResult>> futures;
 	futures.reserve(paths.size());
 	for (const String& p : paths)
 	{

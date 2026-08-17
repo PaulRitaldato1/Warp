@@ -180,9 +180,9 @@ void D3D12Pipeline::InitializeWithDevice(ID3D12Device* device, const PipelineDes
 	}
 	rast.FrontCounterClockwise = FALSE;
 	rast.DepthClipEnable	   = desc.rasterState.depthClipEnable ? TRUE : FALSE;
-	rast.DepthBias			   = D3D12_DEFAULT_DEPTH_BIAS;
-	rast.DepthBiasClamp		   = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
-	rast.SlopeScaledDepthBias  = D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS;
+	rast.DepthBias			   = desc.rasterState.depthBias;
+	rast.DepthBiasClamp		   = desc.rasterState.depthBiasClamp;
+	rast.SlopeScaledDepthBias  = desc.rasterState.slopeScaledDepthBias;
 	rast.MultisampleEnable	   = FALSE;
 	rast.AntialiasedLineEnable = FALSE;
 

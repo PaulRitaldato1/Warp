@@ -1,6 +1,7 @@
 #include <Debugging/Logging.h>
 #include <chrono>
 #include <cstdio>
+#include <ctime>
 
 // ---------------------------------------------------------------------------
 // Singleton
@@ -152,7 +153,15 @@ String Logger::FormatTimestamp() const
 {
 	std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
 	std::time_t tt							  = std::chrono::system_clock::to_time_t(now);
-	std::tm tm								  = *std::localtime(&tt);
+
+	// localtime() returns a shared static buffer and Log() runs on the caller's
+	// thread, so concurrent logging races. Use the reentrant form.
+	std::tm tm{};
+#if defined(_WIN32)
+	localtime_s(&tm, &tt);
+#else
+	localtime_r(&tt, &tm);
+#endif
 
 	std::chrono::milliseconds ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 

@@ -76,7 +76,7 @@ public:
 		}
 
 		// Write the component data into the new archetype.
-		T* column = newArchetype->GetColumn<T>();
+		Span<T> column = newArchetype->GetColumn<T>();
 		column[record.row] = component;
 
 		return column[record.row];
@@ -118,7 +118,7 @@ public:
 		FATAL_ASSERT(HasComponent<T>(entity), "World::GetComponent: entity does not have this component");
 
 		EntityRecord& record = m_entities[entity.id];
-		T* column = record.archetype->GetColumn<T>();
+		Span<T> column = record.archetype->GetColumn<T>();
 		return column[record.row];
 	}
 
@@ -128,7 +128,7 @@ public:
 		FATAL_ASSERT(HasComponent<T>(entity), "World::GetComponent: entity does not have this component");
 
 		const EntityRecord& record = m_entities[entity.id];
-		const T* column = record.archetype->GetColumn<T>();
+		Span<const T> column = record.archetype->GetColumn<T>();
 		return column[record.row];
 	}
 
@@ -215,9 +215,12 @@ public:
 
 			const Vector<Entity>& entities = archetype->GetEntities();
 
-			// Get typed column pointers for each queried component.
-			auto callPerEntity = [&](auto*... columns)
+			// Mutating entity composition inside fn invalidates these spans.
+			auto callPerEntity = [&](auto... columns)
 			{
+				DYNAMIC_ASSERT(((columns.size() == entityCount) && ...),
+				               "World::Each: column size disagrees with entity count");
+
 				for (u32 row = 0; row < entityCount; ++row)
 				{
 					fn(entities[row], columns[row]...);

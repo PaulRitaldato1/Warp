@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
+#include <Rendering/Mesh/MeshLoader.h>
+#include <Rendering/Texture/TextureLoader.h>
 #include <Rendering/Resource/MeshResource.h>
 #include <Rendering/Resource/TextureResource.h>
 #include <Rendering/Renderer/Buffer.h>
@@ -104,8 +106,8 @@ private:
 	u32 m_defaultNormalTextureHandle = ~0u;
 
 	// Pending async loads tracked via futures.
-	HashMap<String, std::future<URef<Mesh>>>        m_pendingMeshLoads;
-	HashMap<String, std::future<URef<TextureData>>> m_pendingTextureLoads;
+	HashMap<String, std::future<MeshLoadResult>>    m_pendingMeshLoads;
+	HashMap<String, std::future<TextureLoadResult>> m_pendingTextureLoads;
 
 	// Staging uploads ready for Renderer to pick up.
 	Vector<PendingStagingUpload>  m_readyStagingUploads;

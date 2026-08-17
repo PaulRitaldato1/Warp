@@ -34,6 +34,12 @@ struct RasterizerState
 	CullMode cullMode = CullMode::Back;
 	FillMode fillMode = FillMode::Solid;
 	bool     depthClipEnable = true;
+
+	// Depth bias for shadow passes. The slope-scaled term handles grazing angles,
+	// which a constant bias cannot.
+	int32 depthBias            = 0;
+	f32   depthBiasClamp       = 0.f;
+	f32   slopeScaledDepthBias = 0.f;
 };
 
 // ---------------------------------------------------------------------------
