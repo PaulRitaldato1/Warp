@@ -1,11 +1,8 @@
+// Position only. The shadow pass binds just the position stream, so declaring
+// anything else here would not match the pipeline's input layout.
 struct VSInput
 {
     float3 position : POSITION;
-    float3 normal   : NORMAL;
-    float4 tangent  : TANGENT;
-    float2 uv0      : TEXCOORD0;
-    float2 uv1      : TEXCOORD1;
-    float4 color    : COLOR;
 };
 
 cbuffer ShadowCB : register(b0)

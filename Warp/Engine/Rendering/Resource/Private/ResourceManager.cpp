@@ -493,13 +493,21 @@ bool ResourceManager::FinalizeMeshUpload(const String& path, MeshResource& resou
 	const Mesh& mesh = *resource.mesh;
 	bool        queuedAnything = false;
 
-	// Create vertex buffer.
-	BufferDesc vertexDesc;
-	vertexDesc.type		   = BufferType::Vertex;
-	vertexDesc.numElements = static_cast<u32>(mesh.vertices.size());
-	vertexDesc.stride	   = static_cast<u32>(sizeof(Vertex));
-	vertexDesc.name		   = path + "_VB";
-	resource.vertexBuffer  = m_device->CreateBuffer(vertexDesc);
+	// Create the position stream. Bound alone by depth-only passes.
+	BufferDesc positionDesc;
+	positionDesc.type		 = BufferType::Vertex;
+	positionDesc.numElements = mesh.VertexCount();
+	positionDesc.stride		 = static_cast<u32>(sizeof(Vec3));
+	positionDesc.name		 = path + "_PositionVB";
+	resource.positionBuffer	 = m_device->CreateBuffer(positionDesc);
+
+	// Create the attribute stream.
+	BufferDesc attributeDesc;
+	attributeDesc.type		  = BufferType::Vertex;
+	attributeDesc.numElements = mesh.VertexCount();
+	attributeDesc.stride	  = static_cast<u32>(sizeof(VertexAttributes));
+	attributeDesc.name		  = path + "_AttributeVB";
+	resource.attributeBuffer  = m_device->CreateBuffer(attributeDesc);
 
 	// Create index buffer.
 	BufferDesc indexDesc;
@@ -509,12 +517,21 @@ bool ResourceManager::FinalizeMeshUpload(const String& path, MeshResource& resou
 	indexDesc.name		  = path + "_IB";
 	resource.indexBuffer  = m_device->CreateBuffer(indexDesc);
 
-	// Upload vertex data.
-	PendingStagingUpload vertexUpload =
-		resource.vertexBuffer->UploadData(mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
-	if (vertexUpload.IsValid())
+	// Upload position data.
+	PendingStagingUpload positionUpload =
+		resource.positionBuffer->UploadData(mesh.positions.data(), mesh.positions.size() * sizeof(Vec3));
+	if (positionUpload.IsValid())
 	{
-		m_readyStagingUploads.push_back(std::move(vertexUpload));
+		m_readyStagingUploads.push_back(std::move(positionUpload));
+		queuedAnything = true;
+	}
+
+	// Upload attribute data.
+	PendingStagingUpload attributeUpload = resource.attributeBuffer->UploadData(
+		mesh.attributes.data(), mesh.attributes.size() * sizeof(VertexAttributes));
+	if (attributeUpload.IsValid())
+	{
+		m_readyStagingUploads.push_back(std::move(attributeUpload));
 		queuedAnything = true;
 	}
 

@@ -14,19 +14,22 @@ URef<Mesh> GeoGenerator::CreatePlane(f32 sizeX, f32 sizeZ, u32 segmentsX, u32 se
 	const f32 stepX = sizeX / static_cast<f32>(segmentsX);
 	const f32 stepZ = sizeZ / static_cast<f32>(segmentsZ);
 
-	mesh->vertices.reserve(vertsX * vertsZ);
+	mesh->positions.reserve(vertsX * vertsZ);
+	mesh->attributes.reserve(vertsX * vertsZ);
 
 	for (u32 z = 0; z < vertsZ; ++z)
 	{
 		for (u32 x = 0; x < vertsX; ++x)
 		{
-			Vertex vertex;
-			vertex.position = { -halfX + static_cast<f32>(x) * stepX, 0.f, -halfZ + static_cast<f32>(z) * stepZ };
-			vertex.normal   = { 0.f, 1.f, 0.f };
-			vertex.tangent  = { 1.f, 0.f, 0.f, 1.f };
-			vertex.uv0      = { static_cast<f32>(x) / static_cast<f32>(segmentsX),
-			                    static_cast<f32>(z) / static_cast<f32>(segmentsZ) };
-			mesh->vertices.push_back(vertex);
+			mesh->positions.push_back(
+				{ -halfX + static_cast<f32>(x) * stepX, 0.f, -halfZ + static_cast<f32>(z) * stepZ });
+
+			VertexAttributes attributes;
+			attributes.normal  = { 0.f, 1.f, 0.f };
+			attributes.tangent = { 1.f, 0.f, 0.f, 1.f };
+			attributes.uv0     = { static_cast<f32>(x) / static_cast<f32>(segmentsX),
+			                       static_cast<f32>(z) / static_cast<f32>(segmentsZ) };
+			mesh->attributes.push_back(attributes);
 		}
 	}
 
@@ -78,23 +81,29 @@ URef<Mesh> GeoGenerator::CreateBox(f32 sizeX, f32 sizeY, f32 sizeZ)
 	const f32 hz = sizeZ * 0.5f;
 
 	// 6 faces, 4 vertices each, unique normals per face.
-	mesh->vertices.reserve(24);
+	mesh->positions.reserve(24);
+	mesh->attributes.reserve(24);
 	mesh->indices.reserve(36);
 
 	auto addFace = [&](Vec3 p0, Vec3 p1, Vec3 p2, Vec3 p3, Vec3 normal, Vec4 tangent)
 	{
-		u32 base = static_cast<u32>(mesh->vertices.size());
+		u32 base = mesh->VertexCount();
 
-		Vertex v0, v1, v2, v3;
-		v0.position = p0; v0.normal = normal; v0.tangent = tangent; v0.uv0 = { 0.f, 0.f };
-		v1.position = p1; v1.normal = normal; v1.tangent = tangent; v1.uv0 = { 1.f, 0.f };
-		v2.position = p2; v2.normal = normal; v2.tangent = tangent; v2.uv0 = { 1.f, 1.f };
-		v3.position = p3; v3.normal = normal; v3.tangent = tangent; v3.uv0 = { 0.f, 1.f };
+		mesh->positions.push_back(p0);
+		mesh->positions.push_back(p1);
+		mesh->positions.push_back(p2);
+		mesh->positions.push_back(p3);
 
-		mesh->vertices.push_back(v0);
-		mesh->vertices.push_back(v1);
-		mesh->vertices.push_back(v2);
-		mesh->vertices.push_back(v3);
+		VertexAttributes a0, a1, a2, a3;
+		a0.normal = normal; a0.tangent = tangent; a0.uv0 = { 0.f, 0.f };
+		a1.normal = normal; a1.tangent = tangent; a1.uv0 = { 1.f, 0.f };
+		a2.normal = normal; a2.tangent = tangent; a2.uv0 = { 1.f, 1.f };
+		a3.normal = normal; a3.tangent = tangent; a3.uv0 = { 0.f, 1.f };
+
+		mesh->attributes.push_back(a0);
+		mesh->attributes.push_back(a1);
+		mesh->attributes.push_back(a2);
+		mesh->attributes.push_back(a3);
 
 		mesh->indices.push_back(base);
 		mesh->indices.push_back(base + 2);

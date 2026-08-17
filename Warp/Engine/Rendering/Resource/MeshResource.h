@@ -14,7 +14,9 @@ struct MeshResource
 	URef<Mesh> mesh;
 
 	// GPU buffers — created once, shared across all entities using this mesh.
-	URef<Buffer> vertexBuffer;
+	// Position is a separate stream so depth-only passes can bind it alone.
+	URef<Buffer> positionBuffer;
+	URef<Buffer> attributeBuffer;
 	URef<Buffer> indexBuffer;
 
 	// Texture handles — one per Mesh::texturePaths entry, resolved at mesh load time.

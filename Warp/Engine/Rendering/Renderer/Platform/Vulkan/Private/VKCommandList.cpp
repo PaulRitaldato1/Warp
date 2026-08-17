@@ -211,13 +211,21 @@ void VKCommandList::SetComputePipelineState(ComputePipelineState* state)
 // Input assembly
 // ---------------------------------------------------------------------------
 
-void VKCommandList::SetVertexBuffer(Buffer* vb)
+void VKCommandList::SetVertexBuffers(Buffer* const* buffers, u32 count)
 {
-	DYNAMIC_ASSERT(vb, "VKCommandList::SetVertexBuffer: vb is null");
-	VKBuffer* vkBuf = static_cast<VKBuffer*>(vb);
-	VkBuffer  buf   = vkBuf->GetNativeBuffer();
-	VkDeviceSize offset = 0;
-	vkCmdBindVertexBuffers(m_cmdBuf, 0, 1, &buf, &offset);
+	DYNAMIC_ASSERT(buffers && count > 0, "VKCommandList::SetVertexBuffers: no buffers");
+	DYNAMIC_ASSERT(count <= k_maxVertexStreams, "VKCommandList::SetVertexBuffers: too many streams");
+
+	VkBuffer	 nativeBuffers[k_maxVertexStreams];
+	VkDeviceSize offsets[k_maxVertexStreams] = {};
+
+	for (u32 i = 0; i < count; ++i)
+	{
+		DYNAMIC_ASSERT(buffers[i], "VKCommandList::SetVertexBuffers: null buffer in list");
+		nativeBuffers[i] = static_cast<VKBuffer*>(buffers[i])->GetNativeBuffer();
+	}
+
+	vkCmdBindVertexBuffers(m_cmdBuf, 0, count, nativeBuffers, offsets);
 }
 
 void VKCommandList::SetIndexBuffer(Buffer* ib)

@@ -116,11 +116,19 @@ void D3D12CommandList::SetComputePipelineState(ComputePipelineState* state)
 // Input assembly
 // ---------------------------------------------------------------------------
 
-void D3D12CommandList::SetVertexBuffer(Buffer* vb)
+void D3D12CommandList::SetVertexBuffers(Buffer* const* buffers, u32 count)
 {
-	DYNAMIC_ASSERT(vb, "D3D12CommandList::SetVertexBuffer: vb is null");
-	D3D12_VERTEX_BUFFER_VIEW vbv = static_cast<D3D12Buffer*>(vb)->GetVertexBufferView();
-	m_list->IASetVertexBuffers(0, 1, &vbv);
+	DYNAMIC_ASSERT(buffers && count > 0, "D3D12CommandList::SetVertexBuffers: no buffers");
+	DYNAMIC_ASSERT(count <= k_maxVertexStreams, "D3D12CommandList::SetVertexBuffers: too many streams");
+
+	D3D12_VERTEX_BUFFER_VIEW views[k_maxVertexStreams];
+	for (u32 i = 0; i < count; ++i)
+	{
+		DYNAMIC_ASSERT(buffers[i], "D3D12CommandList::SetVertexBuffers: null buffer in list");
+		views[i] = static_cast<D3D12Buffer*>(buffers[i])->GetVertexBufferView();
+	}
+
+	m_list->IASetVertexBuffers(0, count, views);
 }
 
 void D3D12CommandList::SetIndexBuffer(Buffer* ib)

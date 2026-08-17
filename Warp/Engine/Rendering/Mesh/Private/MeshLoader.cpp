@@ -109,20 +109,6 @@ static void ExtractTexturePaths(const fastgltf::Asset& asset, Mesh& out)
 // Geometry extraction — one primitive at a time
 // ---------------------------------------------------------------------------
 
-template <typename T>
-static void CopyAttribute(const fastgltf::Asset& asset, const fastgltf::Primitive& prim, std::string_view name,
-						  Vector<Vertex>& vertices, u32 vertexBase, T Vertex::*member)
-{
-	auto it = prim.findAttribute(name);
-	if (it == prim.attributes.end())
-	{
-		return;
-	}
-
-	fastgltf::iterateAccessorWithIndex<T>(asset, asset.accessors[it->second],
-										  [&](T value, std::size_t i) { vertices[vertexBase + i].*member = value; });
-}
-
 static void ExtractPrimitive(const fastgltf::Asset& asset, const fastgltf::Primitive& prim, Mesh& out)
 {
 	// Position is required — skip degenerate primitives.
@@ -133,17 +119,18 @@ static void ExtractPrimitive(const fastgltf::Asset& asset, const fastgltf::Primi
 	}
 
 	Submesh submesh;
-	submesh.vertexOffset  = static_cast<u32>(out.vertices.size());
+	submesh.vertexOffset  = out.VertexCount();
 	submesh.indexOffset	  = static_cast<u32>(out.indices.size());
 	submesh.materialIndex = prim.materialIndex.has_value() ? static_cast<int32>(prim.materialIndex.value()) : -1;
 
 	const auto& posAccessor = asset.accessors[posIt->second];
 	const u32 vertexCount	= static_cast<u32>(posAccessor.count);
-	out.vertices.resize(out.vertices.size() + vertexCount);
+	out.positions.resize(out.positions.size() + vertexCount);
+	out.attributes.resize(out.attributes.size() + vertexCount);
 
 	// Position
 	fastgltf::iterateAccessorWithIndex<Vec3>(asset, posAccessor, [&](Vec3 v, std::size_t i)
-											 { out.vertices[submesh.vertexOffset + i].position = v; });
+											 { out.positions[submesh.vertexOffset + i] = v; });
 
 	// Normal
 	{
@@ -151,7 +138,7 @@ static void ExtractPrimitive(const fastgltf::Asset& asset, const fastgltf::Primi
 		if (it != prim.attributes.end())
 		{
 			fastgltf::iterateAccessorWithIndex<Vec3>(asset, asset.accessors[it->second], [&](Vec3 v, std::size_t i)
-													 { out.vertices[submesh.vertexOffset + i].normal = v; });
+													 { out.attributes[submesh.vertexOffset + i].normal = v; });
 		}
 	}
 
@@ -161,7 +148,7 @@ static void ExtractPrimitive(const fastgltf::Asset& asset, const fastgltf::Primi
 		if (it != prim.attributes.end())
 		{
 			fastgltf::iterateAccessorWithIndex<Vec4>(asset, asset.accessors[it->second], [&](Vec4 v, std::size_t i)
-													 { out.vertices[submesh.vertexOffset + i].tangent = v; });
+													 { out.attributes[submesh.vertexOffset + i].tangent = v; });
 		}
 	}
 
@@ -171,7 +158,7 @@ static void ExtractPrimitive(const fastgltf::Asset& asset, const fastgltf::Primi
 		if (it != prim.attributes.end())
 		{
 			fastgltf::iterateAccessorWithIndex<Vec2>(asset, asset.accessors[it->second], [&](Vec2 v, std::size_t i)
-													 { out.vertices[submesh.vertexOffset + i].uv0 = v; });
+													 { out.attributes[submesh.vertexOffset + i].uv0 = v; });
 		}
 	}
 
@@ -181,7 +168,7 @@ static void ExtractPrimitive(const fastgltf::Asset& asset, const fastgltf::Primi
 		if (it != prim.attributes.end())
 		{
 			fastgltf::iterateAccessorWithIndex<Vec2>(asset, asset.accessors[it->second], [&](Vec2 v, std::size_t i)
-													 { out.vertices[submesh.vertexOffset + i].uv1 = v; });
+													 { out.attributes[submesh.vertexOffset + i].uv1 = v; });
 		}
 	}
 
@@ -191,7 +178,7 @@ static void ExtractPrimitive(const fastgltf::Asset& asset, const fastgltf::Primi
 		if (it != prim.attributes.end())
 		{
 			fastgltf::iterateAccessorWithIndex<Vec4>(asset, asset.accessors[it->second], [&](Vec4 v, std::size_t i)
-													 { out.vertices[submesh.vertexOffset + i].color = v; });
+													 { out.attributes[submesh.vertexOffset + i].color = v; });
 		}
 	}
 
@@ -206,15 +193,9 @@ static void ExtractPrimitive(const fastgltf::Asset& asset, const fastgltf::Primi
 												{ out.indices[submesh.indexOffset + i] = index; });
 	}
 
-	// Per-submesh AABB
-	{
-		Vector<DirectX::XMFLOAT3> positions(vertexCount);
-		for (u32 i = 0; i < vertexCount; ++i)
-		{
-			positions[i] = out.vertices[submesh.vertexOffset + i].position;
-		}
-		BoundingBox::CreateFromPoints(submesh.bounds, vertexCount, positions.data(), sizeof(DirectX::XMFLOAT3));
-	}
+	// Per-submesh AABB. Positions are contiguous now, so this reads them in place
+	// instead of gathering them out of an interleaved array first.
+	BoundingBox::CreateFromPoints(submesh.bounds, vertexCount, &out.positions[submesh.vertexOffset], sizeof(Vec3));
 
 	out.submeshes.push_back(submesh);
 }
@@ -272,7 +253,7 @@ MeshLoadResult MeshLoader::Load(const String& path)
 		}
 	}
 
-	LOG_DEBUG("MeshLoader: loaded '{}' — {} verts, {} indices, {} submeshes", mesh->name, mesh->vertices.size(),
+	LOG_DEBUG("MeshLoader: loaded '{}' — {} verts, {} indices, {} submeshes", mesh->name, mesh->VertexCount(),
 			  mesh->indices.size(), mesh->submeshes.size());
 
 	return mesh;

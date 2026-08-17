@@ -44,7 +44,7 @@ public:
 	// Input assembly
 	// ---------------------------------------------------------------------------
 
-	void SetVertexBuffer(Buffer* vb)                      override;
+	void SetVertexBuffers(Buffer* const* buffers, u32 count) override;
 	void SetIndexBuffer(Buffer* ib)                       override;
 	void SetPrimitiveTopology(PrimitiveTopology topo)     override; // no-op — baked into PSO
 

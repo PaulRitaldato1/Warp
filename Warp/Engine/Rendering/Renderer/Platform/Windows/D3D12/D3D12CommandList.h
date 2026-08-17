@@ -26,7 +26,7 @@ public:
 	void SetPipelineState(PipelineState* state) override;
 	void SetComputePipelineState(ComputePipelineState* state) override;
 
-	void SetVertexBuffer(Buffer* vertexBuffer) override;
+	void SetVertexBuffers(Buffer* const* buffers, u32 count) override;
 	void SetIndexBuffer(Buffer* indexBuffer) override;
 	void SetPrimitiveTopology(PrimitiveTopology topo) override;
 

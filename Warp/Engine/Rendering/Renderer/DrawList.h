@@ -47,8 +47,9 @@ struct DrawItem
 	Mat4 modelInvTranspose;
 
 	// GPU buffers (non-owning, valid for the current frame)
-	Buffer* vertexBuffer = nullptr;
-	Buffer* indexBuffer	 = nullptr;
+	Buffer* positionBuffer	= nullptr;
+	Buffer* attributeBuffer = nullptr;
+	Buffer* indexBuffer		= nullptr;
 
 	// Submesh draw range
 	u32 indexCount	 = 0;

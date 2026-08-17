@@ -33,7 +33,19 @@ public:
 	virtual void SetComputePipelineState(ComputePipelineState* state) = 0;
 
 	// Input assembly
-	virtual void SetVertexBuffer(Buffer* vertexBuffer)         = 0;
+	// Upper bound on simultaneously bound vertex streams. Currently position and
+	// attributes, so 2 is the working maximum.
+	static constexpr u32 k_maxVertexStreams = 4;
+
+	// Binds vertex streams to consecutive input slots starting at 0. The order
+	// must match the inputSlot values in the bound pipeline's input layout.
+	virtual void SetVertexBuffers(Buffer* const* buffers, u32 count) = 0;
+
+	void SetVertexBuffer(Buffer* vertexBuffer)
+	{
+		SetVertexBuffers(&vertexBuffer, 1);
+	}
+
 	virtual void SetIndexBuffer(Buffer* indexBuffer)           = 0;
 	virtual void SetPrimitiveTopology(PrimitiveTopology topo)  = 0;
 

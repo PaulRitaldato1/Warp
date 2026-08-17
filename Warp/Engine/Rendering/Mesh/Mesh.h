@@ -3,14 +3,19 @@
 #include <Common/CommonTypes.h>
 
 // ---------------------------------------------------------------------------
-// Vertex — full glTF attribute set.
-// Shaders sample only the fields they need; unused fields cost nothing at
-// runtime beyond the upload bandwidth, which is a one-time cost.
+// Vertex data is split into two parallel streams.
+//
+// Position lives alone because the depth and shadow passes read nothing else.
+// At a 12-byte stride a 64-byte cache line holds about five positions; at the
+// 72-byte interleaved stride it held less than one.
+//
+// Everything else is always consumed together by the GBuffer shader, so those
+// fields stay interleaved. Splitting them further would cost input slots and
+// bind calls for no bandwidth gain.
 // ---------------------------------------------------------------------------
-struct Vertex
+struct VertexAttributes
 {
-	Vec3 position = { 0.f, 0.f, 0.f };
-	Vec3 normal	  = { 0.f, 1.f, 0.f };
+	Vec3 normal = { 0.f, 1.f, 0.f };
 
 	// xyz = tangent direction, w = bitangent sign (+1 or -1).
 	// Bitangent = cross(normal, tangent.xyz) * tangent.w
@@ -19,8 +24,8 @@ struct Vertex
 	Vec2 uv0 = { 0.f, 0.f }; // primary UV (diffuse, PBR maps)
 	Vec2 uv1 = { 0.f, 0.f }; // secondary UV (lightmaps)
 
-	// Vertex colour — defaults to opaque white so meshes without colour data
-	// render correctly without shader branching.
+	// Defaults to opaque white so meshes without colour data render correctly
+	// without shader branching.
 	Vec4 color = { 1.f, 1.f, 1.f, 1.f };
 };
 
@@ -96,10 +101,18 @@ struct Mesh
 {
 	String name;
 
-	Vector<Vertex> vertices;
+	// Parallel arrays, always the same length. See the note on VertexAttributes.
+	Vector<Vec3>			 positions;
+	Vector<VertexAttributes> attributes;
+
 	Vector<u32> indices;
 	Vector<Submesh> submeshes;
 	Vector<Material> materials;
+
+	u32 VertexCount() const
+	{
+		return static_cast<u32>(positions.size());
+	}
 
 	// Relative paths to image files, as stored in the glTF.
 	// Texture indices in Material refer to this array.

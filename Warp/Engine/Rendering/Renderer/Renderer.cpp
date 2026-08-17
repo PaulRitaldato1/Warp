@@ -530,7 +530,8 @@ void Renderer::DrawDeferred()
 				DrawItem item;
 				item.model			   = model;
 				item.modelInvTranspose = modelInvTranspose;
-				item.vertexBuffer	   = resource->vertexBuffer.get();
+				item.positionBuffer	   = resource->positionBuffer.get();
+				item.attributeBuffer   = resource->attributeBuffer.get();
 				item.indexBuffer	   = resource->indexBuffer.get();
 				item.indexCount		   = submesh.indexCount;
 				item.indexOffset	   = submesh.indexOffset;
@@ -704,7 +705,8 @@ void Renderer::DrawDeferred()
 			UploadResult upload = m_uploadBuffer->AllocAndCopy(&shadowConstants, sizeof(ShadowCB), 256);
 			cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
 
-			cmd.SetVertexBuffer(item.vertexBuffer);
+			// Depth only: position is the sole stream this pass reads.
+			cmd.SetVertexBuffer(item.positionBuffer);
 			cmd.SetIndexBuffer(item.indexBuffer);
 			cmd.DrawIndexed(item.indexCount, 1, item.indexOffset, item.vertexOffset, 0);
 		}
@@ -760,7 +762,8 @@ void Renderer::DrawDeferred()
 		UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(PerDrawConstants), 256);
 		cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
 
-		cmd.SetVertexBuffer(item.vertexBuffer);
+		Buffer* streams[] = { item.positionBuffer, item.attributeBuffer };
+		cmd.SetVertexBuffers(streams, 2);
 		cmd.SetIndexBuffer(item.indexBuffer);
 		cmd.SetShaderResources(1, { item.textures[TextureSlot::BaseColor], item.textures[TextureSlot::Normal],
 									item.textures[TextureSlot::MetallicRoughness],
@@ -910,17 +913,18 @@ void Renderer::CreateMeshPipeline()
 	psDesc.filePath	  = "Shaders/Mesh.hlsl";
 	m_meshPS		  = m_device->CreateShader(psDesc);
 
-	// Input layout must match the Vertex struct layout in Mesh.h exactly.
+	// Slot 0 is the position stream, slot 1 the VertexAttributes struct in Mesh.h.
+	// Byte offsets append-align within each slot independently.
 	PipelineDesc meshDesc;
 	meshDesc.vertexShader = m_meshVS.get();
 	meshDesc.pixelShader  = m_meshPS.get();
 	meshDesc.inputLayout  = {
 		{ "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		{ "NORMAL", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		{ "TANGENT", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
-		{ "TEXCOORD", 0, TextureFormat::RG32F, 0, InputElement::AppendAligned },
-		{ "TEXCOORD", 1, TextureFormat::RG32F, 0, InputElement::AppendAligned },
-		{ "COLOR", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
+		{ "NORMAL", 0, TextureFormat::RGB32F, 1, InputElement::AppendAligned },
+		{ "TANGENT", 0, TextureFormat::RGBA32F, 1, InputElement::AppendAligned },
+		{ "TEXCOORD", 0, TextureFormat::RG32F, 1, InputElement::AppendAligned },
+		{ "TEXCOORD", 1, TextureFormat::RG32F, 1, InputElement::AppendAligned },
+		{ "COLOR", 0, TextureFormat::RGBA32F, 1, InputElement::AppendAligned },
 	};
 	meshDesc.renderTargetFormats  = { TextureFormat::BGRA8 };
 	meshDesc.depthFormat		  = TextureFormat::Depth32F;
@@ -957,17 +961,18 @@ void Renderer::CreateDeferredGeometryPipeline()
 	psDesc.filePath	  = "Shaders/DeferredGeometry.hlsl";
 	m_deferredGeomPS  = m_device->CreateShader(psDesc);
 
-	// Input layout must match the Vertex struct layout in Mesh.h exactly.
+	// Slot 0 is the position stream, slot 1 the VertexAttributes struct in Mesh.h.
+	// Byte offsets append-align within each slot independently.
 	PipelineDesc meshDesc;
 	meshDesc.vertexShader = m_deferredGeomVS.get();
 	meshDesc.pixelShader  = m_deferredGeomPS.get();
 	meshDesc.inputLayout  = {
 		{ "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		{ "NORMAL", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		{ "TANGENT", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
-		{ "TEXCOORD", 0, TextureFormat::RG32F, 0, InputElement::AppendAligned },
-		{ "TEXCOORD", 1, TextureFormat::RG32F, 0, InputElement::AppendAligned },
-		{ "COLOR", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
+		{ "NORMAL", 0, TextureFormat::RGB32F, 1, InputElement::AppendAligned },
+		{ "TANGENT", 0, TextureFormat::RGBA32F, 1, InputElement::AppendAligned },
+		{ "TEXCOORD", 0, TextureFormat::RG32F, 1, InputElement::AppendAligned },
+		{ "TEXCOORD", 1, TextureFormat::RG32F, 1, InputElement::AppendAligned },
+		{ "COLOR", 0, TextureFormat::RGBA32F, 1, InputElement::AppendAligned },
 	};
 	meshDesc.renderTargetFormats  = { TextureFormat::RGBA8, TextureFormat::RGBA16F, TextureFormat::RGBA8,
 									  TextureFormat::RGBA8 };
@@ -1127,13 +1132,10 @@ void Renderer::InitShadowPSO()
 	PipelineDesc desc;
 	desc.vertexShader = m_directionalShadowVS.get();
 	desc.pixelShader  = nullptr;
+	// Position only. The shadow VS reads nothing else, and binding this stream
+	// alone is what makes the split pay off.
 	desc.inputLayout  = {
 		{ "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		{ "NORMAL", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		{ "TANGENT", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
-		{ "TEXCOORD", 0, TextureFormat::RG32F, 0, InputElement::AppendAligned },
-		{ "TEXCOORD", 1, TextureFormat::RG32F, 0, InputElement::AppendAligned },
-		{ "COLOR", 0, TextureFormat::RGBA32F, 0, InputElement::AppendAligned },
 	};
 	desc.renderTargetFormats  = {};
 	desc.depthFormat		  = TextureFormat::Depth32F;
