@@ -8,6 +8,9 @@
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 
+#include <algorithm>
+#include <cstring>
+
 VKCommandList::~VKCommandList()
 {
 	for (VkCommandPool pool : m_pools)
@@ -108,21 +111,80 @@ void VKCommandList::End()
 // GPU debug markers (VK_EXT_debug_utils — no-op if not loaded)
 // ---------------------------------------------------------------------------
 
+// The label commands take a VkCommandBuffer, so they load through
+// vkGetDeviceProcAddr. All three stay null when VK_EXT_debug_utils was not
+// enabled, which leaves the markers inert rather than crashing.
+namespace
+{
+struct DebugLabelFunctions
+{
+	PFN_vkCmdBeginDebugUtilsLabelEXT  begin  = nullptr;
+	PFN_vkCmdEndDebugUtilsLabelEXT	  end	 = nullptr;
+	PFN_vkCmdInsertDebugUtilsLabelEXT insert = nullptr;
+
+	explicit DebugLabelFunctions(VkDevice device)
+	{
+		begin = reinterpret_cast<PFN_vkCmdBeginDebugUtilsLabelEXT>(
+			vkGetDeviceProcAddr(device, "vkCmdBeginDebugUtilsLabelEXT"));
+		end = reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(
+			vkGetDeviceProcAddr(device, "vkCmdEndDebugUtilsLabelEXT"));
+		insert = reinterpret_cast<PFN_vkCmdInsertDebugUtilsLabelEXT>(
+			vkGetDeviceProcAddr(device, "vkCmdInsertDebugUtilsLabelEXT"));
+	}
+};
+
+const DebugLabelFunctions& GetDebugLabels(VkDevice device)
+{
+	static const DebugLabelFunctions functions(device);
+	return functions;
+}
+
+VkDebugUtilsLabelEXT MakeLabel(std::string_view name, char (&outBuffer)[128])
+{
+	const size_t length = std::min(name.size(), sizeof(outBuffer) - 1);
+	std::memcpy(outBuffer, name.data(), length);
+	outBuffer[length] = '\0';
+
+	VkDebugUtilsLabelEXT label = {};
+	label.sType				   = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+	label.pLabelName		   = outBuffer;
+	return label;
+}
+} // namespace
+
 void VKCommandList::BeginEvent(std::string_view name)
 {
-	(void)name;
-	// TODO: vkCmdBeginDebugUtilsLabelEXT when the extension is loaded at runtime
+	const DebugLabelFunctions& functions = GetDebugLabels(m_device);
+	if (!functions.begin)
+	{
+		return;
+	}
+
+	char				 buffer[128];
+	VkDebugUtilsLabelEXT label = MakeLabel(name, buffer);
+	functions.begin(m_cmdBuf, &label);
 }
 
 void VKCommandList::EndEvent()
 {
-	// TODO: vkCmdEndDebugUtilsLabelEXT
+	const DebugLabelFunctions& functions = GetDebugLabels(m_device);
+	if (functions.end)
+	{
+		functions.end(m_cmdBuf);
+	}
 }
 
 void VKCommandList::SetMarker(std::string_view name)
 {
-	(void)name;
-	// TODO: vkCmdInsertDebugUtilsLabelEXT
+	const DebugLabelFunctions& functions = GetDebugLabels(m_device);
+	if (!functions.insert)
+	{
+		return;
+	}
+
+	char				 buffer[128];
+	VkDebugUtilsLabelEXT label = MakeLabel(name, buffer);
+	functions.insert(m_cmdBuf, &label);
 }
 
 // ---------------------------------------------------------------------------

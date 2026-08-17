@@ -20,6 +20,7 @@
 #include <Rendering/Renderer/DrawList.h>
 #include <Rendering/Window/Window.h>
 #include <Debugging/Assert.h>
+#include <Debugging/GPUMarker.h>
 #include <Debugging/Logging.h>
 #include <UI/ImGuiBackend.h>
 #include <algorithm>
@@ -652,6 +653,8 @@ void Renderer::DrawDeferred()
 	// Shadow pass — render depth from each shadow-casting directional light's POV
 	// ---------------------------------------------------------------------------
 
+	Warp::Debugging::GPUMarker::BeginEvent(&cmd, "Shadow Pass");
+
 	cmd.TransitionTexture(m_shadowTextures.directionalShadowMap.get(), ResourceState::DepthWrite);
 	cmd.SetRenderTargets(0, nullptr, m_shadowTextures.directionalShadowMap.get());
 	cmd.ClearDepthStencil(m_shadowTextures.directionalShadowMap.get(), 1.f, 0);
@@ -710,9 +713,13 @@ void Renderer::DrawDeferred()
 	// Transition shadow map for later use in the lighting pass.
 	cmd.TransitionTexture(m_shadowTextures.directionalShadowMap.get(), ResourceState::ShaderResource);
 
+	Warp::Debugging::GPUMarker::EndEvent(&cmd);
+
 	// ---------------------------------------------------------------------------
 	// GBuffer geometry pass
 	// ---------------------------------------------------------------------------
+
+	Warp::Debugging::GPUMarker::BeginEvent(&cmd, "GBuffer Geometry");
 
 	Array<DescriptorHandle, 4> GBuffer{ m_gbufferSimple.albedo->GetRTV(), m_gbufferSimple.normal->GetRTV(),
 										m_gbufferSimple.material->GetRTV(), m_gbufferSimple.emissive->GetRTV() };
@@ -761,11 +768,15 @@ void Renderer::DrawDeferred()
 		cmd.DrawIndexed(item.indexCount, 1, item.indexOffset, item.vertexOffset, 0);
 	}
 
+	Warp::Debugging::GPUMarker::EndEvent(&cmd);
+
 	// GBuffer Lighting Pass
 	if (!m_deferredLightPSO)
 	{
 		CreateDeferredLightingPipeline();
 	}
+
+	Warp::Debugging::GPUMarker::BeginEvent(&cmd, "Deferred Lighting");
 
 	cmd.TransitionTexture(m_gbufferSimple.albedo.get(), ResourceState::ShaderResource);
 	cmd.TransitionTexture(m_gbufferSimple.normal.get(), ResourceState::ShaderResource);
@@ -839,6 +850,8 @@ void Renderer::DrawDeferred()
 	cmd.SetShaderResources(3, { m_shadowTextures.directionalShadowMap.get() });
 
 	cmd.Draw(3);
+
+	Warp::Debugging::GPUMarker::EndEvent(&cmd);
 
 	// Render ImGui on top of the scene, before presenting.
 	RenderImGui();

@@ -8,6 +8,9 @@
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 
+#include <algorithm>
+#include <cstring>
+
 void D3D12CommandList::InitializeWithDevice(ID3D12Device* device, u32 framesInFlight,
 											D3D12_COMMAND_LIST_TYPE type)
 {
@@ -56,9 +59,38 @@ void D3D12CommandList::End()
 // GPU debug markers
 // ---------------------------------------------------------------------------
 
-void D3D12CommandList::BeginEvent(std::string_view /*name*/)  {}
-void D3D12CommandList::EndEvent()                             {}
-void D3D12CommandList::SetMarker(std::string_view /*name*/)   {}
+// Metadata value 1 is PIX_EVENT_ANSI_VERSION. Both PIX and RenderDoc decode this
+// form directly, so markers work without linking WinPixEventRuntime.
+static constexpr UINT k_pixEventAnsiVersion = 1;
+
+// string_view is not guaranteed null-terminated, and the marker APIs want a
+// terminated string with Size counting the terminator.
+static UINT CopyMarkerName(std::string_view name, char (&outBuffer)[128])
+{
+	const size_t length = std::min(name.size(), sizeof(outBuffer) - 1);
+	std::memcpy(outBuffer, name.data(), length);
+	outBuffer[length] = '\0';
+	return static_cast<UINT>(length + 1);
+}
+
+void D3D12CommandList::BeginEvent(std::string_view name)
+{
+	char	   buffer[128];
+	const UINT size = CopyMarkerName(name, buffer);
+	m_list->BeginEvent(k_pixEventAnsiVersion, buffer, size);
+}
+
+void D3D12CommandList::EndEvent()
+{
+	m_list->EndEvent();
+}
+
+void D3D12CommandList::SetMarker(std::string_view name)
+{
+	char	   buffer[128];
+	const UINT size = CopyMarkerName(name, buffer);
+	m_list->SetMarker(k_pixEventAnsiVersion, buffer, size);
+}
 
 // ---------------------------------------------------------------------------
 // Pipeline state
