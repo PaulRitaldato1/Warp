@@ -481,25 +481,14 @@ void Renderer::DrawDeferred()
 				return;
 			}
 
-			if (!meshComp.IsValid())
+			// Handles are resolved at assignment time, so this only reads. A mesh
+			// still uploading has a handle but no resource yet, and is skipped.
+			if (!meshComp.IsHandleValid())
 			{
 				return;
 			}
 
-			MeshResource* resource = nullptr;
-			if (meshComp.IsHandleValid())
-			{
-				resource = m_resourceManager->GetMeshResourceByHandle(meshComp.meshHandle);
-			}
-			else
-			{
-				resource = m_resourceManager->GetMeshResource(meshComp.path);
-				if (resource)
-				{
-					meshComp.meshHandle = resource->handle;
-				}
-			}
-
+			MeshResource* resource = m_resourceManager->GetMeshResourceByHandle(meshComp.meshHandle);
 			if (!resource)
 			{
 				return;

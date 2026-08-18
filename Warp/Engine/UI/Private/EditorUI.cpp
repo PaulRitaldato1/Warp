@@ -205,7 +205,7 @@ void EditorUI::DrawMeshBrowser(World& world)
 	MeshComponent& mesh = world.GetComponent<MeshComponent>(m_selectedEntity);
 
 	// Determine the current label for the combo.
-	const char* currentLabel = mesh.HasPath() ? mesh.path : "(none)";
+	const char* currentLabel = mesh.HasPath() ? mesh.GetPath().c_str() : "(none)";
 
 	if (ImGui::BeginCombo("Mesh", currentLabel))
 	{
@@ -217,13 +217,13 @@ void EditorUI::DrawMeshBrowser(World& world)
 		{
 			u32 handle = m_resourceManager->CreatePlane(10.f, 10.f);
 			mesh.meshHandle = handle;
-			mesh.path[0] = '\0';
+			mesh.ClearPath();
 		}
 		if (ImGui::Selectable("  Box"))
 		{
 			u32 handle = m_resourceManager->CreateBox(1.f, 1.f, 1.f);
 			mesh.meshHandle = handle;
-			mesh.path[0] = '\0';
+			mesh.ClearPath();
 		}
 
 		// Mesh files from Resources/ section.
@@ -235,11 +235,10 @@ void EditorUI::DrawMeshBrowser(World& world)
 
 			for (const String& filePath : m_meshFiles)
 			{
-				bool isSelected = (String(mesh.path) == filePath);
+				bool isSelected = (mesh.GetPath() == filePath);
 				if (ImGui::Selectable(filePath.c_str(), isSelected))
 				{
-					mesh.SetPath(filePath.c_str());
-					mesh.meshHandle = ~0u; // Reset handle so the renderer re-resolves from path.
+					m_resourceManager->AssignMesh(mesh, filePath.c_str());
 				}
 			}
 		}

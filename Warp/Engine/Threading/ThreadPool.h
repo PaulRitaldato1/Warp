@@ -12,8 +12,6 @@
 #include <type_traits>
 #include <typeinfo>
 
-template<typename T> bool IsReady(const std::future<T> fut) { return fut.wait_for(std::chrono::seconds(0)) == std::future_status::ready; }
-
 /* ThreadPool class */
 class ThreadPool
 {

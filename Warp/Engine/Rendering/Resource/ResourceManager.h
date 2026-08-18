@@ -7,6 +7,8 @@
 #include <Rendering/Resource/TextureResource.h>
 #include <Rendering/Renderer/Buffer.h>
 #include <Rendering/Renderer/TextureUpload.h>
+#include <Common/PathRegistry.h>
+#include <Core/ECS/Components/MeshComponent.h>
 #include <Threading/Executor.h>
 #include <Threading/Task.h>
 
@@ -49,9 +51,19 @@ public:
 	u32 CreatePlane(f32 sizeX = 10.f, f32 sizeZ = 10.f, u32 segmentsX = 1, u32 segmentsZ = 1);
 	u32 CreateBox(f32 sizeX = 1.f, f32 sizeY = 1.f, f32 sizeZ = 1.f);
 
+	// Returns the mesh's handle immediately, starting the load if this path has
+	// not been seen. The handle is valid straight away; the resource behind it
+	// stays null until the upload completes, so nothing needs to poll.
+	u32 RequestMesh(u32 pathId);
+
+	// Sets the path and resolves the handle together, so the two cannot drift.
+	// Prefer this over calling MeshComponent::SetPath directly.
+	void AssignMesh(MeshComponent& mesh, const char* path);
+
 	// Returns a MeshResource if ready, nullptr if still loading/uploading.
-	// Automatically kicks off loading on first request.
-	MeshResource* GetMeshResource(const char* path);
+	// Automatically kicks off loading on first request. Takes an interned path id
+	// (see PathRegistry) so the lookup is an integer hash with no allocation.
+	MeshResource* GetMeshResource(u32 pathId);
 
 	// O(1) handle-based lookup. Returns nullptr if the handle is invalid.
 	// Use this in the hot render loop once a handle has been cached from GetMeshResource.
@@ -59,7 +71,7 @@ public:
 
 	// Returns a TextureResource if ready, nullptr if still loading/uploading.
 	// Automatically kicks off loading on first request.
-	TextureResource* GetTextureResource(const char* path);
+	TextureResource* GetTextureResource(u32 pathId);
 
 	// O(1) handle-based lookup. Returns nullptr if the handle is invalid.
 	TextureResource* GetTextureResourceByHandle(u32 handle);
@@ -76,34 +88,34 @@ public:
 
 
 private:
-	u32  RegisterMesh(const String& name, URef<Mesh> mesh);
+	u32  RegisterMesh(u32 pathId, URef<Mesh> mesh);
 	void CreateDefaultTexture();
 	void CreateDefaultMaterialTexture();
 	void CreateDefaultNormalTexture();
-	void BeginMeshLoad(const String& path);
-	u32  BeginTextureLoad(const String& path);
+	void BeginMeshLoad(u32 pathId);
+	u32  BeginTextureLoad(u32 pathId);
 
 	// The whole load pipeline for one asset, start to Ready. Each co_await moves
 	// execution to the thread that step needs.
-	DetachedTask LoadMeshTask(String path);
-	DetachedTask LoadTextureTask(String path);
+	DetachedTask LoadMeshTask(u32 pathId);
+	DetachedTask LoadTextureTask(u32 pathId);
 
 	// Marks a resource Ready once its already-queued upload has had time to land.
 	// Used by the procedural and builtin paths, which skip the load step.
-	DetachedTask MarkMeshReadyTask(String path);
-	DetachedTask MarkTextureReadyTask(String path);
+	DetachedTask MarkMeshReadyTask(u32 pathId);
+	DetachedTask MarkTextureReadyTask(u32 pathId);
 
 	// Transition Loading -> Uploading: create GPU buffers, call UploadData().
 	// Return false if nothing was queued, in which case there is no copy to wait on.
-	bool FinalizeMeshUpload(const String& path, MeshResource& resource);
-	bool FinalizeTextureUpload(const String& path, TextureResource& resource);
+	bool FinalizeMeshUpload(u32 pathId, MeshResource& resource);
+	bool FinalizeTextureUpload(u32 pathId, TextureResource& resource);
 
-	Device*     m_device     = nullptr;
-	ThreadPool* m_threadPool = nullptr;
+	Device* m_device = nullptr;
 
 	// Cache: path -> resource. Entries persist for the lifetime of the manager.
-	HashMap<String, URef<MeshResource>>    m_meshCache;
-	HashMap<String, URef<TextureResource>> m_textureCache;
+	// Keyed on interned path id, so lookups hash an integer instead of a string.
+	HashMap<u32, URef<MeshResource>>    m_meshCache;
+	HashMap<u32, URef<TextureResource>> m_textureCache;
 
 	// Handle tables: index -> raw pointer for O(1) render-loop lookups.
 	Vector<MeshResource*>    m_meshByHandle;

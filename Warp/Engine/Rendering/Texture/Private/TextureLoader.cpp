@@ -1,5 +1,4 @@
 #include <Rendering/Texture/TextureLoader.h>
-#include <Threading/ThreadPool.h>
 #include <Debugging/Logging.h>
 
 #define TINYDDSLOADER_IMPLEMENTATION
@@ -324,23 +323,4 @@ TextureLoadResult TextureLoader::Load(const String& path, TextureColorSpace colo
 	return MakeLoadError(LoadErrorCode::UnsupportedFormat, "unrecognised file extension");
 }
 
-std::future<TextureLoadResult> TextureLoader::LoadAsync(const String& path, ThreadPool& pool,
-                                                       TextureColorSpace colorSpace)
-{
-	return pool.enqueue([](const String& p, TextureColorSpace cs) { return Load(p, cs); },
-	                    path, colorSpace);
-}
 
-Vector<std::future<TextureLoadResult>> TextureLoader::LoadBatch(const Vector<String>& paths,
-                                                               ThreadPool& pool,
-                                                               TextureColorSpace colorSpace)
-{
-	Vector<std::future<TextureLoadResult>> futures;
-	futures.reserve(paths.size());
-	for (const String& p : paths)
-	{
-		futures.push_back(pool.enqueue([](const String& path, TextureColorSpace cs) { return Load(path, cs); },
-		                               p, colorSpace));
-	}
-	return futures;
-}

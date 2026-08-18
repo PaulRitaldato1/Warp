@@ -1,7 +1,6 @@
 #include "fastgltf/types.hpp"
 #include <Rendering/Mesh/MeshLoader.h>
 #include <Debugging/Logging.h>
-#include <Threading/ThreadPool.h>
 
 #include <fastgltf/core.hpp>
 #include <fastgltf/tools.hpp>
@@ -259,20 +258,4 @@ MeshLoadResult MeshLoader::Load(const String& path)
 	return mesh;
 }
 
-std::future<MeshLoadResult> MeshLoader::LoadAsync(const String& path, ThreadPool& pool)
-{
-	return pool.enqueue(Load, path);
-}
 
-Vector<std::future<MeshLoadResult>> MeshLoader::LoadBatch(const Vector<String>& paths, ThreadPool& pool)
-{
-	Vector<std::future<MeshLoadResult>> futures;
-	futures.reserve(paths.size());
-
-	for (const auto& path : paths)
-	{
-		futures.push_back(pool.enqueue(Load, path));
-	}
-
-	return futures;
-}

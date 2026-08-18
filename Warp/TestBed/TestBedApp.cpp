@@ -35,12 +35,14 @@ struct TempGame : public UserApplicationBase
 
 		// Objects on the floor
 		Entity helmet = world.CreateEntity<TransformComponent, MeshComponent>();
-		world.GetComponent<MeshComponent>(helmet).SetPath("Resources/DamagedHelmet/DamagedHelmet.gltf");
+		resourceManager->AssignMesh(world.GetComponent<MeshComponent>(helmet),
+		                            "Resources/DamagedHelmet/DamagedHelmet.gltf");
 		world.GetComponent<TransformComponent>(helmet).Move({ 0.f, 0.f, 0.f });
 		world.GetComponent<TransformComponent>(helmet).Rotate({ 90.f, 180.f, 0.f });
 
 		Entity avocado = world.CreateEntity<TransformComponent, MeshComponent>();
-		world.GetComponent<MeshComponent>(avocado).SetPath("Resources/Avocado/Avocado.gltf");
+		resourceManager->AssignMesh(world.GetComponent<MeshComponent>(avocado),
+		                            "Resources/Avocado/Avocado.gltf");
 		TransformComponent& avocadoTransform = world.GetComponent<TransformComponent>(avocado);
 		avocadoTransform.Move({ 5.0f, -0.5f, 0.f });
 		avocadoTransform.Scale(20.0f);

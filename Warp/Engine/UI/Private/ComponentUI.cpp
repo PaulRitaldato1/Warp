@@ -7,6 +7,9 @@
 #include <Core/ECS/Components/SkyLightComponent.h>
 #include <imgui.h>
 
+#include <algorithm>
+#include <cstring>
+
 // ---------------------------------------------------------------------------
 // TransformComponent
 // ---------------------------------------------------------------------------
@@ -72,7 +75,21 @@ struct ComponentUI<MeshComponent>
 {
 	static void Draw(MeshComponent& mesh)
 	{
-		ImGui::InputText("Path", mesh.path, sizeof(mesh.path));
+		// Edit in a local buffer and commit on Enter. Interning is permanent, so
+		// re-interning per keystroke would fill the registry with partial paths.
+		char		  buffer[260];
+		const String& current = mesh.GetPath();
+		const size_t  length  = std::min(current.size(), sizeof(buffer) - 1);
+		std::memcpy(buffer, current.data(), length);
+		buffer[length] = '\0';
+
+		if (ImGui::InputText("Path", buffer, sizeof(buffer), ImGuiInputTextFlags_EnterReturnsTrue))
+		{
+			// Path only. The inspector has no ResourceManager, so the handle is
+			// cleared here and the mesh picker in EditorUI does the assignment.
+			mesh.SetPath(buffer);
+			mesh.meshHandle = ~0u;
+		}
 
 		bool visible    = mesh.HasRenderFlag(RenderFlags_Visible);
 		bool castShadow = mesh.HasRenderFlag(RenderFlags_CastShadow);

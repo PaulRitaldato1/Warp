@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
-#include <cstring>
+#include <Common/PathRegistry.h>
 
 enum RenderFlags : u32
 {
@@ -13,17 +13,28 @@ enum RenderFlags : u32
 	RenderFlags_Default	   = RenderFlags_Visible | RenderFlags_CastShadow | RenderFlags_ReceiveFog,
 };
 
+// The asset path is interned rather than stored inline. The gather loop walks
+// this column every frame and reads only the flags and the handle
 struct WARP_API MeshComponent
 {
-	char path[256]	= {}; // Asset path, null-terminated, fixed-size
 	u32 renderFlags = RenderFlags_Default;
-	u32 meshHandle	= ~0u; // Cached resource handle — set once ready, avoids per-frame string lookup
+	u32 meshHandle	= ~0u; // Cached resource handle, set once ready
+	u32 pathId		= PathRegistry::k_invalidId;
 
 	void SetPath(const char* assetPath)
 	{
-		const size_t len = std::min(std::strlen(assetPath), sizeof(path) - 1);
-		std::memcpy(path, assetPath, len);
-		path[len] = '\0';
+		pathId = GetPathRegistry().Intern(assetPath);
+	}
+
+	void ClearPath()
+	{
+		pathId = PathRegistry::k_invalidId;
+	}
+
+	// Empty string when no path is set.
+	const String& GetPath() const
+	{
+		return GetPathRegistry().Resolve(pathId);
 	}
 
 	void SetRenderFlag(RenderFlags flag)
@@ -46,7 +57,7 @@ struct WARP_API MeshComponent
 
 	bool HasPath() const
 	{
-		return path[0] != '\0';
+		return pathId != PathRegistry::k_invalidId;
 	}
 
 	bool IsValid() const
