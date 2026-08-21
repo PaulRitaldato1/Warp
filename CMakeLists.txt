@@ -160,15 +160,31 @@ endif()
 #TODO
 #we also have 'WARP_ASSERTIONS_ENABLED', 'LOG_WARN_ENABLED', 'LOG_DEBUG_ENABLED', 'LOG_INFO_ENABLED', and 'WARP_RELEASE'
 #that we need to add depending on the build type
+# MUST default ON.  This is not only a build-speed setting: the PCH header is
+# Warp/Engine/Common/CommonTypes.h, which defines WARP_BUILD_DX12 / WARP_BUILD_VK,
+# and CMake force-includes it into every translation unit (/FI).  The platform
+# backends open with `#ifdef WARP_BUILD_DX12' and do NOT include CommonTypes.h
+# themselves, so turning PCH off silently compiles all 11 D3D12 sources to empty
+# objects and the link fails with ~78 unresolved externals.
+#
+# Turn this off only after giving those sources an explicit
+#   #include <Common/CommonTypes.h>
+# or force-including it independently of the PCH.
+option(WARP_USE_PCH "Use precompiled headers" ON)
+
 add_library(WarpEngine SHARED ${ENGINE_SRCS} ${ENGINE_HDRS} ${IMGUI_SRCS})
 target_compile_features(WarpEngine PRIVATE cxx_std_23)
 target_compile_definitions(WarpEngine PRIVATE "WARP_EXPORT")
-target_precompile_headers(WarpEngine PRIVATE "Warp/Engine/Common/CommonTypes.h")
+if(WARP_USE_PCH)
+    target_precompile_headers(WarpEngine PRIVATE "Warp/Engine/Common/CommonTypes.h")
+endif()
 
 add_executable(Warp "Warp/EntryPoint/EntryPoint.h" ${TESTBED_SRCS} ${TESTBED_HDRS})
 target_compile_features(Warp PRIVATE cxx_std_23)
 target_compile_definitions(Warp PUBLIC)
-target_precompile_headers(Warp PRIVATE "Warp/Engine/Common/CommonTypes.h")
+if(WARP_USE_PCH)
+    target_precompile_headers(Warp PRIVATE "Warp/Engine/Common/CommonTypes.h")
+endif()
 
 #TODO: Make a separate application so I can hot reload the user code and the engine code
 # add_executable(Application ${ENTRY_SRCS} ${ENTRY_HDRS})
@@ -178,7 +194,7 @@ target_precompile_headers(Warp PRIVATE "Warp/Engine/Common/CommonTypes.h")
 #link libraries for each platform
 target_link_libraries(WarpEngine PUBLIC  DirectXMath)
 target_link_libraries(WarpEngine PRIVATE fastgltf::fastgltf)
-target_include_directories(WarpEngine PUBLIC  ${directxmath_SOURCE_DIR}/Inc)
+target_include_directories(WarpEngine SYSTEM PUBLIC  ${directxmath_SOURCE_DIR}/Inc)
 target_include_directories(WarpEngine SYSTEM PRIVATE ${tinyddsloader_SOURCE_DIR})
 target_include_directories(WarpEngine SYSTEM PRIVATE ${stb_SOURCE_DIR})
 target_include_directories(WarpEngine SYSTEM PUBLIC  ${imgui_SOURCE_DIR})

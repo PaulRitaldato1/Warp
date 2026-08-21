@@ -23,16 +23,15 @@ VKCommandList::~VKCommandList()
 	m_pools.clear();
 }
 
-void VKCommandList::InitializeWithDevice(VkDevice device, u32 familyIndex, u32 framesInFlight,
-                                          VkSampler defaultSampler)
+void VKCommandList::InitializeWithDevice(VkDevice device, u32 familyIndex, u32 framesInFlight, VkSampler defaultSampler)
 {
-	DYNAMIC_ASSERT(device,          "VKCommandList: device is null");
+	DYNAMIC_ASSERT(device, "VKCommandList: device is null");
 	DYNAMIC_ASSERT(framesInFlight > 0, "VKCommandList: framesInFlight must be > 0");
 
-	m_device         = device;
+	m_device		 = device;
 	m_defaultSampler = defaultSampler;
-	m_pushDescriptorFn = reinterpret_cast<PFN_vkCmdPushDescriptorSetKHR>(
-		vkGetDeviceProcAddr(device, "vkCmdPushDescriptorSetKHR"));
+	m_pushDescriptorFn =
+		reinterpret_cast<PFN_vkCmdPushDescriptorSetKHR>(vkGetDeviceProcAddr(device, "vkCmdPushDescriptorSetKHR"));
 	if (!m_pushDescriptorFn)
 	{
 		LOG_WARNING("VKCommandList: vkCmdPushDescriptorSetKHR not available — texture binding disabled");
@@ -42,24 +41,23 @@ void VKCommandList::InitializeWithDevice(VkDevice device, u32 familyIndex, u32 f
 	for (u32 i = 0; i < framesInFlight; ++i)
 	{
 		VkCommandPoolCreateInfo poolInfo = {};
-		poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-		poolInfo.queueFamilyIndex = familyIndex;
-		poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+		poolInfo.sType					 = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		poolInfo.queueFamilyIndex		 = familyIndex;
+		poolInfo.flags					 = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 		VK_CHECK(vkCreateCommandPool(device, &poolInfo, nullptr, &m_pools[i]),
-		         "VKCommandList: vkCreateCommandPool failed");
+				 "VKCommandList: vkCreateCommandPool failed");
 	}
 
 	// Allocate the command buffer from pool[0] initially; it gets re-allocated
 	// if needed, or simply re-recorded from the same underlying buffer.
 	VkCommandBufferAllocateInfo allocInfo = {};
-	allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool        = m_pools[0];
-	allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandBufferCount = 1;
+	allocInfo.sType						  = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool				  = m_pools[0];
+	allocInfo.level						  = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount		  = 1;
 
-	VK_CHECK(vkAllocateCommandBuffers(device, &allocInfo, &m_cmdBuf),
-	         "VKCommandList: vkAllocateCommandBuffers failed");
+	VK_CHECK(vkAllocateCommandBuffers(device, &allocInfo, &m_cmdBuf), "VKCommandList: vkAllocateCommandBuffers failed");
 
 	LOG_DEBUG("VKCommandList initialized");
 }
@@ -77,20 +75,19 @@ void VKCommandList::Begin(u32 frameIndex)
 
 	// Re-allocate the command buffer from the newly reset pool.
 	VkCommandBufferAllocateInfo allocInfo = {};
-	allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool        = m_pools[frameIndex];
-	allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandBufferCount = 1;
+	allocInfo.sType						  = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool				  = m_pools[frameIndex];
+	allocInfo.level						  = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount		  = 1;
 
 	VK_CHECK(vkAllocateCommandBuffers(m_device, &allocInfo, &m_cmdBuf),
-	         "VKCommandList::Begin: vkAllocateCommandBuffers failed");
+			 "VKCommandList::Begin: vkAllocateCommandBuffers failed");
 
 	VkCommandBufferBeginInfo beginInfo = {};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	beginInfo.sType					   = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags					   = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-	VK_CHECK(vkBeginCommandBuffer(m_cmdBuf, &beginInfo),
-	         "VKCommandList::Begin: vkBeginCommandBuffer failed");
+	VK_CHECK(vkBeginCommandBuffer(m_cmdBuf, &beginInfo), "VKCommandList::Begin: vkBeginCommandBuffer failed");
 
 	m_inRenderPass = false;
 }
@@ -103,8 +100,7 @@ void VKCommandList::End()
 		m_inRenderPass = false;
 	}
 
-	VK_CHECK(vkEndCommandBuffer(m_cmdBuf),
-	         "VKCommandList::End: vkEndCommandBuffer failed");
+	VK_CHECK(vkEndCommandBuffer(m_cmdBuf), "VKCommandList::End: vkEndCommandBuffer failed");
 }
 
 // ---------------------------------------------------------------------------
@@ -118,16 +114,16 @@ namespace
 {
 struct DebugLabelFunctions
 {
-	PFN_vkCmdBeginDebugUtilsLabelEXT  begin  = nullptr;
-	PFN_vkCmdEndDebugUtilsLabelEXT	  end	 = nullptr;
+	PFN_vkCmdBeginDebugUtilsLabelEXT begin	 = nullptr;
+	PFN_vkCmdEndDebugUtilsLabelEXT end		 = nullptr;
 	PFN_vkCmdInsertDebugUtilsLabelEXT insert = nullptr;
 
 	explicit DebugLabelFunctions(VkDevice device)
 	{
 		begin = reinterpret_cast<PFN_vkCmdBeginDebugUtilsLabelEXT>(
 			vkGetDeviceProcAddr(device, "vkCmdBeginDebugUtilsLabelEXT"));
-		end = reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(
-			vkGetDeviceProcAddr(device, "vkCmdEndDebugUtilsLabelEXT"));
+		end =
+			reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(vkGetDeviceProcAddr(device, "vkCmdEndDebugUtilsLabelEXT"));
 		insert = reinterpret_cast<PFN_vkCmdInsertDebugUtilsLabelEXT>(
 			vkGetDeviceProcAddr(device, "vkCmdInsertDebugUtilsLabelEXT"));
 	}
@@ -160,7 +156,7 @@ void VKCommandList::BeginEvent(std::string_view name)
 		return;
 	}
 
-	char				 buffer[128];
+	char buffer[128];
 	VkDebugUtilsLabelEXT label = MakeLabel(name, buffer);
 	functions.begin(m_cmdBuf, &label);
 }
@@ -182,7 +178,7 @@ void VKCommandList::SetMarker(std::string_view name)
 		return;
 	}
 
-	char				 buffer[128];
+	char buffer[128];
 	VkDebugUtilsLabelEXT label = MakeLabel(name, buffer);
 	functions.insert(m_cmdBuf, &label);
 }
@@ -195,8 +191,8 @@ void VKCommandList::SetPipelineState(PipelineState* state)
 {
 	DYNAMIC_ASSERT(state, "VKCommandList::SetPipelineState: state is null");
 	VKPipeline* vkPipeline = static_cast<VKPipeline*>(state);
-	m_currentLayout     = vkPipeline->GetNativeLayout();
-	m_currentBindingMap = &vkPipeline->GetRootToVulkanBindingMap();
+	m_currentLayout		   = vkPipeline->GetNativeLayout();
+	m_currentBindingMap	   = &vkPipeline->GetRootToVulkanBindingMap();
 	vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline->GetNativePipeline());
 }
 
@@ -216,7 +212,7 @@ void VKCommandList::SetVertexBuffers(Buffer* const* buffers, u32 count)
 	DYNAMIC_ASSERT(buffers && count > 0, "VKCommandList::SetVertexBuffers: no buffers");
 	DYNAMIC_ASSERT(count <= k_maxVertexStreams, "VKCommandList::SetVertexBuffers: too many streams");
 
-	VkBuffer	 nativeBuffers[k_maxVertexStreams];
+	VkBuffer nativeBuffers[k_maxVertexStreams];
 	VkDeviceSize offsets[k_maxVertexStreams] = {};
 
 	for (u32 i = 0; i < count; ++i)
@@ -244,27 +240,26 @@ void VKCommandList::SetPrimitiveTopology(PrimitiveTopology /*topo*/)
 // Viewport & scissor
 // ---------------------------------------------------------------------------
 
-void VKCommandList::SetViewport(f32 x, f32 y, f32 width, f32 height,
-                                f32 minDepth, f32 maxDepth)
+void VKCommandList::SetViewport(f32 x, f32 y, f32 width, f32 height, f32 minDepth, f32 maxDepth)
 {
 	// Vulkan clip space has Y increasing downward; D3D12 has Y increasing upward.
 	// VK_KHR_maintenance1 (core since Vulkan 1.1) allows a negative viewport height
 	// to flip Y, making both APIs use the same NDC convention without shader changes.
 	VkViewport vp = {};
-	vp.x        = x;
-	vp.y        = y + height; // origin at bottom-left
-	vp.width    = width;
-	vp.height   = -height;   // negative flips Y
-	vp.minDepth = minDepth;
-	vp.maxDepth = maxDepth;
+	vp.x		  = x;
+	vp.y		  = y + height; // origin at bottom-left
+	vp.width	  = width;
+	vp.height	  = -height; // negative flips Y
+	vp.minDepth	  = minDepth;
+	vp.maxDepth	  = maxDepth;
 	vkCmdSetViewport(m_cmdBuf, 0, 1, &vp);
 }
 
 void VKCommandList::SetScissorRect(u32 left, u32 top, u32 right, u32 bottom)
 {
 	VkRect2D rect = {};
-	rect.offset = { static_cast<int32_t>(left), static_cast<int32_t>(top) };
-	rect.extent = { right - left, bottom - top };
+	rect.offset	  = { static_cast<int32_t>(left), static_cast<int32_t>(top) };
+	rect.extent	  = { right - left, bottom - top };
 	vkCmdSetScissor(m_cmdBuf, 0, 1, &rect);
 }
 
@@ -272,8 +267,7 @@ void VKCommandList::SetScissorRect(u32 left, u32 top, u32 right, u32 bottom)
 // Render output binding — dynamic rendering
 // ---------------------------------------------------------------------------
 
-void VKCommandList::SetRenderTargets(u32 rtvCount, const DescriptorHandle* rtvs,
-                                     Texture* dsv)
+void VKCommandList::SetRenderTargets(u32 rtvCount, const DescriptorHandle* rtvs, Texture* dsv)
 {
 	DYNAMIC_ASSERT(rtvCount <= k_maxRTVs, "VKCommandList: max 8 RTVs");
 
@@ -292,43 +286,43 @@ void VKCommandList::SetRenderTargets(u32 rtvCount, const DescriptorHandle* rtvs,
 	{
 		m_currentRTVs[i] = rtvs[i];
 	}
-	m_rtvCount   = rtvCount;
+	m_rtvCount	 = rtvCount;
 	m_currentDSV = dsvHandle;
 
 	// Derive the render area from the first attachment's stored extent.
-	u32 areaWidth  = (rtvCount > 0) ? rtvs[0].width  : (dsv ? dsv->GetWidth()  : 0);
+	u32 areaWidth  = (rtvCount > 0) ? rtvs[0].width : (dsv ? dsv->GetWidth() : 0);
 	u32 areaHeight = (rtvCount > 0) ? rtvs[0].height : (dsv ? dsv->GetHeight() : 0);
 
 	// Build colour attachment infos (load = LOAD so explicit clears work via vkCmdClearAttachments).
 	VkRenderingAttachmentInfoKHR colourAttachments[k_maxRTVs] = {};
 	for (u32 i = 0; i < rtvCount; ++i)
 	{
-		colourAttachments[i].sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
-		colourAttachments[i].imageView   = reinterpret_cast<VkImageView>(static_cast<uintptr_t>(rtvs[i].ptr));
+		colourAttachments[i].sType		 = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+		colourAttachments[i].imageView	 = reinterpret_cast<VkImageView>(static_cast<uintptr_t>(rtvs[i].ptr));
 		colourAttachments[i].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-		colourAttachments[i].loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
-		colourAttachments[i].storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+		colourAttachments[i].loadOp		 = VK_ATTACHMENT_LOAD_OP_LOAD;
+		colourAttachments[i].storeOp	 = VK_ATTACHMENT_STORE_OP_STORE;
 	}
 
 	// Depth attachment info.
 	VkRenderingAttachmentInfoKHR depthAttachment = {};
 	if (dsvHandle.IsValid())
 	{
-		depthAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
-		depthAttachment.imageView   = reinterpret_cast<VkImageView>(static_cast<uintptr_t>(dsvHandle.ptr));
+		depthAttachment.sType		= VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+		depthAttachment.imageView	= reinterpret_cast<VkImageView>(static_cast<uintptr_t>(dsvHandle.ptr));
 		depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-		depthAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
-		depthAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+		depthAttachment.loadOp		= VK_ATTACHMENT_LOAD_OP_LOAD;
+		depthAttachment.storeOp		= VK_ATTACHMENT_STORE_OP_STORE;
 	}
 
-	VkRenderingInfoKHR renderingInfo = {};
-	renderingInfo.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
-	renderingInfo.renderArea.offset    = { 0, 0 };
-	renderingInfo.renderArea.extent    = { areaWidth, areaHeight };
-	renderingInfo.layerCount           = 1;
+	VkRenderingInfoKHR renderingInfo   = {};
+	renderingInfo.sType				   = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
+	renderingInfo.renderArea.offset	   = { 0, 0 };
+	renderingInfo.renderArea.extent	   = { areaWidth, areaHeight };
+	renderingInfo.layerCount		   = 1;
 	renderingInfo.colorAttachmentCount = rtvCount;
-	renderingInfo.pColorAttachments    = colourAttachments;
-	renderingInfo.pDepthAttachment     = dsvHandle.IsValid() ? &depthAttachment : nullptr;
+	renderingInfo.pColorAttachments	   = colourAttachments;
+	renderingInfo.pDepthAttachment	   = dsvHandle.IsValid() ? &depthAttachment : nullptr;
 
 	vkCmdBeginRendering(m_cmdBuf, &renderingInfo);
 	m_inRenderPass = true;
@@ -347,33 +341,33 @@ void VKCommandList::ClearRenderTarget(DescriptorHandle rtv, f32 r, f32 g, f32 b,
 		}
 	}
 
-	VkClearAttachment clearAtt = {};
-	clearAtt.aspectMask                  = VK_IMAGE_ASPECT_COLOR_BIT;
-	clearAtt.colorAttachment             = attachIndex;
+	VkClearAttachment clearAtt			 = {};
+	clearAtt.aspectMask					 = VK_IMAGE_ASPECT_COLOR_BIT;
+	clearAtt.colorAttachment			 = attachIndex;
 	clearAtt.clearValue.color.float32[0] = r;
 	clearAtt.clearValue.color.float32[1] = g;
 	clearAtt.clearValue.color.float32[2] = b;
 	clearAtt.clearValue.color.float32[3] = a;
 
-	VkClearRect clearRect = {};
-	clearRect.rect            = { {0, 0}, { rtv.width, rtv.height } };
-	clearRect.baseArrayLayer  = 0;
-	clearRect.layerCount      = 1;
+	VkClearRect clearRect	 = {};
+	clearRect.rect			 = { { 0, 0 }, { rtv.width, rtv.height } };
+	clearRect.baseArrayLayer = 0;
+	clearRect.layerCount	 = 1;
 
 	vkCmdClearAttachments(m_cmdBuf, 1, &clearAtt, 1, &clearRect);
 }
 
 void VKCommandList::ClearDepthStencil(Texture* dsv, f32 depth, u8 stencil)
 {
-	VkClearAttachment clearAtt = {};
-	clearAtt.aspectMask                     = VK_IMAGE_ASPECT_DEPTH_BIT;
-	clearAtt.clearValue.depthStencil.depth  = depth;
-	clearAtt.clearValue.depthStencil.stencil= stencil;
+	VkClearAttachment clearAtt				 = {};
+	clearAtt.aspectMask						 = VK_IMAGE_ASPECT_DEPTH_BIT;
+	clearAtt.clearValue.depthStencil.depth	 = depth;
+	clearAtt.clearValue.depthStencil.stencil = stencil;
 
-	VkClearRect clearRect = {};
-	clearRect.rect           = { {0, 0}, { dsv->GetWidth(), dsv->GetHeight() } };
+	VkClearRect clearRect	 = {};
+	clearRect.rect			 = { { 0, 0 }, { dsv->GetWidth(), dsv->GetHeight() } };
 	clearRect.baseArrayLayer = 0;
-	clearRect.layerCount     = 1;
+	clearRect.layerCount	 = 1;
 
 	vkCmdClearAttachments(m_cmdBuf, 1, &clearAtt, 1, &clearRect);
 }
@@ -391,8 +385,7 @@ void VKCommandList::EndCurrentRenderPass()
 // Copy / transfer
 // ---------------------------------------------------------------------------
 
-void VKCommandList::CopyBuffer(Buffer* src, Buffer* dst,
-                                u64 srcOffset, u64 dstOffset, u64 size)
+void VKCommandList::CopyBuffer(Buffer* src, Buffer* dst, u64 srcOffset, u64 dstOffset, u64 size)
 {
 	DYNAMIC_ASSERT(src, "VKCommandList::CopyBuffer: src is null");
 	DYNAMIC_ASSERT(dst, "VKCommandList::CopyBuffer: dst is null");
@@ -401,66 +394,69 @@ void VKCommandList::CopyBuffer(Buffer* src, Buffer* dst,
 	VKBuffer* vkDst = static_cast<VKBuffer*>(dst);
 
 	VkBufferCopy region = {};
-	region.srcOffset = srcOffset;
-	region.dstOffset = dstOffset;
-	region.size      = size;
+	region.srcOffset	= srcOffset;
+	region.dstOffset	= dstOffset;
+	region.size			= size;
 
 	vkCmdCopyBuffer(m_cmdBuf, vkSrc->GetNativeBuffer(), vkDst->GetNativeBuffer(), 1, &region);
 }
 
-void VKCommandList::CopyBufferToTexture(Buffer* src, u64 srcOffset, u32 srcRowPitch,
-                                         Texture* dst, u32 mipLevel, u32 arraySlice)
+void VKCommandList::CopyBufferToTexture(Buffer* src, u64 srcOffset, u32 srcRowPitch, Texture* dst, u32 mipLevel,
+										u32 arraySlice)
 {
 	DYNAMIC_ASSERT(src, "VKCommandList::CopyBufferToTexture: src is null");
 	DYNAMIC_ASSERT(dst, "VKCommandList::CopyBufferToTexture: dst is null");
 
-	VKBuffer*  vkSrc = static_cast<VKBuffer*>(src);
+	VKBuffer* vkSrc	 = static_cast<VKBuffer*>(src);
 	VKTexture* vkDst = static_cast<VKTexture*>(dst);
 
-	const u32 fullWidth  = vkDst->GetWidth();
+	const u32 fullWidth	 = vkDst->GetWidth();
 	const u32 fullHeight = vkDst->GetHeight();
-	const u32 mipWidth   = (fullWidth  >> mipLevel) > 0 ? (fullWidth  >> mipLevel) : 1;
-	const u32 mipHeight  = (fullHeight >> mipLevel) > 0 ? (fullHeight >> mipLevel) : 1;
+	const u32 mipWidth	 = (fullWidth >> mipLevel) > 0 ? (fullWidth >> mipLevel) : 1;
+	const u32 mipHeight	 = (fullHeight >> mipLevel) > 0 ? (fullHeight >> mipLevel) : 1;
 
 	// Vulkan bufferRowLength is in texels. Convert from the byte srcRowPitch.
 	// For BC formats: (srcRowPitch / blockSizeBytes) * 4 texels per block width.
 	// For uncompressed: srcRowPitch / bytesPerTexel.
 	// If 0, Vulkan treats the data as tightly packed (bufferRowLength == mipWidth).
-	u32 bufferRowLength = 0;
+	u32 bufferRowLength		= 0;
 	const TextureFormat fmt = vkDst->GetFormat();
 	switch (fmt)
 	{
-		case TextureFormat::BC1: case TextureFormat::BC4: bufferRowLength = (srcRowPitch / 8)  * 4; break;
-		case TextureFormat::BC3: case TextureFormat::BC5:
-		case TextureFormat::BC7:                          bufferRowLength = (srcRowPitch / 16) * 4; break;
+		case TextureFormat::BC1:
+		case TextureFormat::BC4:
+			bufferRowLength = (srcRowPitch / 8) * 4;
+			break;
+		case TextureFormat::BC3:
+		case TextureFormat::BC5:
+		case TextureFormat::BC7:
+			bufferRowLength = (srcRowPitch / 16) * 4;
+			break;
 		default:
 		{
 			// Uncompressed: compute texel count from byte pitch.
 			// BytesPerPixel for the common formats; 0 means unknown → fall back to tight packing.
-			static constexpr u32 k_bpp[] = { 0,4,4,4,2,1,8,16,12,8,4,0,0,0,0,0,0,0 };
-			const u32 idx = static_cast<u32>(fmt);
-			const u32 bpp = idx < sizeof(k_bpp) / sizeof(k_bpp[0]) ? k_bpp[idx] : 0;
-			bufferRowLength = (bpp > 0) ? (srcRowPitch / bpp) : 0;
+			static constexpr u32 k_bpp[] = { 0, 4, 4, 4, 2, 1, 8, 16, 12, 8, 4, 0, 0, 0, 0, 0, 0, 0 };
+			const u32 idx				 = static_cast<u32>(fmt);
+			const u32 bpp				 = idx < sizeof(k_bpp) / sizeof(k_bpp[0]) ? k_bpp[idx] : 0;
+			bufferRowLength				 = (bpp > 0) ? (srcRowPitch / bpp) : 0;
 			break;
 		}
 	}
 
-	VkBufferImageCopy region = {};
-	region.bufferOffset      = srcOffset;
-	region.bufferRowLength   = bufferRowLength;
-	region.bufferImageHeight = 0; // tightly packed in height
-	region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-	region.imageSubresource.mipLevel       = mipLevel;
+	VkBufferImageCopy region			   = {};
+	region.bufferOffset					   = srcOffset;
+	region.bufferRowLength				   = bufferRowLength;
+	region.bufferImageHeight			   = 0; // tightly packed in height
+	region.imageSubresource.aspectMask	   = VK_IMAGE_ASPECT_COLOR_BIT;
+	region.imageSubresource.mipLevel	   = mipLevel;
 	region.imageSubresource.baseArrayLayer = arraySlice;
-	region.imageSubresource.layerCount     = 1;
-	region.imageOffset = { 0, 0, 0 };
-	region.imageExtent = { mipWidth, mipHeight, 1 };
+	region.imageSubresource.layerCount	   = 1;
+	region.imageOffset					   = { 0, 0, 0 };
+	region.imageExtent					   = { mipWidth, mipHeight, 1 };
 
-	vkCmdCopyBufferToImage(m_cmdBuf,
-	                       vkSrc->GetNativeBuffer(),
-	                       vkDst->GetNativeImage(),
-	                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-	                       1, &region);
+	vkCmdCopyBufferToImage(m_cmdBuf, vkSrc->GetNativeBuffer(), vkDst->GetNativeImage(),
+						   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 }
 
 // ---------------------------------------------------------------------------
@@ -492,27 +488,27 @@ void VKCommandList::TransitionTexture(Texture* texture, ResourceState newState)
 		return; // Already in the target layout.
 	}
 
-	const bool isDepth = (vkTex->GetFormat() == TextureFormat::Depth32F ||
-	                      vkTex->GetFormat() == TextureFormat::Depth24Stencil8);
+	const bool isDepth =
+		(vkTex->GetFormat() == TextureFormat::Depth32F || vkTex->GetFormat() == TextureFormat::Depth24Stencil8);
 	VkImageAspectFlags aspect = isDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
 
 	VkImageMemoryBarrier2 barrier = {};
-	barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-	barrier.srcStageMask        = srcInfo.stages  ? srcInfo.stages  : VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-	barrier.srcAccessMask       = srcInfo.access;
-	barrier.dstStageMask        = dstInfo.stages  ? dstInfo.stages  : VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-	barrier.dstAccessMask       = dstInfo.access;
-	barrier.oldLayout           = currentLayout;
-	barrier.newLayout           = dstInfo.layout;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image               = vkTex->GetNativeImage();
-	barrier.subresourceRange    = { aspect, 0, vkTex->GetMipLevels(), 0, 1 };
+	barrier.sType				  = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+	barrier.srcStageMask		  = srcInfo.stages ? srcInfo.stages : VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+	barrier.srcAccessMask		  = srcInfo.access;
+	barrier.dstStageMask		  = dstInfo.stages ? dstInfo.stages : VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+	barrier.dstAccessMask		  = dstInfo.access;
+	barrier.oldLayout			  = currentLayout;
+	barrier.newLayout			  = dstInfo.layout;
+	barrier.srcQueueFamilyIndex	  = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex	  = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image				  = vkTex->GetNativeImage();
+	barrier.subresourceRange	  = { aspect, 0, vkTex->GetMipLevels(), 0, 1 };
 
-	VkDependencyInfo depInfo = {};
-	depInfo.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+	VkDependencyInfo depInfo		= {};
+	depInfo.sType					= VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 	depInfo.imageMemoryBarrierCount = 1;
-	depInfo.pImageMemoryBarriers    = &barrier;
+	depInfo.pImageMemoryBarriers	= &barrier;
 
 	vkCmdPipelineBarrier2(m_cmdBuf, &depInfo);
 	vkTex->SetCurrentLayout(dstInfo.layout);
@@ -538,21 +534,21 @@ void VKCommandList::TransitionBuffer(Buffer* buffer, ResourceState newState)
 	}
 
 	VkBufferMemoryBarrier2 barrier = {};
-	barrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
-	barrier.srcStageMask        = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-	barrier.srcAccessMask       = srcAccess;
-	barrier.dstStageMask        = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-	barrier.dstAccessMask       = dstAccess;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.buffer              = vkBuf->GetNativeBuffer();
-	barrier.offset              = 0;
-	barrier.size                = VK_WHOLE_SIZE;
+	barrier.sType				   = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+	barrier.srcStageMask		   = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	barrier.srcAccessMask		   = srcAccess;
+	barrier.dstStageMask		   = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	barrier.dstAccessMask		   = dstAccess;
+	barrier.srcQueueFamilyIndex	   = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex	   = VK_QUEUE_FAMILY_IGNORED;
+	barrier.buffer				   = vkBuf->GetNativeBuffer();
+	barrier.offset				   = 0;
+	barrier.size				   = VK_WHOLE_SIZE;
 
-	VkDependencyInfo depInfo = {};
-	depInfo.sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+	VkDependencyInfo depInfo		 = {};
+	depInfo.sType					 = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 	depInfo.bufferMemoryBarrierCount = 1;
-	depInfo.pBufferMemoryBarriers    = &barrier;
+	depInfo.pBufferMemoryBarriers	 = &barrier;
 
 	vkCmdPipelineBarrier2(m_cmdBuf, &depInfo);
 	vkBuf->SetCurrentAccess(dstAccess);
@@ -568,21 +564,21 @@ void VKCommandList::SetConstantBuffer(u32 rootIndex, Buffer* buffer)
 	DYNAMIC_ASSERT(buffer, "VKCommandList::SetConstantBuffer: buffer is null");
 	DYNAMIC_ASSERT(m_currentLayout != VK_NULL_HANDLE, "VKCommandList::SetConstantBuffer: no pipeline bound");
 	DYNAMIC_ASSERT(m_currentBindingMap && rootIndex < m_currentBindingMap->size(),
-		"VKCommandList::SetConstantBuffer: rootIndex out of range");
+				   "VKCommandList::SetConstantBuffer: rootIndex out of range");
 
 	VKBuffer* vkBuf = static_cast<VKBuffer*>(buffer);
 
 	VkDescriptorBufferInfo bufInfo = {};
-	bufInfo.buffer = vkBuf->GetNativeBuffer();
-	bufInfo.offset = 0;
-	bufInfo.range  = vkBuf->GetSize();
+	bufInfo.buffer				   = vkBuf->GetNativeBuffer();
+	bufInfo.offset				   = 0;
+	bufInfo.range				   = vkBuf->GetSize();
 
 	VkWriteDescriptorSet write = {};
-	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstBinding      = (*m_currentBindingMap)[rootIndex];
-	write.descriptorCount = 1;
-	write.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	write.pBufferInfo     = &bufInfo;
+	write.sType				   = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstBinding		   = (*m_currentBindingMap)[rootIndex];
+	write.descriptorCount	   = 1;
+	write.descriptorType	   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	write.pBufferInfo		   = &bufInfo;
 
 	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, 1, &write);
 }
@@ -593,21 +589,21 @@ void VKCommandList::SetConstantBufferView(u32 rootIndex, Buffer* buffer, u64 off
 	DYNAMIC_ASSERT(buffer, "VKCommandList::SetConstantBufferView: buffer is null");
 	DYNAMIC_ASSERT(m_currentLayout != VK_NULL_HANDLE, "VKCommandList::SetConstantBufferView: no pipeline bound");
 	DYNAMIC_ASSERT(m_currentBindingMap && rootIndex < m_currentBindingMap->size(),
-		"VKCommandList::SetConstantBufferView: rootIndex out of range");
+				   "VKCommandList::SetConstantBufferView: rootIndex out of range");
 
 	VKBuffer* vkBuf = static_cast<VKBuffer*>(buffer);
 
 	VkDescriptorBufferInfo bufInfo = {};
-	bufInfo.buffer = vkBuf->GetNativeBuffer();
-	bufInfo.offset = offset;
-	bufInfo.range  = size;
+	bufInfo.buffer				   = vkBuf->GetNativeBuffer();
+	bufInfo.offset				   = offset;
+	bufInfo.range				   = size;
 
 	VkWriteDescriptorSet write = {};
-	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstBinding      = (*m_currentBindingMap)[rootIndex];
-	write.descriptorCount = 1;
-	write.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	write.pBufferInfo     = &bufInfo;
+	write.sType				   = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstBinding		   = (*m_currentBindingMap)[rootIndex];
+	write.descriptorCount	   = 1;
+	write.descriptorType	   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	write.pBufferInfo		   = &bufInfo;
 
 	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, 1, &write);
 }
@@ -618,22 +614,22 @@ void VKCommandList::SetShaderResource(u32 rootIndex, Texture* texture)
 		return;
 
 	DYNAMIC_ASSERT(m_currentBindingMap && rootIndex < m_currentBindingMap->size(),
-		"VKCommandList::SetShaderResource: rootIndex out of range");
+				   "VKCommandList::SetShaderResource: rootIndex out of range");
 
 	VKTexture* vkTex = static_cast<VKTexture*>(texture);
 
 	VkDescriptorImageInfo imageInfo = {};
-	imageInfo.sampler     = m_defaultSampler;
-	imageInfo.imageView   = vkTex->GetNativeView();
-	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	imageInfo.sampler				= m_defaultSampler;
+	imageInfo.imageView				= vkTex->GetNativeView();
+	imageInfo.imageLayout			= VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkWriteDescriptorSet write = {};
-	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstBinding      = (*m_currentBindingMap)[rootIndex];
-	write.dstArrayElement = 0;
-	write.descriptorCount = 1;
-	write.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	write.pImageInfo      = &imageInfo;
+	write.sType				   = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstBinding		   = (*m_currentBindingMap)[rootIndex];
+	write.dstArrayElement	   = 0;
+	write.descriptorCount	   = 1;
+	write.descriptorType	   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	write.pImageInfo		   = &imageInfo;
 
 	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, 1, &write);
 }
@@ -644,12 +640,12 @@ void VKCommandList::SetShaderResources(u32 rootIndex, const Vector<Texture*>& te
 		return;
 
 	DYNAMIC_ASSERT(m_currentBindingMap && rootIndex < m_currentBindingMap->size(),
-		"VKCommandList::SetShaderResources: rootIndex out of range");
+				   "VKCommandList::SetShaderResources: rootIndex out of range");
 
 	const u32 baseBinding = (*m_currentBindingMap)[rootIndex];
 
 	Vector<VkDescriptorImageInfo> imageInfos;
-	Vector<VkWriteDescriptorSet>  writes;
+	Vector<VkWriteDescriptorSet> writes;
 	imageInfos.reserve(textures.size());
 	writes.reserve(textures.size());
 
@@ -661,24 +657,24 @@ void VKCommandList::SetShaderResources(u32 rootIndex, const Vector<Texture*>& te
 		VKTexture* vkTex = static_cast<VKTexture*>(textures[i]);
 
 		VkDescriptorImageInfo& info = imageInfos.emplace_back();
-		info.sampler     = m_defaultSampler;
-		info.imageView   = vkTex->GetNativeView();
-		info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		info.sampler				= m_defaultSampler;
+		info.imageView				= vkTex->GetNativeView();
+		info.imageLayout			= VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 		VkWriteDescriptorSet& write = writes.emplace_back();
-		write                 = {};
-		write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write.dstBinding      = baseBinding + i;
-		write.dstArrayElement = 0;
-		write.descriptorCount = 1;
-		write.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		write.pImageInfo      = &imageInfos.back();
+		write						= {};
+		write.sType					= VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstBinding			= baseBinding + i;
+		write.dstArrayElement		= 0;
+		write.descriptorCount		= 1;
+		write.descriptorType		= VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		write.pImageInfo			= &imageInfos.back();
 	}
 
 	if (!writes.empty())
 	{
 		m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0,
-		                   static_cast<u32>(writes.size()), writes.data());
+						   static_cast<u32>(writes.size()), writes.data());
 	}
 }
 
@@ -688,21 +684,21 @@ void VKCommandList::SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 o
 	DYNAMIC_ASSERT(buffer, "VKCommandList::SetShaderResourceBuffer: buffer is null");
 	DYNAMIC_ASSERT(m_currentLayout != VK_NULL_HANDLE, "VKCommandList::SetShaderResourceBuffer: no pipeline bound");
 	DYNAMIC_ASSERT(m_currentBindingMap && rootIndex < m_currentBindingMap->size(),
-		"VKCommandList::SetShaderResourceBuffer: rootIndex out of range");
+				   "VKCommandList::SetShaderResourceBuffer: rootIndex out of range");
 
 	VKBuffer* vkBuf = static_cast<VKBuffer*>(buffer);
 
 	VkDescriptorBufferInfo bufInfo = {};
-	bufInfo.buffer = vkBuf->GetNativeBuffer();
-	bufInfo.offset = offset;
-	bufInfo.range  = vkBuf->GetSize() - offset;
+	bufInfo.buffer				   = vkBuf->GetNativeBuffer();
+	bufInfo.offset				   = offset;
+	bufInfo.range				   = vkBuf->GetSize() - offset;
 
 	VkWriteDescriptorSet write = {};
-	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstBinding      = (*m_currentBindingMap)[rootIndex];
-	write.descriptorCount = 1;
-	write.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	write.pBufferInfo     = &bufInfo;
+	write.sType				   = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstBinding		   = (*m_currentBindingMap)[rootIndex];
+	write.descriptorCount	   = 1;
+	write.descriptorType	   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	write.pBufferInfo		   = &bufInfo;
 
 	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, 1, &write);
 }
@@ -711,17 +707,14 @@ void VKCommandList::SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 o
 // Draw / dispatch
 // ---------------------------------------------------------------------------
 
-void VKCommandList::Draw(u32 vertexCount, u32 instanceCount,
-                         u32 firstVertex, u32 firstInstance)
+void VKCommandList::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance)
 {
 	vkCmdDraw(m_cmdBuf, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
-void VKCommandList::DrawIndexed(u32 indexCount, u32 instanceCount,
-                                u32 firstIndex, u32 baseVertex, u32 firstInstance)
+void VKCommandList::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, u32 baseVertex, u32 firstInstance)
 {
-	vkCmdDrawIndexed(m_cmdBuf, indexCount, instanceCount, firstIndex,
-	                 static_cast<int32_t>(baseVertex), firstInstance);
+	vkCmdDrawIndexed(m_cmdBuf, indexCount, instanceCount, firstIndex, static_cast<int32_t>(baseVertex), firstInstance);
 }
 
 void VKCommandList::Dispatch(u32 x, u32 y, u32 z)

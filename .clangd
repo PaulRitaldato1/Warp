@@ -1,0 +1,48 @@
+# clangd project configuration
+#
+# CMake compiles this project with clang-cl and a precompiled header, so 56 of
+# the 61 entries in compile_commands.json carry MSVC PCH flags.  clangd cannot
+# read an MSVC-format .pch, so left alone it fails to load the PCH and reports
+# bogus "undeclared identifier" errors across almost every translation unit.
+#
+# /Yu (use PCH) and /Fp (PCH path) are removed.  /FI is deliberately KEPT --
+# it force-includes cmake_pch.hxx, which is an ordinary header clangd can parse
+# normally, so the declarations the PCH provided are still visible.
+
+CompileFlags:
+  Add:
+    # CMake emits the C++ standard as "-std:c++latest" (dash form) for
+    # cxx_std_23.  clangd silently DROPS that spelling and falls back to its
+    # clang-cl default of C++14 -- which is why std::scoped_lock, concepts and
+    # every other post-14 feature showed up as an error.  Only the slash form
+    # is honoured, so it is re-added here.  Verified: 9 errors -> 0.
+    - /std:c++latest
+
+  Remove:
+    - /Yu*      # use precompiled header
+    - /Fp*      # precompiled header filename
+    - /Fo*      # object file output path
+    - /Fd*      # PDB output path
+    - /MP       # multi-process compile; meaningless for a single-TU parse
+
+  # Let clangd ask the compiler for its system include paths.  Without this it
+  # cannot find the MSVC STL or the Windows SDK headers.
+  CompilationDatabase: build
+
+Diagnostics:
+  UnusedIncludes: None
+  ClangTidy:
+    Add:
+      - bugprone-*
+      - performance-*
+      - modernize-use-override
+      - modernize-use-nullptr
+    Remove:
+      - modernize-use-trailing-return-type
+      - bugprone-easily-swappable-parameters
+
+InlayHints:
+  Enabled: No
+
+Hover:
+  ShowAKA: Yes

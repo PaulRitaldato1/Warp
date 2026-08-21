@@ -16,14 +16,14 @@
 #include <Rendering/Renderer/Shader.h>
 #include <Rendering/Renderer/Pipeline.h>
 #include <Rendering/Renderer/TextureUpload.h>
+
 class IWindow;
 class World;
 class ResourceManager;
 class RenderDocCapture;
-
 #include <UI/ImGuiBackend.h>
 
-enum class RenderPath
+enum class RenderPath : u8
 {
 	Deferred,
 	ForwardPlus
@@ -132,6 +132,18 @@ public:
 		return m_workerPool.get();
 	}
 
+	// Last frame's per-entity frustum culling counts, for the debug UI.
+	struct CullStats
+	{
+		u32 tested = 0;
+		u32 culled = 0;
+	};
+
+	CullStats GetCullStats() const
+	{
+		return m_cullStats;
+	}
+
 protected:
 	// Render path implementations — filled out as the engine matures.
 	// Both live in Renderer.cpp and use only abstract CommandList/Queue types.
@@ -208,6 +220,8 @@ protected:
 
 	Array<FrameSyncPoint, k_framesInFlight> m_frameSyncPoints;
 	u32 m_frameIndex = 0;
+
+	CullStats m_cullStats;
 
 	// Per-worker command lists — long-lived, reset each frame via Begin(frameIndex).
 	// Indexed by worker thread index.

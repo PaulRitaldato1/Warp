@@ -75,11 +75,18 @@ struct DrawList
 	Vector<u32> litMeshes;
 	Vector<u32> unlitMeshes;
 
+	// Per-entity culling counts, not per-submesh. Correct culling and culling that
+	// rejects nothing look identical without these.
+	u32 meshesTested = 0;
+	u32 meshesCulled = 0;
+
 	void Clear()
 	{
 		items.clear();
 		shadowCasters.clear();
 		litMeshes.clear();
 		unlitMeshes.clear();
+		meshesTested = 0;
+		meshesCulled = 0;
 	}
 };

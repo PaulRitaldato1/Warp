@@ -46,8 +46,10 @@ VSOutput VSMain(VSInput input)
 {
     VSOutput output;
     output.position     = mul(viewProj, mul(model, float4(input.position, 1.0)));
+    // Normals need the inverse transpose, tangents do not. A tangent lies along
+    // the surface, so it transforms like a position.
     output.normal       = normalize(mul((float3x3)modelInvTranspose, input.normal));
-    output.tangent      = normalize(mul((float3x3)modelInvTranspose, input.tangent.xyz));
+    output.tangent      = normalize(mul((float3x3)model, input.tangent.xyz));
     output.bitangentSign = input.tangent.w;
     output.uv0          = input.uv0;
     return output;

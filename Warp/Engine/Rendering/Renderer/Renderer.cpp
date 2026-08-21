@@ -1,5 +1,6 @@
 #include "DirectXMath.h"
 #include "Math/Math.h"
+#include "Math/Frustum.h"
 #include "Renderer/UploadBuffer.h"
 #include <Rendering/Lighting/LightData.h>
 #include <Rendering/Renderer/DescriptorHandle.h>
@@ -448,6 +449,8 @@ void Renderer::DrawDeferred()
 		}
 	}
 
+	const Array<Vec4, 6> cameraFrustum = ExtractFrustumPlanes(viewProj);
+
 	if (!m_deferredGeomPSO)
 	{
 		CreateDeferredGeometryPipeline();
@@ -496,6 +499,7 @@ void Renderer::DrawDeferred()
 
 			Mat4 model;
 			Mat4 modelInvTranspose;
+			bool visibleToCamera = true;
 			{
 				using namespace DirectX;
 				SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
@@ -503,7 +507,35 @@ void Renderer::DrawDeferred()
 				SimdMat T = XMMatrixTranslation(transform.position.x, transform.position.y, transform.position.z);
 				SimdMat M = XMMatrixMultiply(XMMatrixMultiply(S, R), T);
 				XMStoreFloat4x4(&model, M);
-				XMStoreFloat4x4(&modelInvTranspose, XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
+
+				// Bounds are model space, so they follow the transform. Refitting an
+				// AABB after rotation grows it, which costs some false positives.
+				BoundingBox worldBounds;
+				resource->mesh->bounds.Transform(worldBounds, M);
+				visibleToCamera = IsVisible(cameraFrustum, worldBounds);
+
+				++drawList.meshesTested;
+				if (!visibleToCamera)
+				{
+					++drawList.meshesCulled;
+				}
+
+				// Camera visibility gates the lit and unlit lists only, since geometry
+				// outside the view can still cast a shadow into it. When neither pass
+				// will reference the item, skip building it at all.
+				if (!visibleToCamera && !meshComp.HasRenderFlag(RenderFlags_CastShadow))
+				{
+					return;
+				}
+
+				// Under uniform scale the inverse transpose is the rotation times 1/s,
+				// and the shader normalizes, so M itself gives the same normal. Only
+				// non-uniform scale needs the inverse, which is the expensive path.
+				constexpr f32 k_scaleEpsilon = 1e-5f;
+				const bool uniformScale		 = fabsf(transform.scale.x - transform.scale.y) < k_scaleEpsilon &&
+											   fabsf(transform.scale.y - transform.scale.z) < k_scaleEpsilon;
+
+				XMStoreFloat4x4(&modelInvTranspose, uniformScale ? M : XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
 			}
 
 			for (const Submesh& submesh : resource->mesh->submeshes)
@@ -562,16 +594,21 @@ void Renderer::DrawDeferred()
 					drawList.shadowCasters.push_back(itemIndex);
 				}
 
-				if (meshComp.HasRenderFlag(RenderFlags_Unlit))
+				if (visibleToCamera)
 				{
-					drawList.unlitMeshes.push_back(itemIndex);
-				}
-				else
-				{
-					drawList.litMeshes.push_back(itemIndex);
+					if (meshComp.HasRenderFlag(RenderFlags_Unlit))
+					{
+						drawList.unlitMeshes.push_back(itemIndex);
+					}
+					else
+					{
+						drawList.litMeshes.push_back(itemIndex);
+					}
 				}
 			}
 		});
+
+	m_cullStats = { drawList.meshesTested, drawList.meshesCulled };
 
 	LightList lightList;
 	m_world->Each<TransformComponent, LightComponent>(
@@ -740,24 +777,35 @@ void Renderer::DrawDeferred()
 	cmd.SetPipelineState(m_deferredGeomPSO.get());
 	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
-	for (const DrawItem& item : drawList.items)
+	// Walking the sublists rather than items is what makes frustum culling take
+	// effect: a culled shadow caster stays in items for the shadow pass but never
+	// enters these lists. Unlit shares the lit path until DrawMeshesUnlit exists,
+	// so the flag keeps its current (absent) effect instead of dropping the mesh.
+	const Span<const u32> gbufferLists[] = { drawList.litMeshes, drawList.unlitMeshes };
+
+	for (Span<const u32> list : gbufferLists)
 	{
-		PerDrawConstants constants;
-		constants.viewProj			= viewProj;
-		constants.model				= item.model;
-		constants.modelInvTranspose = item.modelInvTranspose;
-		constants.emissiveFactor	= item.emissiveFactor;
+		for (u32 itemIndex : list)
+		{
+			const DrawItem& item = drawList.items[itemIndex];
 
-		UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(PerDrawConstants), 256);
-		cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
+			PerDrawConstants constants;
+			constants.viewProj			= viewProj;
+			constants.model				= item.model;
+			constants.modelInvTranspose = item.modelInvTranspose;
+			constants.emissiveFactor	= item.emissiveFactor;
 
-		Buffer* streams[] = { item.positionBuffer, item.attributeBuffer };
-		cmd.SetVertexBuffers(streams, 2);
-		cmd.SetIndexBuffer(item.indexBuffer);
-		cmd.SetShaderResources(1, { item.textures[TextureSlot::BaseColor], item.textures[TextureSlot::Normal],
-									item.textures[TextureSlot::MetallicRoughness],
-									item.textures[TextureSlot::Occlusion], item.textures[TextureSlot::Emissive] });
-		cmd.DrawIndexed(item.indexCount, 1, item.indexOffset, item.vertexOffset, 0);
+			UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(PerDrawConstants), 256);
+			cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
+
+			Buffer* streams[] = { item.positionBuffer, item.attributeBuffer };
+			cmd.SetVertexBuffers(streams, 2);
+			cmd.SetIndexBuffer(item.indexBuffer);
+			cmd.SetShaderResources(1, { item.textures[TextureSlot::BaseColor], item.textures[TextureSlot::Normal],
+										item.textures[TextureSlot::MetallicRoughness],
+										item.textures[TextureSlot::Occlusion], item.textures[TextureSlot::Emissive] });
+			cmd.DrawIndexed(item.indexCount, 1, item.indexOffset, item.vertexOffset, 0);
+		}
 	}
 
 	Warp::Debugging::GPUMarker::EndEvent(&cmd);
@@ -1123,16 +1171,16 @@ void Renderer::InitShadowPSO()
 	desc.pixelShader  = nullptr;
 	// Position only. The shadow VS reads nothing else, and binding this stream
 	// alone is what makes the split pay off.
-	desc.inputLayout  = {
+	desc.inputLayout = {
 		{ "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
 	};
-	desc.renderTargetFormats  = {};
-	desc.depthFormat		  = TextureFormat::Depth32F;
-	desc.topology			  = PrimitiveTopology::TriangleList;
-	desc.enableDepthTest	  = true;
-	desc.enableDepthWrite	  = true;
-	desc.enableStencilTest	  = false;
-	desc.enableBlending		  = false;
+	desc.renderTargetFormats = {};
+	desc.depthFormat		 = TextureFormat::Depth32F;
+	desc.topology			 = PrimitiveTopology::TriangleList;
+	desc.enableDepthTest	 = true;
+	desc.enableDepthWrite	 = true;
+	desc.enableStencilTest	 = false;
+	desc.enableBlending		 = false;
 
 	// Same depth values as CullMode::None here, at roughly half the rasterization.
 	desc.rasterState.cullMode = RasterizerState::CullMode::Back;
@@ -1143,7 +1191,7 @@ void Renderer::InitShadowPSO()
 	desc.rasterState.slopeScaledDepthBias = 2.f;
 	desc.rasterState.depthBiasClamp		  = 0.f;
 
-	desc.bindings			  = {
+	desc.bindings = {
 		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — Shadow Constants
 	};
 
