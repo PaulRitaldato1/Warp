@@ -26,18 +26,28 @@
 #include <UI/ImGuiBackend.h>
 #include <algorithm>
 
-struct PerDrawConstants
+// Split by update frequency. The per-view halves are bound once per pass; only
+// the per-draw halves are re-uploaded for each submesh.
+struct PerViewConstants
 {
 	Mat4 viewProj;
+};
+
+struct PerDrawConstants
+{
 	Mat4 model;
 	Mat4 modelInvTranspose;
 	Vec3 emissiveFactor;
 	f32 padding;
 };
 
-struct ShadowCB
+struct ShadowViewConstants
 {
 	Mat4 lightViewProj;
+};
+
+struct ShadowDrawConstants
+{
 	Mat4 model;
 };
 
@@ -467,6 +477,85 @@ void Renderer::DrawDeferred()
 	}
 
 	// ---------------------------------------------------------------------------
+	// Sky light is gathered first: its view-projection is needed to cull shadow
+	// casters during the mesh gather below.
+	// ---------------------------------------------------------------------------
+
+	SkyParameters skyParameters{};
+	Vector<LightInfo> skyLightInfos;
+
+	m_world->Each<TransformComponent, SkyLightComponent>(
+		[&](Entity entity, TransformComponent& transform, SkyLightComponent& skyComp)
+		{
+			if (skyParameters.brightness)
+			{
+				return; // use the first one
+			}
+
+			skyParameters.skyColorZenith   = skyComp.skyColorZenith;
+			skyParameters.skyColorHorizon  = skyComp.skyColorHorizon;
+			skyParameters.horizonSharpness = skyComp.horizonSharpness;
+			skyParameters.groundColor	   = skyComp.groundColor;
+			skyParameters.groundFade	   = skyComp.groundFade;
+			skyParameters.sunColor		   = skyComp.sunColor;
+			skyParameters.sunIntensity	   = skyComp.sunIntensity;
+			skyParameters.sunDiscSize	   = skyComp.sunDiscSize;
+			skyParameters.brightness	   = skyComp.lightIntensity;
+
+			Vec3 sunDirection = transform.Forward();
+			{
+				using namespace DirectX;
+				XMVECTOR sunDir = XMVector3Normalize(XMLoadFloat3(&sunDirection));
+				XMStoreFloat3(&skyParameters.sunDirection, XMVectorNegate(sunDir));
+			}
+
+			LightInfo sunLight;
+			sunLight.position		= {};
+			sunLight.range			= 0.f;
+			sunLight.color			= skyComp.sunColor;
+			sunLight.intensity		= skyComp.lightIntensity;
+			sunLight.direction		= sunDirection;
+			sunLight.type			= 1; // Directional
+			sunLight.innerConeAngle = 0.f;
+			sunLight.outerConeAngle = 0.f;
+			sunLight.padding		= {};
+			skyLightInfos.push_back(sunLight);
+		});
+
+	// One directional shadow map, so the first sky light drives it.
+	Mat4 directionalLightViewProj	= {};
+	Array<Vec4, 6> shadowFrustum	= {};
+	const bool hasDirectionalShadow = !skyLightInfos.empty();
+
+	if (hasDirectionalShadow)
+	{
+		using namespace DirectX;
+
+		XMVECTOR lightDir = XMVector3Normalize(XMLoadFloat3(&skyLightInfos[0].direction));
+		XMVECTOR lightPos = XMVectorScale(XMVectorNegate(lightDir), 50.f);
+		XMVECTOR up		  = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+
+		// Avoid degenerate up vector when light points nearly straight up or down.
+		if (fabsf(XMVectorGetY(lightDir)) > 0.99f)
+		{
+			up = XMVectorSet(1.f, 0.f, 0.f, 0.f);
+		}
+
+		XMMATRIX lightView = XMMatrixLookToLH(lightPos, lightDir, up);
+
+		float orthoHalfSize = 30.f;
+		float nearPlane		= 0.1f;
+		float farPlane		= 100.f;
+		XMMATRIX lightProj	= XMMatrixOrthographicLH(orthoHalfSize * 2.f, orthoHalfSize * 2.f, nearPlane, farPlane);
+
+		XMStoreFloat4x4(&directionalLightViewProj, XMMatrixMultiply(lightView, lightProj));
+
+		// Gribb-Hartmann needs no special case for an orthographic matrix, which is
+		// why the camera and the light share one extraction path.
+		shadowFrustum = ExtractFrustumPlanes(directionalLightViewProj);
+	}
+
+	// ---------------------------------------------------------------------------
 	// Gather draw list and light list from the ECS (single pass each).
 	// These lists decouple the ECS from the renderer for the rest of the frame.
 	// ---------------------------------------------------------------------------
@@ -500,6 +589,7 @@ void Renderer::DrawDeferred()
 			Mat4 model;
 			Mat4 modelInvTranspose;
 			bool visibleToCamera = true;
+			bool visibleToShadow = false;
 			{
 				using namespace DirectX;
 				SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
@@ -514,16 +604,19 @@ void Renderer::DrawDeferred()
 				resource->mesh->bounds.Transform(worldBounds, M);
 				visibleToCamera = IsVisible(cameraFrustum, worldBounds);
 
+				// Shadow casters are tested against the light instead, since geometry
+				// outside the view can still cast into it. Both frusta reject.
+				visibleToShadow = hasDirectionalShadow && meshComp.HasRenderFlag(RenderFlags_CastShadow) &&
+								  IsVisible(shadowFrustum, worldBounds);
+
 				++drawList.meshesTested;
 				if (!visibleToCamera)
 				{
 					++drawList.meshesCulled;
 				}
 
-				// Camera visibility gates the lit and unlit lists only, since geometry
-				// outside the view can still cast a shadow into it. When neither pass
-				// will reference the item, skip building it at all.
-				if (!visibleToCamera && !meshComp.HasRenderFlag(RenderFlags_CastShadow))
+				// When neither pass will reference the item, skip building it at all.
+				if (!visibleToCamera && !visibleToShadow)
 				{
 					return;
 				}
@@ -589,7 +682,7 @@ void Renderer::DrawDeferred()
 				u32 itemIndex = static_cast<u32>(drawList.items.size());
 				drawList.items.push_back(item);
 
-				if (meshComp.HasRenderFlag(RenderFlags_CastShadow))
+				if (visibleToShadow)
 				{
 					drawList.shadowCasters.push_back(itemIndex);
 				}
@@ -634,48 +727,6 @@ void Renderer::DrawDeferred()
 			}
 		});
 
-	// Gather sky light — drives procedural sky and emits a directional light.
-	SkyParameters skyParameters{};
-	Vector<LightInfo> skyLightInfos;
-
-	m_world->Each<TransformComponent, SkyLightComponent>(
-		[&](Entity entity, TransformComponent& transform, SkyLightComponent& skyComp)
-		{
-			if (skyParameters.brightness)
-			{
-				return; // use the first one
-			}
-
-			skyParameters.skyColorZenith   = skyComp.skyColorZenith;
-			skyParameters.skyColorHorizon  = skyComp.skyColorHorizon;
-			skyParameters.horizonSharpness = skyComp.horizonSharpness;
-			skyParameters.groundColor	   = skyComp.groundColor;
-			skyParameters.groundFade	   = skyComp.groundFade;
-			skyParameters.sunColor		   = skyComp.sunColor;
-			skyParameters.sunIntensity	   = skyComp.sunIntensity;
-			skyParameters.sunDiscSize	   = skyComp.sunDiscSize;
-			skyParameters.brightness	   = skyComp.lightIntensity;
-
-			Vec3 sunDirection = transform.Forward();
-			{
-				using namespace DirectX;
-				XMVECTOR sunDir = XMVector3Normalize(XMLoadFloat3(&sunDirection));
-				XMStoreFloat3(&skyParameters.sunDirection, XMVectorNegate(sunDir));
-			}
-
-			LightInfo sunLight;
-			sunLight.position		= {};
-			sunLight.range			= 0.f;
-			sunLight.color			= skyComp.sunColor;
-			sunLight.intensity		= skyComp.lightIntensity;
-			sunLight.direction		= sunDirection;
-			sunLight.type			= 1; // Directional
-			sunLight.innerConeAngle = 0.f;
-			sunLight.outerConeAngle = 0.f;
-			sunLight.padding		= {};
-			skyLightInfos.push_back(sunLight);
-		});
-
 	// ---------------------------------------------------------------------------
 	// Shadow pass — render depth from each shadow-casting directional light's POV
 	// ---------------------------------------------------------------------------
@@ -692,43 +743,24 @@ void Renderer::DrawDeferred()
 	cmd.SetPipelineState(m_directionalShadowPSO.get());
 	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
-	// Build the light view-projection for each directional shadow caster.
-	// For now this handles the sky light's directional light.
-	// Store the last computed lightViewProj for the lighting pass.
-	Mat4 directionalLightViewProj = {};
-
-	for (const LightInfo& skyLight : skyLightInfos)
+	// One directional light drives the shadow map. Its matrix and frustum were built
+	// before the gather so casters could be culled against it there.
+	if (hasDirectionalShadow)
 	{
-		using namespace DirectX;
+		ShadowViewConstants shadowView;
+		shadowView.lightViewProj = directionalLightViewProj;
 
-		XMVECTOR lightDir = XMVector3Normalize(XMLoadFloat3(&skyLight.direction));
-		XMVECTOR lightPos = XMVectorScale(XMVectorNegate(lightDir), 50.f);
-		XMVECTOR up		  = XMVectorSet(0.f, 1.f, 0.f, 0.f);
-
-		// Avoid degenerate up vector when light points nearly straight up or down.
-		if (fabsf(XMVectorGetY(lightDir)) > 0.99f)
-		{
-			up = XMVectorSet(1.f, 0.f, 0.f, 0.f);
-		}
-
-		XMMATRIX lightView = XMMatrixLookToLH(lightPos, lightDir, up);
-
-		float orthoHalfSize = 30.f;
-		float nearPlane		= 0.1f;
-		float farPlane		= 100.f;
-		XMMATRIX lightProj	= XMMatrixOrthographicLH(orthoHalfSize * 2.f, orthoHalfSize * 2.f, nearPlane, farPlane);
-
-		XMStoreFloat4x4(&directionalLightViewProj, XMMatrixMultiply(lightView, lightProj));
+		UploadResult viewUpload = m_uploadBuffer->AllocAndCopy(&shadowView, sizeof(ShadowViewConstants), 256);
+		cmd.SetConstantBufferView(1, m_uploadBuffer->GetBackingBuffer(), viewUpload.offset, viewUpload.size);
 
 		for (u32 shadowCasterIndex : drawList.shadowCasters)
 		{
 			const DrawItem& item = drawList.items[shadowCasterIndex];
 
-			ShadowCB shadowConstants;
-			shadowConstants.lightViewProj = directionalLightViewProj;
-			shadowConstants.model		  = item.model;
+			ShadowDrawConstants shadowConstants;
+			shadowConstants.model = item.model;
 
-			UploadResult upload = m_uploadBuffer->AllocAndCopy(&shadowConstants, sizeof(ShadowCB), 256);
+			UploadResult upload = m_uploadBuffer->AllocAndCopy(&shadowConstants, sizeof(ShadowDrawConstants), 256);
 			cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
 
 			// Depth only: position is the sole stream this pass reads.
@@ -783,6 +815,13 @@ void Renderer::DrawDeferred()
 	// so the flag keeps its current (absent) effect instead of dropping the mesh.
 	const Span<const u32> gbufferLists[] = { drawList.litMeshes, drawList.unlitMeshes };
 
+	// Bound once for the whole pass rather than re-uploaded per submesh.
+	PerViewConstants perView;
+	perView.viewProj = viewProj;
+
+	UploadResult perViewUpload = m_uploadBuffer->AllocAndCopy(&perView, sizeof(PerViewConstants), 256);
+	cmd.SetConstantBufferView(2, m_uploadBuffer->GetBackingBuffer(), perViewUpload.offset, perViewUpload.size);
+
 	for (Span<const u32> list : gbufferLists)
 	{
 		for (u32 itemIndex : list)
@@ -790,7 +829,6 @@ void Renderer::DrawDeferred()
 			const DrawItem& item = drawList.items[itemIndex];
 
 			PerDrawConstants constants;
-			constants.viewProj			= viewProj;
 			constants.model				= item.model;
 			constants.modelInvTranspose = item.modelInvTranspose;
 			constants.emissiveFactor	= item.emissiveFactor;
@@ -1024,6 +1062,7 @@ void Renderer::CreateDeferredGeometryPipeline()
 	meshDesc.bindings			  = {
 		{ BindingType::ConstantBuffer, 0, 1 },							 // rootIndex 0: b0 — per-draw constants
 		{ BindingType::TextureTable, 0, TextureSlot::TextureSlotCount }, // rootIndex 1: t0-t4 — material textures
+		{ BindingType::ConstantBuffer, 1, 1 },							 // rootIndex 2: b1 — per-view constants
 	};
 	meshDesc.samplers = {
 		{ 0, SamplerFilter::Linear, SamplerAddressMode::Wrap },
@@ -1192,7 +1231,8 @@ void Renderer::InitShadowPSO()
 	desc.rasterState.depthBiasClamp		  = 0.f;
 
 	desc.bindings = {
-		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — Shadow Constants
+		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — per-draw model
+		{ BindingType::ConstantBuffer, 1, 1 }, // rootIndex 1: b1 — per-view lightViewProj
 	};
 
 	m_directionalShadowPSO = m_device->CreatePipelineState(desc);

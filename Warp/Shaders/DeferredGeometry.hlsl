@@ -1,10 +1,16 @@
+// Split by update frequency: viewProj is identical for every draw in the pass,
+// so it is bound once instead of re-uploaded per draw.
 cbuffer PerDraw : register(b0)
 {
-    float4x4 viewProj;
     float4x4 model;
     float4x4 modelInvTranspose;
     float3   emissiveFactor;
     float    cbPadding;
+};
+
+cbuffer PerView : register(b1)
+{
+    float4x4 viewProj;
 };
 
 struct GBufferOutput

@@ -5,10 +5,14 @@ struct VSInput
     float3 position : POSITION;
 };
 
-cbuffer ShadowCB : register(b0)
+cbuffer PerDraw : register(b0)
+{
+    float4x4 model;
+};
+
+cbuffer PerView : register(b1)
 {
     float4x4 lightViewProj;
-    float4x4 model;
 };
 
 float4 VSMain(VSInput input) : SV_Position

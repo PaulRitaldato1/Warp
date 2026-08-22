@@ -44,7 +44,7 @@ void D3D12CommandList::Begin(u32 frameIndex)
 	// Descriptor heaps must be re-bound after every Reset().
 	if (m_srvHeap && m_srvHeap->IsInitialized())
 	{
-		m_srvHeap->Reset(); // reclaim per-frame dynamic descriptors
+		m_srvHeap->BeginFrame(frameIndex); // switch to this frame's descriptor region
 		ID3D12DescriptorHeap* heaps[] = { m_srvHeap->GetNative() };
 		m_list->SetDescriptorHeaps(1, heaps);
 	}

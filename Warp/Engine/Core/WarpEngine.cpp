@@ -39,6 +39,7 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 	}
 
 	m_editorUI.SetResourceManager(m_resourceManager.get());
+	m_editorUI.SetRenderer(m_renderer.get());
 
 	LOG_DEBUG("Render backend initialized ({})", m_renderer ? "renderer ready" : "no renderer");
 

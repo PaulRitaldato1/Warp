@@ -28,7 +28,13 @@ struct DeviceDesc
 {
 	bool bEnableDebugLayer		   = false;
 	bool bEnableGPUValidationLayer = false;
-	u32  srvHeapCapacity           = 4096;
+	// Total across all frames in flight, so the per-frame budget is this divided
+	// by framesInFlight.
+	u32  srvHeapCapacity           = 12288;
+
+	// The SRV heap is partitioned into this many regions so a frame being recorded
+	// never overwrites descriptors an in-flight frame is still reading.
+	u32  framesInFlight            = 3;
 };
 
 struct PhysicalDeviceInfo

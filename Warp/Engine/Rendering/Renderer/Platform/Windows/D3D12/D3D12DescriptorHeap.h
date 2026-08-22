@@ -25,10 +25,11 @@ public:
 		D3D12_GPU_DESCRIPTOR_HANDLE gpu = {};
 	};
 
-	void Initialize(ID3D12Device* device, u32 capacity)
+	void Initialize(ID3D12Device* device, u32 capacity, u32 framesInFlight = 1)
 	{
 		DYNAMIC_ASSERT(device,   "D3D12DescriptorHeap::Initialize: device is null");
 		DYNAMIC_ASSERT(capacity, "D3D12DescriptorHeap::Initialize: capacity must be > 0");
+		DYNAMIC_ASSERT(framesInFlight, "D3D12DescriptorHeap::Initialize: framesInFlight must be > 0");
 
 		D3D12_DESCRIPTOR_HEAP_DESC desc = {};
 		desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -37,6 +38,9 @@ public:
 		ThrowIfFailed(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_heap)));
 
 		m_capacity       = capacity;
+		m_framesInFlight = framesInFlight;
+		m_regionSize     = capacity / framesInFlight;
+		m_base           = 0;
 		m_offset         = 0;
 		m_descriptorSize = device->GetDescriptorHandleIncrementSize(
 		                       D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -47,17 +51,31 @@ public:
 	// Allocate count consecutive descriptors and return the first handle.
 	Allocation Alloc(u32 count = 1)
 	{
-		DYNAMIC_ASSERT(m_offset + count <= m_capacity,
+		DYNAMIC_ASSERT(m_offset + count <= m_regionSize,
 		               "D3D12DescriptorHeap: out of descriptor space");
+		const u32 slot = m_base + m_offset;
+
 		Allocation result;
-		result.cpu.ptr = m_cpuStart.ptr + static_cast<SIZE_T>(m_offset) * m_descriptorSize;
-		result.gpu.ptr = m_gpuStart.ptr + static_cast<u64>(m_offset)    * m_descriptorSize;
+		result.cpu.ptr = m_cpuStart.ptr + static_cast<SIZE_T>(slot) * m_descriptorSize;
+		result.gpu.ptr = m_gpuStart.ptr + static_cast<u64>(slot)    * m_descriptorSize;
 		m_offset += count;
 		return result;
 	}
 
-	// Reclaim all slots — call at the start of every frame.
-	void Reset() { m_offset = 0; }
+	// Point the allocator at this frame's region. The GPU may still be reading the
+	// previous frames' descriptors, so recording must not reuse their slots.
+	// Idempotent within a frame: several command lists Begin() against one heap.
+	void BeginFrame(u32 frameIndex)
+	{
+		if (frameIndex == m_currentFrame)
+		{
+			return;
+		}
+
+		m_currentFrame = frameIndex;
+		m_base         = (frameIndex % m_framesInFlight) * m_regionSize;
+		m_offset       = 0;
+	}
 
 	bool IsInitialized() const { return m_heap != nullptr; }
 
@@ -67,6 +85,10 @@ public:
 private:
 	ComRef<ID3D12DescriptorHeap> m_heap;
 	u32                          m_capacity       = 0;
+	u32                          m_framesInFlight = 1;
+	u32                          m_regionSize     = 0;
+	u32                          m_base           = 0;
+	u32                          m_currentFrame   = ~0u;
 	u32                          m_offset         = 0;
 	u32                          m_descriptorSize = 0;
 	D3D12_CPU_DESCRIPTOR_HANDLE  m_cpuStart       = {};

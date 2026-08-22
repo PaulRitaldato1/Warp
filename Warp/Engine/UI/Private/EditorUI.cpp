@@ -3,6 +3,7 @@
 #include <Core/ECS/World.h>
 #include <Core/ECS/Components/MeshComponent.h>
 #include <Rendering/Resource/ResourceManager.h>
+#include <Rendering/Renderer/Renderer.h>
 #include <imgui.h>
 #include <filesystem>
 
@@ -10,11 +11,46 @@ void EditorUI::BuildUI(World& world)
 {
 	DrawEntityList(world);
 	DrawEntityInspector(world);
+	DrawRendererStats();
 
 	if (m_showEntityCreator)
 	{
 		DrawEntityCreator(world);
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Renderer Stats — frustum culling counts for the last frame.
+// ---------------------------------------------------------------------------
+void EditorUI::DrawRendererStats()
+{
+	if (!ImGui::Begin("Renderer"))
+	{
+		ImGui::End();
+		return;
+	}
+
+	if (!m_renderer)
+	{
+		ImGui::TextDisabled("No renderer.");
+		ImGui::End();
+		return;
+	}
+
+	const Renderer::CullStats stats = m_renderer->GetCullStats();
+	const u32 visible				= stats.tested - stats.culled;
+
+	ImGui::SeparatorText("Frustum Culling");
+	ImGui::Text("Tested:  %u", stats.tested);
+	ImGui::Text("Visible: %u", visible);
+	ImGui::Text("Culled:  %u", stats.culled);
+
+	// Counts entities, not submeshes, and culled includes shadow casters that were
+	// dropped from the camera pass but still drawn into the shadow map.
+	const f32 percent = stats.tested > 0 ? (100.f * static_cast<f32>(stats.culled) / static_cast<f32>(stats.tested)) : 0.f;
+	ImGui::Text("Culled %%:  %.1f", percent);
+
+	ImGui::End();
 }
 
 // ---------------------------------------------------------------------------

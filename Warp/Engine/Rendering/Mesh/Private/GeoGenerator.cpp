@@ -59,6 +59,12 @@ URef<Mesh> GeoGenerator::CreatePlane(f32 sizeX, f32 sizeZ, u32 segmentsX, u32 se
 	submesh.indexCount   = static_cast<u32>(mesh->indices.size());
 	submesh.vertexOffset = 0;
 	submesh.materialIndex = 0;
+
+	// Without this the AABB stays default constructed, a zero extent point at the
+	// origin, and frustum culling drops the mesh as soon as the origin is offscreen.
+	BoundingBox::CreateFromPoints(submesh.bounds, mesh->positions.size(), mesh->positions.data(), sizeof(Vec3));
+	mesh->bounds = submesh.bounds;
+
 	mesh->submeshes.push_back(submesh);
 
 	Material material;
@@ -142,6 +148,12 @@ URef<Mesh> GeoGenerator::CreateBox(f32 sizeX, f32 sizeY, f32 sizeZ)
 	submesh.indexCount   = static_cast<u32>(mesh->indices.size());
 	submesh.vertexOffset = 0;
 	submesh.materialIndex = 0;
+
+	// Without this the AABB stays default constructed, a zero extent point at the
+	// origin, and frustum culling drops the mesh as soon as the origin is offscreen.
+	BoundingBox::CreateFromPoints(submesh.bounds, mesh->positions.size(), mesh->positions.data(), sizeof(Vec3));
+	mesh->bounds = submesh.bounds;
+
 	mesh->submeshes.push_back(submesh);
 
 	Material material;

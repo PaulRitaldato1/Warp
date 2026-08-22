@@ -71,7 +71,7 @@ void D3D12Device::Initialize(const DeviceDesc& desc)
 		LOG_DEBUG("D3D12Device initialized on: {}", name);
 	}
 
-	m_srvHeap.Initialize(m_device.Get(), desc.srvHeapCapacity);
+	m_srvHeap.Initialize(m_device.Get(), desc.srvHeapCapacity, desc.framesInFlight);
 }
 
 static D3D12_COMMAND_LIST_TYPE ToD3D12QueueType(CommandQueueType type)
