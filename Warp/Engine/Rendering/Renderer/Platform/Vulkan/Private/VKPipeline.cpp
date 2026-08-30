@@ -5,6 +5,7 @@
 #include <Rendering/Renderer/Platform/Vulkan/VKTranslate.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
+#include <Renderer/DxcCommon.h>
 
 // ---------------------------------------------------------------------------
 // VKPipeline — graphics PSO with dynamic rendering
@@ -49,7 +50,7 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	// Vertex input — derived from desc.inputLayout; empty = SV_VertexID path
 	// -------------------------------------------------------------------------
 
-	Vector<VkVertexInputBindingDescription>   bindings;
+	Vector<VkVertexInputBindingDescription> bindings;
 	Vector<VkVertexInputAttributeDescription> attributes;
 
 	if (!desc.inputLayout.empty())
@@ -57,26 +58,26 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 		attributes.reserve(desc.inputLayout.size());
 
 		// Per-slot running byte offset for AppendAligned computation.
-		u32  slotOffset[16] = {};
-		bool slotUsed[16]   = {};
+		u32 slotOffset[16] = {};
+		bool slotUsed[16]  = {};
 
 		for (u32 loc = 0; loc < static_cast<u32>(desc.inputLayout.size()); ++loc)
 		{
-			const InputElement& elem     = desc.inputLayout[loc];
-			const u32           slot     = elem.inputSlot;
-			const u32           byteSize = FormatByteSize(elem.format);
-			const u32           byteOffset =
+			const InputElement& elem = desc.inputLayout[loc];
+			const u32 slot			 = elem.inputSlot;
+			const u32 byteSize		 = FormatByteSize(elem.format);
+			const u32 byteOffset =
 				(elem.alignedByteOffset == InputElement::AppendAligned) ? slotOffset[slot] : elem.alignedByteOffset;
 
 			VkVertexInputAttributeDescription attr = {};
-			attr.location = loc;
-			attr.binding  = slot;
-			attr.format   = ToVkFormat(elem.format);
-			attr.offset   = byteOffset;
+			attr.location						   = loc;
+			attr.binding						   = slot;
+			attr.format							   = ToVkFormat(elem.format);
+			attr.offset							   = byteOffset;
 			attributes.push_back(attr);
 
 			slotOffset[slot] = byteOffset + byteSize;
-			slotUsed[slot]   = true;
+			slotUsed[slot]	 = true;
 		}
 
 		// One binding per referenced slot; stride = accumulated element sizes.
@@ -86,19 +87,19 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 				continue;
 
 			VkVertexInputBindingDescription binding = {};
-			binding.binding   = s;
-			binding.stride    = slotOffset[s];
-			binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+			binding.binding							= s;
+			binding.stride							= slotOffset[s];
+			binding.inputRate						= VK_VERTEX_INPUT_RATE_VERTEX;
 			bindings.push_back(binding);
 		}
 	}
 
 	VkPipelineVertexInputStateCreateInfo vertexInput = {};
-	vertexInput.sType                           = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertexInput.vertexBindingDescriptionCount   = static_cast<u32>(bindings.size());
-	vertexInput.pVertexBindingDescriptions      = bindings.data();
-	vertexInput.vertexAttributeDescriptionCount = static_cast<u32>(attributes.size());
-	vertexInput.pVertexAttributeDescriptions    = attributes.data();
+	vertexInput.sType								 = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	vertexInput.vertexBindingDescriptionCount		 = static_cast<u32>(bindings.size());
+	vertexInput.pVertexBindingDescriptions			 = bindings.data();
+	vertexInput.vertexAttributeDescriptionCount		 = static_cast<u32>(attributes.size());
+	vertexInput.pVertexAttributeDescriptions		 = attributes.data();
 
 	// -------------------------------------------------------------------------
 	// Input assembly
@@ -143,11 +144,11 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 
 	// Vulkan gates all three bias values behind depthBiasEnable.
-	const bool biasEnabled = desc.rasterState.depthBias != 0 || desc.rasterState.slopeScaledDepthBias != 0.f;
-	rasterizer.depthBiasEnable         = biasEnabled ? VK_TRUE : VK_FALSE;
+	const bool biasEnabled	   = desc.rasterState.depthBias != 0 || desc.rasterState.slopeScaledDepthBias != 0.f;
+	rasterizer.depthBiasEnable = biasEnabled ? VK_TRUE : VK_FALSE;
 	rasterizer.depthBiasConstantFactor = static_cast<float>(desc.rasterState.depthBias);
-	rasterizer.depthBiasClamp          = desc.rasterState.depthBiasClamp;
-	rasterizer.depthBiasSlopeFactor    = desc.rasterState.slopeScaledDepthBias;
+	rasterizer.depthBiasClamp		   = desc.rasterState.depthBiasClamp;
+	rasterizer.depthBiasSlopeFactor	   = desc.rasterState.slopeScaledDepthBias;
 
 	// -------------------------------------------------------------------------
 	// Multisampling — disabled
@@ -221,6 +222,7 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	//   ConstantBuffer   → 1 UBO binding
 	//   TextureTable     → N combined-image-sampler bindings
 	//   StructuredBuffer → 1 SSBO binding
+	//   Sampler
 	// -------------------------------------------------------------------------
 
 	{
@@ -231,51 +233,139 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 		for (u32 rootIndex = 0; rootIndex < static_cast<u32>(desc.bindings.size()); ++rootIndex)
 		{
 			const BindingSlot& slot = desc.bindings[rootIndex];
-			m_rootToVulkanBinding[rootIndex] = vulkanBindingIndex;
 
 			switch (slot.type)
 			{
 				case BindingType::ConstantBuffer:
 				{
+					vulkanBindingIndex =
+						slot.shaderRegister + Warp::Dxc::VkBindingShift::B; /*CB offset to match HLSL output from DXC*/
 					VkDescriptorSetLayoutBinding binding = {};
-					binding.binding         = vulkanBindingIndex++;
-					binding.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-					binding.descriptorCount = 1;
-					binding.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+					binding.binding						 = vulkanBindingIndex;
+					binding.descriptorType				 = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+					binding.descriptorCount				 = 1;
+					binding.stageFlags					 = VK_SHADER_STAGE_ALL_GRAPHICS;
 					vkBindings.push_back(binding);
 					break;
 				}
 				case BindingType::TextureTable:
 				{
+					vulkanBindingIndex =
+						slot.shaderRegister +
+						Warp::Dxc::VkBindingShift::T; /*Texture/SRV offset to match HLSL output from DXC*/
 					for (u32 texIndex = 0; texIndex < slot.count; ++texIndex)
 					{
 						VkDescriptorSetLayoutBinding binding = {};
-						binding.binding         = vulkanBindingIndex++;
-						binding.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-						binding.descriptorCount = 1;
-						binding.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+						binding.binding						 = vulkanBindingIndex + texIndex;
+						binding.descriptorType				 = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+						binding.descriptorCount				 = 1;
+						binding.stageFlags					 = VK_SHADER_STAGE_ALL_GRAPHICS;
 						vkBindings.push_back(binding);
 					}
 					break;
 				}
 				case BindingType::StructuredBuffer:
 				{
+					vulkanBindingIndex =
+						slot.shaderRegister +
+						Warp::Dxc::VkBindingShift::T; /*Texture/SRV offset to match HLSL output from DXC*/
 					VkDescriptorSetLayoutBinding binding = {};
-					binding.binding         = vulkanBindingIndex++;
-					binding.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-					binding.descriptorCount = 1;
-					binding.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+					binding.binding						 = vulkanBindingIndex;
+					binding.descriptorType				 = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+					binding.descriptorCount				 = 1;
+					binding.stageFlags					 = VK_SHADER_STAGE_ALL_GRAPHICS;
 					vkBindings.push_back(binding);
 					break;
 				}
 			}
+
+			m_rootToVulkanBinding[rootIndex] = vulkanBindingIndex;
+		}
+
+		m_samplers.reserve(desc.samplers.size());
+
+		for (const SamplerDesc& samplerDesc : desc.samplers)
+		{
+			VkSamplerCreateInfo samplerCreateInfo{};
+			samplerCreateInfo.maxLod		   = VK_LOD_CLAMP_NONE;
+			samplerCreateInfo.borderColor	   = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+			samplerCreateInfo.anisotropyEnable = VK_FALSE;
+			samplerCreateInfo.sType			   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+			switch (samplerDesc.filter)
+			{
+				case SamplerFilter::Linear:
+				{
+					samplerCreateInfo.magFilter	 = VK_FILTER_LINEAR;
+					samplerCreateInfo.minFilter	 = VK_FILTER_LINEAR;
+					samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+					break;
+				}
+				case SamplerFilter::ComparisonLinear:
+				{
+					samplerCreateInfo.magFilter		= VK_FILTER_LINEAR;
+					samplerCreateInfo.minFilter		= VK_FILTER_LINEAR;
+					samplerCreateInfo.compareEnable = VK_TRUE;
+					samplerCreateInfo.compareOp		= VK_COMPARE_OP_LESS_OR_EQUAL;
+					samplerCreateInfo.mipmapMode	= VK_SAMPLER_MIPMAP_MODE_NEAREST;
+					break;
+				}
+				case SamplerFilter::Point:
+				{
+					samplerCreateInfo.magFilter	 = VK_FILTER_NEAREST;
+					samplerCreateInfo.minFilter	 = VK_FILTER_NEAREST;
+					samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+					break;
+				}
+			}
+
+			switch (samplerDesc.addressMode)
+			{
+				case SamplerAddressMode::Border:
+				{
+					samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+					samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+					samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+					break;
+				}
+				case SamplerAddressMode::Clamp:
+				{
+					samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+					samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+					samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+					break;
+				}
+				case SamplerAddressMode::Wrap:
+				{
+					samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+					break;
+				}
+			}
+
+			VkSampler sampler{};
+
+			VK_CHECK(vkCreateSampler(m_device, &samplerCreateInfo, nullptr, &sampler),
+					 "VKPipeline: vkCreateSampler failed");
+
+			m_samplers.push_back(sampler);
+
+			VkDescriptorSetLayoutBinding binding = {};
+			binding.binding						 = samplerDesc.shaderRegister + Warp::Dxc::VkBindingShift::S;
+			binding.descriptorType				 = VK_DESCRIPTOR_TYPE_SAMPLER;
+			binding.descriptorCount				 = 1;
+			binding.stageFlags					 = VK_SHADER_STAGE_ALL_GRAPHICS;
+			binding.pImmutableSamplers			 = &m_samplers.back();
+			vkBindings.push_back(binding);
 		}
 
 		VkDescriptorSetLayoutCreateInfo setLayoutInfo = {};
-		setLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		setLayoutInfo.flags        = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-		setLayoutInfo.bindingCount = static_cast<u32>(vkBindings.size());
-		setLayoutInfo.pBindings    = vkBindings.data();
+		setLayoutInfo.sType							  = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		setLayoutInfo.flags							  = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+		setLayoutInfo.bindingCount					  = static_cast<u32>(vkBindings.size());
+		setLayoutInfo.pBindings						  = vkBindings.data();
 
 		VK_CHECK(vkCreateDescriptorSetLayout(m_device, &setLayoutInfo, nullptr, &m_descriptorSetLayout),
 				 "VKPipeline: vkCreateDescriptorSetLayout failed");
@@ -286,9 +376,9 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	// -------------------------------------------------------------------------
 
 	VkPipelineLayoutCreateInfo layoutInfo = {};
-	layoutInfo.sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	layoutInfo.setLayoutCount = 1;
-	layoutInfo.pSetLayouts    = &m_descriptorSetLayout;
+	layoutInfo.sType					  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	layoutInfo.setLayoutCount			  = 1;
+	layoutInfo.pSetLayouts				  = &m_descriptorSetLayout;
 
 	VK_CHECK(vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_layout),
 			 "VKPipeline: vkCreatePipelineLayout failed");
@@ -346,16 +436,25 @@ void VKPipeline::Cleanup()
 		vkDestroyPipeline(m_device, m_pipeline, nullptr);
 		m_pipeline = VK_NULL_HANDLE;
 	}
+
 	if (m_layout != VK_NULL_HANDLE)
 	{
 		vkDestroyPipelineLayout(m_device, m_layout, nullptr);
 		m_layout = VK_NULL_HANDLE;
 	}
+
 	if (m_descriptorSetLayout != VK_NULL_HANDLE)
 	{
 		vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
 		m_descriptorSetLayout = VK_NULL_HANDLE;
 	}
+
+	for (const VkSampler& sampler : m_samplers)
+	{
+		vkDestroySampler(m_device, sampler, nullptr);
+	}
+
+	m_samplers.clear();
 }
 
 // ---------------------------------------------------------------------------

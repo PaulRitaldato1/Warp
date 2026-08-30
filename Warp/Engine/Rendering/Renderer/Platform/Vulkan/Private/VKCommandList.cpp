@@ -618,8 +618,9 @@ void VKCommandList::SetShaderResource(u32 rootIndex, Texture* texture)
 
 	VKTexture* vkTex = static_cast<VKTexture*>(texture);
 
+	// DXC keeps HLSL's Texture2D and SamplerState separate, so this is a sampled
+	// image with no sampler. Samplers are immutable in the descriptor set layout.
 	VkDescriptorImageInfo imageInfo = {};
-	imageInfo.sampler				= m_defaultSampler;
 	imageInfo.imageView				= vkTex->GetNativeView();
 	imageInfo.imageLayout			= VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -628,7 +629,7 @@ void VKCommandList::SetShaderResource(u32 rootIndex, Texture* texture)
 	write.dstBinding		   = (*m_currentBindingMap)[rootIndex];
 	write.dstArrayElement	   = 0;
 	write.descriptorCount	   = 1;
-	write.descriptorType	   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	write.descriptorType	   = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 	write.pImageInfo		   = &imageInfo;
 
 	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, 1, &write);
@@ -657,7 +658,6 @@ void VKCommandList::SetShaderResources(u32 rootIndex, const Vector<Texture*>& te
 		VKTexture* vkTex = static_cast<VKTexture*>(textures[i]);
 
 		VkDescriptorImageInfo& info = imageInfos.emplace_back();
-		info.sampler				= m_defaultSampler;
 		info.imageView				= vkTex->GetNativeView();
 		info.imageLayout			= VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -667,7 +667,7 @@ void VKCommandList::SetShaderResources(u32 rootIndex, const Vector<Texture*>& te
 		write.dstBinding			= baseBinding + i;
 		write.dstArrayElement		= 0;
 		write.descriptorCount		= 1;
-		write.descriptorType		= VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		write.descriptorType		= VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 		write.pImageInfo			= &imageInfos.back();
 	}
 

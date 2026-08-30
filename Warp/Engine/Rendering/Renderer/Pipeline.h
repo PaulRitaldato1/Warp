@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
-#include <Rendering/Renderer/Texture.h>  // TextureFormat
+#include <Rendering/Renderer/Texture.h> // TextureFormat
 
 class Shader;
 
@@ -15,11 +15,11 @@ struct InputElement
 	// calculate the byte offset automatically from the previous element.
 	static constexpr u32 AppendAligned = ~0u;
 
-	String semanticName;              // "POSITION", "NORMAL", "TEXCOORD", etc.
-	u32    semanticIndex   = 0;
-	TextureFormat format;             // e.g. TextureFormat::RGB32F for Vec3
-	u32    inputSlot       = 0;       // vertex buffer binding slot
-	u32    alignedByteOffset = AppendAligned;
+	String semanticName; // "POSITION", "NORMAL", "TEXCOORD", etc.
+	u32 semanticIndex = 0;
+	TextureFormat format;	   // e.g. TextureFormat::RGB32F for Vec3
+	u32 inputSlot		  = 0; // vertex buffer binding slot
+	u32 alignedByteOffset = AppendAligned;
 };
 
 // ---------------------------------------------------------------------------
@@ -28,18 +28,27 @@ struct InputElement
 
 struct RasterizerState
 {
-	enum class CullMode { None, Front, Back };
-	enum class FillMode { Solid, Wireframe };
+	enum class CullMode
+	{
+		None,
+		Front,
+		Back
+	};
+	enum class FillMode
+	{
+		Solid,
+		Wireframe
+	};
 
-	CullMode cullMode = CullMode::Back;
-	FillMode fillMode = FillMode::Solid;
-	bool     depthClipEnable = true;
+	CullMode cullMode	 = CullMode::Back;
+	FillMode fillMode	 = FillMode::Solid;
+	bool depthClipEnable = true;
 
 	// Depth bias for shadow passes. The slope-scaled term handles grazing angles,
 	// which a constant bias cannot.
-	int32 depthBias            = 0;
-	f32   depthBiasClamp       = 0.f;
-	f32   slopeScaledDepthBias = 0.f;
+	int32 depthBias			 = 0;
+	f32 depthBiasClamp		 = 0.f;
+	f32 slopeScaledDepthBias = 0.f;
 };
 
 // ---------------------------------------------------------------------------
@@ -50,22 +59,34 @@ struct BlendState
 {
 	enum class BlendFactor
 	{
-		Zero, One,
-		SrcColor,  InvSrcColor,
-		SrcAlpha,  InvSrcAlpha,
-		DestAlpha, InvDestAlpha,
-		DestColor, InvDestColor,
+		Zero,
+		One,
+		SrcColor,
+		InvSrcColor,
+		SrcAlpha,
+		InvSrcAlpha,
+		DestAlpha,
+		InvDestAlpha,
+		DestColor,
+		InvDestColor,
 	};
 
-	enum class BlendOp { Add, Subtract, ReverseSubtract, Min, Max };
+	enum class BlendOp
+	{
+		Add,
+		Subtract,
+		ReverseSubtract,
+		Min,
+		Max
+	};
 
 	BlendFactor srcBlend  = BlendFactor::SrcAlpha;
 	BlendFactor destBlend = BlendFactor::InvSrcAlpha;
-	BlendOp     blendOp   = BlendOp::Add;
+	BlendOp blendOp		  = BlendOp::Add;
 
 	BlendFactor srcBlendAlpha  = BlendFactor::One;
 	BlendFactor destBlendAlpha = BlendFactor::Zero;
-	BlendOp     blendOpAlpha   = BlendOp::Add;
+	BlendOp blendOpAlpha	   = BlendOp::Add;
 };
 
 // ---------------------------------------------------------------------------
@@ -90,18 +111,18 @@ enum class PrimitiveTopology
 // and SetShaderResourceBuffer.
 // ---------------------------------------------------------------------------
 
-enum class BindingType
+enum class BindingType : u8
 {
-	ConstantBuffer,   // D3D12: root CBV.              Vulkan: uniform buffer.
-	TextureTable,     // D3D12: SRV descriptor table.  Vulkan: combined image sampler array.
+	ConstantBuffer,	  // D3D12: root CBV.              Vulkan: uniform buffer.
+	TextureTable,	  // D3D12: SRV descriptor table.  Vulkan: combined image sampler array.
 	StructuredBuffer, // D3D12: root SRV.              Vulkan: storage buffer.
 };
 
 struct BindingSlot
 {
 	BindingType type;
-	u32 shaderRegister;  // HLSL register number (b0, t0, t4, etc.)
-	u32 count;           // TextureTable: number of consecutive SRVs. Others: 1.
+	u32 shaderRegister; // HLSL register number (b0, t0, t4, etc.)
+	u32 count;			// TextureTable: number of consecutive SRVs. Others: 1.
 };
 
 // ---------------------------------------------------------------------------
@@ -111,14 +132,14 @@ struct BindingSlot
 // Vulkan: becomes a VkSampler stored on the pipeline for descriptor writes.
 // ---------------------------------------------------------------------------
 
-enum class SamplerFilter
+enum class SamplerFilter : u8
 {
-	Linear,            // D3D12: MIN_MAG_MIP_LINEAR.            Vulkan: LINEAR
-	Point,             // D3D12: MIN_MAG_MIP_POINT.             Vulkan: NEAREST
-	ComparisonLinear,  // D3D12: COMPARISON_MIN_MAG_LINEAR_MIP_POINT. Vulkan: LINEAR + compareEnable
+	Linear,			  // D3D12: MIN_MAG_MIP_LINEAR.            Vulkan: LINEAR
+	Point,			  // D3D12: MIN_MAG_MIP_POINT.             Vulkan: NEAREST
+	ComparisonLinear, // D3D12: COMPARISON_MIN_MAG_LINEAR_MIP_POINT. Vulkan: LINEAR + compareEnable
 };
 
-enum class SamplerAddressMode
+enum class SamplerAddressMode : u8
 {
 	Wrap,
 	Clamp,
@@ -127,9 +148,9 @@ enum class SamplerAddressMode
 
 struct SamplerDesc
 {
-	u32                shaderRegister = 0;  // HLSL register (s0, s1, s2, ...)
-	SamplerFilter      filter        = SamplerFilter::Linear;
-	SamplerAddressMode addressMode   = SamplerAddressMode::Wrap;
+	u32 shaderRegister			   = 0; // HLSL register (s0, s1, s2, ...)
+	SamplerFilter filter		   = SamplerFilter::Linear;
+	SamplerAddressMode addressMode = SamplerAddressMode::Wrap;
 };
 
 // ---------------------------------------------------------------------------
@@ -139,22 +160,22 @@ struct SamplerDesc
 struct PipelineDesc
 {
 	Shader* vertexShader = nullptr;
-	Shader* pixelShader  = nullptr;
+	Shader* pixelShader	 = nullptr;
 
-	Vector<InputElement>   inputLayout;
+	Vector<InputElement> inputLayout;
 
 	// Up to 8 simultaneous render targets.
-	Vector<TextureFormat>  renderTargetFormats;
-	TextureFormat          depthFormat = TextureFormat::Unknown;
+	Vector<TextureFormat> renderTargetFormats;
+	TextureFormat depthFormat = TextureFormat::Unknown;
 
-	PrimitiveTopology      topology    = PrimitiveTopology::TriangleList;
+	PrimitiveTopology topology = PrimitiveTopology::TriangleList;
 
-	bool           enableDepthTest  = true;
-	bool           enableDepthWrite = true;
-	bool           enableStencilTest = false;
-	bool           enableBlending   = false;
+	bool enableDepthTest   = true;
+	bool enableDepthWrite  = true;
+	bool enableStencilTest = false;
+	bool enableBlending	   = false;
 
-	BlendState     blend;
+	BlendState blend;
 	RasterizerState rasterState;
 
 	// Abstract binding layout — each entry becomes a root parameter (D3D12) or
@@ -186,9 +207,9 @@ public:
 	virtual ~PipelineState() = default;
 
 	// Not used directly — created via Device::CreatePipelineState().
-	virtual void  Initialize(const PipelineDesc& desc) = 0;
-	virtual void  Cleanup()                            = 0;
-	virtual void* GetNativeHandle() const              = 0;
+	virtual void Initialize(const PipelineDesc& desc) = 0;
+	virtual void Cleanup()							  = 0;
+	virtual void* GetNativeHandle() const			  = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -204,7 +225,7 @@ public:
 	virtual ~ComputePipelineState() = default;
 
 	// Not used directly — created via Device::CreateComputePipelineState().
-	virtual void  Initialize(const ComputePipelineDesc& desc) = 0;
-	virtual void  Cleanup()                                   = 0;
-	virtual void* GetNativeHandle() const                     = 0;
+	virtual void Initialize(const ComputePipelineDesc& desc) = 0;
+	virtual void Cleanup()									 = 0;
+	virtual void* GetNativeHandle() const					 = 0;
 };

@@ -3,27 +3,8 @@
 #include <Rendering/Renderer/Platform/Vulkan/VKShader.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
-#include <shaderc/shaderc.hpp>
-
-#include <fstream>
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-static shaderc_shader_kind ToShadercKind(ShaderType type)
-{
-	switch (type)
-	{
-		case ShaderType::Vertex:   return shaderc_vertex_shader;
-		case ShaderType::Pixel:    return shaderc_fragment_shader;
-		case ShaderType::Compute:  return shaderc_compute_shader;
-		case ShaderType::Geometry: return shaderc_geometry_shader;
-		case ShaderType::Hull:     return shaderc_tess_control_shader;
-		case ShaderType::Domain:   return shaderc_tess_evaluation_shader;
-		default:                   return shaderc_vertex_shader;
-	}
-}
+#include <Renderer/DxcCommon.h>
+#include <cstring>
 
 // ---------------------------------------------------------------------------
 // VKShader
@@ -42,87 +23,123 @@ void VKShader::InitializeWithDevice(VkDevice device)
 
 void VKShader::Initialize(const ShaderDesc& desc)
 {
-	// Select source — prefer embedded source string, fall back to file path.
-	String source;
-	String sourceName = "shader";
+	DYNAMIC_ASSERT(!desc.entryPoint.empty(), "VKShader::Initialize: entryPoint must not be empty");
+	DYNAMIC_ASSERT(!desc.filePath.empty() || !desc.sourceCode.empty(),
+				   "VKShader::Initialize: either filePath or sourceCode must be set");
 
-	if (!desc.sourceCode.empty())
+	using namespace Warp::Dxc;
+
+	DxcCreateInstanceProc createInstance = GetDxcCreateInstance();
+	FATAL_ASSERT(createInstance, "VKShader::Initialize: Failed the GetDxcCreateInstance");
+
+	DxcRef<IDxcUtils> utils;
+	DxcRef<IDxcCompiler3> compiler;
+	FATAL_ASSERT(SUCCEEDED(createInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils))),
+				 "VKShader::Initialize: Failed to Create DXC Utils");
+
+	FATAL_ASSERT(SUCCEEDED(createInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler))),
+				 "VKShader::Initialize: Failed to create DXC compiler");
+
+	DxcRef<IDxcIncludeHandler> includeHandler;
+	FATAL_ASSERT(SUCCEEDED(utils->CreateDefaultIncludeHandler(&includeHandler)),
+				 "VKShader::Initialize: Failed to create include handler");
+
+	std::wstring entryW(desc.entryPoint.begin(), desc.entryPoint.end());
+	std::wstring targetW = ToShaderTarget(desc.type);
+
+	Vector<const wchar_t*> args;
+
+	std::wstring nameW;
+
+	if (!desc.filePath.empty())
 	{
-		source     = desc.sourceCode;
-		sourceName = "embedded";
+		nameW = std::wstring(desc.filePath.begin(), desc.filePath.end());
+		args.push_back(nameW.c_str());
 	}
-	else if (!desc.filePath.empty())
+
+	args.push_back(L"-E");
+	args.push_back(entryW.c_str());
+	args.push_back(L"-T");
+	args.push_back(targetW.c_str());
+
+	args.push_back(L"-spirv");
+
+	args.push_back(L"-fvk-b-shift");
+	args.push_back(toWString(VkBindingShift::B));
+	args.push_back(L"all");
+
+	args.push_back(L"-fvk-t-shift");
+	args.push_back(toWString(VkBindingShift::T));
+	args.push_back(L"all");
+
+	args.push_back(L"-fvk-u-shift");
+	args.push_back(toWString(VkBindingShift::U));
+	args.push_back(L"all");
+
+	args.push_back(L"-fvk-s-shift");
+	args.push_back(toWString(VkBindingShift::S));
+	args.push_back(L"all");
+
+	args.push_back(L"-fspv-target-env=vulkan1.3");
+
+#if defined(WARP_DEBUG)
+	args.push_back(L"-Zi");
+	args.push_back(L"-Od");
+#else
+	args.push_back(L"-O3");
+#endif
+
+	DxcBuffer sourceBuffer = {};
+	DxcRef<IDxcBlobEncoding> sourceBlob;
+
+	if (!desc.filePath.empty())
 	{
-		sourceName = desc.filePath;
+		WString wpath(desc.filePath.begin(), desc.filePath.end());
+		FATAL_ASSERT(SUCCEEDED(utils->LoadFile(wpath.c_str(), nullptr, &sourceBlob)),
+					 "VKShader::Initialize: Failed to load file");
 
-		// FATAL_ASSERT, not DYNAMIC_ASSERT: this must survive release builds.
-		std::ifstream file(desc.filePath, std::ios::binary | std::ios::ate);
-		FATAL_ASSERT(file, ("VKShader: could not open file: " + desc.filePath).c_str());
-
-		const std::streamsize length = file.tellg();
-		file.seekg(0, std::ios::beg);
-
-		source.resize(static_cast<size_t>(length));
-		FATAL_ASSERT(file.read(source.data(), length),
-		             ("VKShader: could not read file: " + desc.filePath).c_str());
+		sourceBuffer.Ptr	  = sourceBlob->GetBufferPointer();
+		sourceBuffer.Size	  = sourceBlob->GetBufferSize();
+		sourceBuffer.Encoding = DXC_CP_ACP;
 	}
 	else
 	{
-		FATAL_ASSERT(false, "VKShader: no source code or file path provided");
+		sourceBuffer.Ptr	  = desc.sourceCode.c_str();
+		sourceBuffer.Size	  = desc.sourceCode.size();
+		sourceBuffer.Encoding = DXC_CP_UTF8;
 	}
 
-	shaderc::Compiler       compiler;
-	shaderc::CompileOptions options;
+	DxcRef<IDxcResult> result;
+	FATAL_ASSERT(SUCCEEDED(compiler->Compile(&sourceBuffer, args.data(), static_cast<UINT32>(args.size()),
+											 includeHandler.Get(), IID_PPV_ARGS(&result))),
+				 "VKShader::Initalize: Failed to Compile");
 
-	options.SetSourceLanguage(shaderc_source_language_hlsl);
-	options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
-	options.SetTargetSpirv(shaderc_spirv_version_1_6);
-
-	// Shift texture (t) and sampler (s) registers by 1 so binding 0 is reserved
-	// for the per-draw UBO (cbuffer at register(b0)).  This avoids binding
-	// conflicts without needing [[vk::binding()]] attributes in shaders.
-	options.SetBindingBase(shaderc_uniform_kind_texture, 1);
-	options.SetBindingBase(shaderc_uniform_kind_sampler, 1);
-
-	// Entry point is passed as the final argument to CompileGlslToSpv below.
-
-#if defined(WARP_DEBUG)
-	options.SetGenerateDebugInfo();
-	options.SetOptimizationLevel(shaderc_optimization_level_zero);
-#else
-	options.SetOptimizationLevel(shaderc_optimization_level_performance);
-#endif
-
-	shaderc::SpvCompilationResult result = compiler.CompileGlslToSpv(
-		source.c_str(), source.size(),
-		ToShadercKind(desc.type),
-		sourceName.c_str(),
-		desc.entryPoint.c_str(),
-		options);
-
-	if (result.GetCompilationStatus() != shaderc_compilation_status_success)
+	DxcRef<IDxcBlobUtf8> errors;
+	result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr);
+	if (errors && errors->GetStringLength() > 0)
 	{
-		LOG_ERROR("VKShader: HLSL compilation failed: {}", result.GetErrorMessage());
-		FATAL_ASSERT(false, "VKShader: shader compilation failed");
-		return;
+		LOG_WARNING("VKShader compile output: {}", errors->GetStringPointer());
 	}
 
-	if (result.GetNumWarnings() > 0)
-	{
-		LOG_WARNING("VKShader: {}", result.GetErrorMessage());
-	}
+	HRESULT hr;
+	result->GetStatus(&hr);
+	DYNAMIC_ASSERT(SUCCEEDED(hr), "VKShader::Initialize: shader compilation failed");
 
-	m_spirv.assign(result.cbegin(), result.cend());
+	DxcRef<IDxcBlob> shaderBlob;
+	result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr);
+	DYNAMIC_ASSERT(shaderBlob && shaderBlob->GetBufferSize() > 0, "VKShader::Initialize: No spirv output produced");
+
+	m_spirv.resize(shaderBlob->GetBufferSize() / sizeof(u32));
+	std::memcpy(m_spirv.data(), shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize());
 
 	VkShaderModuleCreateInfo moduleInfo = {};
-	moduleInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	moduleInfo.codeSize = m_spirv.size() * sizeof(u32);
-	moduleInfo.pCode    = m_spirv.data();
+	moduleInfo.sType					= VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	moduleInfo.codeSize					= shaderBlob->GetBufferSize();
+	moduleInfo.pCode					= m_spirv.data();
 
-	VK_CHECK(vkCreateShaderModule(m_device, &moduleInfo, nullptr, &m_module),
-	         "VKShader: vkCreateShaderModule failed");
+	VK_CHECK(vkCreateShaderModule(m_device, &moduleInfo, nullptr, &m_module), "VKShader: vkCreateShaderModule failed");
 
-	LOG_DEBUG("VKShader: compiled '{}' ({} bytes SPIR-V)", sourceName, m_spirv.size() * 4);
+	LOG_DEBUG("VKShader: compiled '{}' ({} bytes SPIR-V)", desc.filePath, m_spirv.size() * sizeof(u32));
 }
 
 void VKShader::Cleanup()

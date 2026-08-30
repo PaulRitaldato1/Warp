@@ -207,13 +207,21 @@ if(WIN32)
     # Derive the Vulkan SDK lib directory from the found vulkan-1.lib path.
     get_filename_component(_VK_LIB_DIR "${Vulkan_LIBRARY}" DIRECTORY)
     target_link_libraries(WarpEngine PRIVATE "d3d12.lib" "dxgi.lib" "dxcompiler.lib" "Gdi32.lib" "synchronization.lib" Vulkan::Vulkan)
-    # shaderc — use the combined static lib so no extra DLLs are needed.
-    target_link_libraries(WarpEngine PRIVATE "$<IF:$<CONFIG:Debug>,${_VK_LIB_DIR}/shaderc_combinedd.lib,${_VK_LIB_DIR}/shaderc_combined.lib>")
     target_link_libraries(Warp PUBLIC WarpEngine)
+
+    # The Vulkan SDK's DXC emits SPIR-V; the Windows SDK's (linked above for D3D12)
+    # may not. Copied under a distinct name so both can load in one process — see
+    # GetDxcCreateInstance in DxcCommon.cpp.
+    get_filename_component(_VK_ROOT "${_VK_LIB_DIR}" DIRECTORY)
+    set(_VK_DXC_DLL "${_VK_ROOT}/Bin/dxcompiler.dll")
+    if(NOT EXISTS "${_VK_DXC_DLL}")
+        message(FATAL_ERROR "Vulkan SDK dxcompiler.dll not found at ${_VK_DXC_DLL}")
+    endif()
 #Linux
 elseif(UNIX AND NOT APPLE)
     find_package(Vulkan REQUIRED)
-    target_link_libraries(WarpEngine PRIVATE X11 Vulkan::Vulkan shaderc_shared)
+    # No D3D12 here, so DXC links directly. shaderc goes once VKShader is ported.
+    target_link_libraries(WarpEngine PRIVATE X11 Vulkan::Vulkan shaderc_shared dxcompiler)
     target_link_libraries(Warp PUBLIC WarpEngine)
 
 #Apple
@@ -240,6 +248,15 @@ add_custom_command(TARGET Warp POST_BUILD
         "$<TARGET_FILE_DIR:Warp>/Shaders"
     COMMENT "Copying Resources and Shaders to output directory"
 )
+
+if(WIN32)
+    add_custom_command(TARGET Warp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${_VK_DXC_DLL}"
+            "$<TARGET_FILE_DIR:Warp>/dxcompiler_spirv.dll"
+        COMMENT "Copying Vulkan SDK DXC as dxcompiler_spirv.dll"
+    )
+endif()
 
 # Make shader edits trigger a rebuild so the POST_BUILD copy always runs.
 file(GLOB_RECURSE WARP_SHADER_FILES "${Warp_SOURCE_DIR}/Warp/Shaders/*.hlsl")

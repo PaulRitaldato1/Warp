@@ -6,8 +6,7 @@
 #include <Rendering/Renderer/Platform/Vulkan/VKCommon.h>
 
 // ---------------------------------------------------------------------------
-// VKShader — compiles HLSL source (or loads pre-compiled SPIR-V) using
-// shaderc on Linux; the resulting SPIR-V is wrapped in a VkShaderModule.
+// VKShader — compiles HLSL source (or loads pre-compiled SPIR-V) using DXC
 // ---------------------------------------------------------------------------
 
 class VKShader : public Shader
@@ -17,18 +16,34 @@ public:
 
 	void InitializeWithDevice(VkDevice device);
 
-	void        Initialize(const ShaderDesc& desc) override;
-	const void* GetBytecode()                const override { return m_spirv.data(); }
-	u64         GetBytecodeSize()            const override { return m_spirv.size() * sizeof(u32); }
-	void*       GetNativeHandle()            const override { return (void*)m_module; }
-	void        Cleanup()                          override;
+	void Initialize(const ShaderDesc& desc) override;
 
-	VkShaderModule GetModule() const { return m_module; }
+	const void* GetBytecode() const override
+	{
+		return m_spirv.data();
+	}
+
+	u64 GetBytecodeSize() const override
+	{
+		return m_spirv.size() * sizeof(u32);
+	}
+
+	void* GetNativeHandle() const override
+	{
+		return (void*)m_module;
+	}
+
+	void Cleanup() override;
+
+	VkShaderModule GetModule() const
+	{
+		return m_module;
+	}
 
 private:
-	VkDevice       m_device = VK_NULL_HANDLE;
+	VkDevice m_device		= VK_NULL_HANDLE;
 	VkShaderModule m_module = VK_NULL_HANDLE;
-	Vector<u32>    m_spirv;
+	Vector<u32> m_spirv;
 };
 
 #endif // WARP_BUILD_VK
