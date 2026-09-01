@@ -18,7 +18,6 @@
 #include <Core/ECS/Components/LightComponent.h>
 #include <Core/ECS/Components/SkyLightComponent.h>
 #include <Rendering/Mesh/Mesh.h>
-#include <Rendering/Renderer/DrawList.h>
 #include <Rendering/Window/Window.h>
 #include <Debugging/Assert.h>
 #include <Debugging/GPUMarker.h>
@@ -33,12 +32,10 @@ struct PerViewConstants
 	Mat4 viewProj;
 };
 
-struct PerDrawConstants
+struct PerBatchConstants
 {
-	Mat4 model;
-	Mat4 modelInvTranspose;
 	Vec3 emissiveFactor;
-	f32 padding;
+	uint instanceOffset;
 };
 
 struct ShadowViewConstants
@@ -49,6 +46,22 @@ struct ShadowViewConstants
 struct ShadowDrawConstants
 {
 	Mat4 model;
+};
+
+struct InstanceSortKey
+{
+	u64 key;
+	u32 instanceIndex;
+};
+
+struct InstanceData
+{
+	Mat4 model;
+	Mat4 modelInvTranspose;
+	Vec3 boundsCenter;
+	f32 pad0;
+	Vec3 boundsExtents;
+	f32 pad1;
 };
 
 Renderer::~Renderer() = default;
@@ -433,6 +446,8 @@ void Renderer::DrawDeferred()
 		return;
 	}
 
+	m_drawList.Clear();
+
 	CommandList& cmd = *m_graphicsLists[0];
 
 	// Find the active camera from the ECS.
@@ -564,7 +579,9 @@ void Renderer::DrawDeferred()
 	Texture* defaultMaterialTexture = m_resourceManager->GetDefaultMaterialTexture();
 	Texture* defaultNormalTexture	= m_resourceManager->GetDefaultNormalTexture();
 
-	DrawList drawList;
+	Vector<InstanceData> scratchInstances;
+	Vector<Pair<InstanceSortKey, u32>> instanceKeys;
+
 	m_world->Each<TransformComponent, MeshComponent>(
 		[&](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
 		{
@@ -609,10 +626,10 @@ void Renderer::DrawDeferred()
 				visibleToShadow = hasDirectionalShadow && meshComp.HasRenderFlag(RenderFlags_CastShadow) &&
 								  IsVisible(shadowFrustum, worldBounds);
 
-				++drawList.meshesTested;
+				++m_drawList.meshesTested;
 				if (!visibleToCamera)
 				{
-					++drawList.meshesCulled;
+					++m_drawList.meshesCulled;
 				}
 
 				// When neither pass will reference the item, skip building it at all.
@@ -679,29 +696,29 @@ void Renderer::DrawDeferred()
 					}
 				}
 
-				u32 itemIndex = static_cast<u32>(drawList.items.size());
-				drawList.items.push_back(item);
+				u32 itemIndex = static_cast<u32>(m_drawList.items.size());
+				m_drawList.items.push_back(item);
 
 				if (visibleToShadow)
 				{
-					drawList.shadowCasters.push_back(itemIndex);
+					m_drawList.shadowCasters.push_back(itemIndex);
 				}
 
 				if (visibleToCamera)
 				{
 					if (meshComp.HasRenderFlag(RenderFlags_Unlit))
 					{
-						drawList.unlitMeshes.push_back(itemIndex);
+						m_drawList.unlitMeshes.push_back(itemIndex);
 					}
 					else
 					{
-						drawList.litMeshes.push_back(itemIndex);
+						m_drawList.litMeshes.push_back(itemIndex);
 					}
 				}
 			}
 		});
 
-	m_cullStats = { drawList.meshesTested, drawList.meshesCulled };
+	m_cullStats = { m_drawList.meshesTested, m_drawList.meshesCulled };
 
 	LightList lightList;
 	m_world->Each<TransformComponent, LightComponent>(
@@ -753,9 +770,9 @@ void Renderer::DrawDeferred()
 		UploadResult viewUpload = m_uploadBuffer->AllocAndCopy(&shadowView, sizeof(ShadowViewConstants), 256);
 		cmd.SetConstantBufferView(1, m_uploadBuffer->GetBackingBuffer(), viewUpload.offset, viewUpload.size);
 
-		for (u32 shadowCasterIndex : drawList.shadowCasters)
+		for (u32 shadowCasterIndex : m_drawList.shadowCasters)
 		{
-			const DrawItem& item = drawList.items[shadowCasterIndex];
+			const DrawItem& item = m_drawList.items[shadowCasterIndex];
 
 			ShadowDrawConstants shadowConstants;
 			shadowConstants.model = item.model;
@@ -813,7 +830,7 @@ void Renderer::DrawDeferred()
 	// effect: a culled shadow caster stays in items for the shadow pass but never
 	// enters these lists. Unlit shares the lit path until DrawMeshesUnlit exists,
 	// so the flag keeps its current (absent) effect instead of dropping the mesh.
-	const Span<const u32> gbufferLists[] = { drawList.litMeshes, drawList.unlitMeshes };
+	const Span<const u32> gbufferLists[] = { m_drawList.litMeshes, m_drawList.unlitMeshes };
 
 	// Bound once for the whole pass rather than re-uploaded per submesh.
 	PerViewConstants perView;
@@ -826,7 +843,7 @@ void Renderer::DrawDeferred()
 	{
 		for (u32 itemIndex : list)
 		{
-			const DrawItem& item = drawList.items[itemIndex];
+			const DrawItem& item = m_drawList.items[itemIndex];
 
 			PerDrawConstants constants;
 			constants.model				= item.model;
@@ -1059,12 +1076,12 @@ void Renderer::CreateDeferredGeometryPipeline()
 	meshDesc.enableBlending		  = false;
 	meshDesc.rasterState.cullMode = RasterizerState::CullMode::Back;
 	meshDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
-	meshDesc.bindings			  = {
-		{ BindingType::ConstantBuffer, 0, 1 },							 // rootIndex 0: b0 — per-draw constants
-		{ BindingType::TextureTable, 0, TextureSlot::TextureSlotCount }, // rootIndex 1: t0-t4 — material textures
-		{ BindingType::ConstantBuffer, 1, 1 },							 // rootIndex 2: b1 — per-view constants
-	};
-	meshDesc.samplers = {
+	meshDesc.bindings			  = { { BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — per-draw constants
+									  { BindingType::TextureTable, 0,
+										TextureSlot::TextureSlotCount },	 // rootIndex 1: t0-t4 — material textures
+									  { BindingType::ConstantBuffer, 1, 1 }, // rootIndex 2: b1 — per-view constants
+									  { BindingType::StructuredBuffer, TextureSlot::TextureSlotCount, 1 } };
+	meshDesc.samplers			  = {
 		{ 0, SamplerFilter::Linear, SamplerAddressMode::Wrap },
 	};
 	m_deferredGeomPSO = m_device->CreatePipelineState(meshDesc);

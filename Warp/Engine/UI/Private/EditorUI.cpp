@@ -102,34 +102,47 @@ void EditorUI::DrawEntityList(World& world)
 
 	ImGui::Separator();
 
-	Vector<Entity> entities = world.GetAllEntities();
-	for (Entity entity : entities)
+	// Reused across frames so a large world does not allocate here every frame.
+	m_entityCache.clear();
+	world.GetAllEntities(m_entityCache);
+
+	// Only rows actually on screen are built. Without the clipper every entity pays
+	// for a label string whether visible or not, which dominates at 10k entities.
+	ImGuiListClipper clipper;
+	clipper.Begin(static_cast<int>(m_entityCache.size()));
+
+	while (clipper.Step())
 	{
-		ImGui::PushID(static_cast<int>(entity.id));
-
-		// Build a label showing entity ID and which components it has.
-		ComponentMask mask = world.GetComponentMask(entity);
-		String label = "Entity " + std::to_string(entity.id);
-
-		// Append component short names.
-		const auto& descriptors = GetComponentDescriptors();
-		for (const auto& [componentId, descriptor] : descriptors)
+		for (int index = clipper.DisplayStart; index < clipper.DisplayEnd; ++index)
 		{
-			if (mask.test(componentId))
+			const Entity entity = m_entityCache[index];
+
+			ImGui::PushID(static_cast<int>(entity.id));
+
+			// Build a label showing entity ID and which components it has.
+			ComponentMask mask = world.GetComponentMask(entity);
+			String label	   = "Entity " + std::to_string(entity.id);
+
+			// Append component short names.
+			const auto& descriptors = GetComponentDescriptors();
+			for (const auto& [componentId, descriptor] : descriptors)
 			{
-				label += "  [";
-				label += descriptor.name;
-				label += "]";
+				if (mask.test(componentId))
+				{
+					label += "  [";
+					label += descriptor.name;
+					label += "]";
+				}
 			}
-		}
 
-		bool isSelected = (m_selectedEntity == entity);
-		if (ImGui::Selectable(label.c_str(), isSelected))
-		{
-			m_selectedEntity = entity;
-		}
+			bool isSelected = (m_selectedEntity == entity);
+			if (ImGui::Selectable(label.c_str(), isSelected))
+			{
+				m_selectedEntity = entity;
+			}
 
-		ImGui::PopID();
+			ImGui::PopID();
+		}
 	}
 
 	ImGui::End();

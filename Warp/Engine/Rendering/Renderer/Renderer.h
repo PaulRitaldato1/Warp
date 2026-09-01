@@ -16,11 +16,13 @@
 #include <Rendering/Renderer/Shader.h>
 #include <Rendering/Renderer/Pipeline.h>
 #include <Rendering/Renderer/TextureUpload.h>
+#include <Renderer/DrawList.h>
 
 class IWindow;
 class World;
 class ResourceManager;
 class RenderDocCapture;
+
 #include <UI/ImGuiBackend.h>
 
 enum class RenderPath : u8
@@ -284,6 +286,8 @@ protected:
 
 	bool m_imguiInitialized = false;
 	URef<ImGuiBackend> m_imguiBackend;
+
+	DrawList m_drawList;
 
 public:
 	// Queue a staging upload for the Renderer to process.

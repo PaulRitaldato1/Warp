@@ -38,6 +38,25 @@ struct LightList
 	}
 };
 
+struct BatchItem
+{
+	Buffer* positionBuffer	= nullptr;
+	Buffer* attributeBuffer = nullptr;
+	Buffer* indexBuffer		= nullptr;
+
+	u32 indexCount	 = 0;
+	u32 indexOffset	 = 0;
+	u32 vertexOffset = 0;
+
+	// Offset into DrawList::instances that this batch draws
+	u32 instanceOffset = 0;
+	u32 instanceCount  = 0;
+
+	// Material
+	Vec3 emissiveFactor						   = { 0.0f, 0.0f, 0.0f };
+	Array<Texture*, TextureSlotCount> textures = {};
+};
+
 // Per-submesh draw command — everything needed to issue a single DrawIndexed call
 // across any pass (geometry, shadow, unlit, etc.).
 struct DrawItem
@@ -69,6 +88,7 @@ struct DrawItem
 struct DrawList
 {
 	Vector<DrawItem> items;
+	Vector<BatchItem> batchItems;
 
 	// Sublists — indices into items, built during the same gather pass.
 	Vector<u32> shadowCasters;
@@ -83,6 +103,7 @@ struct DrawList
 	void Clear()
 	{
 		items.clear();
+		batchItems.clear();
 		shadowCasters.clear();
 		litMeshes.clear();
 		unlitMeshes.clear();

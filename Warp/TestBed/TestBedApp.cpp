@@ -18,31 +18,35 @@ struct TempGame : public UserApplicationBase
 
 		ResourceManager* resourceManager = engine->GetResourceManager();
 
-		// Directional light
-		// Entity directionalLightEntity	   = world.CreateEntity<TransformComponent, LightComponent>();
-		// LightComponent& directionalLight   = world.GetComponent<LightComponent>(directionalLightEntity);
-		// directionalLight.type			   = LightType::Directional;
-		// directionalLight.color			   = { 1.f, 0.95f, 0.9f };
-		// directionalLight.intensity		   = 0.1f;
-		// TransformComponent& lightTransform = world.GetComponent<TransformComponent>(directionalLightEntity);
-		// lightTransform.Rotate({ 45.f, -30.f, 0.f });
-
 		// Floor plane
 		u32 planeHandle										= resourceManager->CreatePlane(20.f, 20.f);
 		Entity floor										= world.CreateEntity<TransformComponent, MeshComponent>();
 		world.GetComponent<MeshComponent>(floor).meshHandle = planeHandle;
 		world.GetComponent<TransformComponent>(floor).Move({ 0.f, -1.f, 0.f });
 
+		for (u32 x = 0; x < 100; x++)
+		{
+			for (u32 y = 0; y < 100; y++)
+			{
+				u32 boxHandle = resourceManager->CreateBox(1, 1, 1);
+				Entity box	  = world.CreateEntity<TransformComponent, MeshComponent>();
+
+				world.GetComponent<MeshComponent>(box).ClearRenderFlag(RenderFlags::RenderFlags_CastShadow);
+				world.GetComponent<MeshComponent>(box).meshHandle = boxHandle;
+				world.GetComponent<TransformComponent>(box).Move(
+					{ static_cast<float>(x), 0.0f, static_cast<float>(y) });
+			}
+		}
+
 		// Objects on the floor
 		Entity helmet = world.CreateEntity<TransformComponent, MeshComponent>();
 		resourceManager->AssignMesh(world.GetComponent<MeshComponent>(helmet),
-		                            "Resources/DamagedHelmet/DamagedHelmet.gltf");
+									"Resources/DamagedHelmet/DamagedHelmet.gltf");
 		world.GetComponent<TransformComponent>(helmet).Move({ 0.f, 0.f, 0.f });
 		world.GetComponent<TransformComponent>(helmet).Rotate({ 90.f, 180.f, 0.f });
 
 		Entity avocado = world.CreateEntity<TransformComponent, MeshComponent>();
-		resourceManager->AssignMesh(world.GetComponent<MeshComponent>(avocado),
-		                            "Resources/Avocado/Avocado.gltf");
+		resourceManager->AssignMesh(world.GetComponent<MeshComponent>(avocado), "Resources/Avocado/Avocado.gltf");
 		TransformComponent& avocadoTransform = world.GetComponent<TransformComponent>(avocado);
 		avocadoTransform.Move({ 5.0f, -0.5f, 0.f });
 		avocadoTransform.Scale(20.0f);

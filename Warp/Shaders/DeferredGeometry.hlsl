@@ -1,16 +1,25 @@
 // Split by update frequency: viewProj is identical for every draw in the pass,
 // so it is bound once instead of re-uploaded per draw.
-cbuffer PerDraw : register(b0)
+cbuffer PerBatchConstants : register(b0)
 {
-    float4x4 model;
-    float4x4 modelInvTranspose;
     float3   emissiveFactor;
-    float    cbPadding;
+    uint     instanceOffset;
 };
+
 
 cbuffer PerView : register(b1)
 {
     float4x4 viewProj;
+};
+
+struct InstanceData
+{
+    float4x4 model;
+    float4x4 modelInvTranspose;
+    float3 boundsCenter;
+    float pad0;
+    float3 boundsExtents;
+    float pad1;
 };
 
 struct GBufferOutput
@@ -38,6 +47,7 @@ struct VSInput
     float2 uv0      : TEXCOORD0;
     float2 uv1      : TEXCOORD1;
     float4 color    : COLOR;
+    uint instanceID : SV_InstanceID;
 };
 
 Texture2D    BaseColorTexture         : register(t0);
@@ -45,17 +55,20 @@ Texture2D    NormalTexture            : register(t1);
 Texture2D    MetallicRoughnessTexture : register(t2);
 Texture2D    OcclusionTexture         : register(t3);
 Texture2D    EmissiveTexture          : register(t4);
+StructuredBuffer<InstanceData> instances : register (t5);
 SamplerState Sampler                  : register(s0);
 
 
 VSOutput VSMain(VSInput input)
 {
     VSOutput output;
-    output.position     = mul(viewProj, mul(model, float4(input.position, 1.0)));
+    InstanceData inst = instances[instanceOffset + input.instanceID];
+
+    output.position     = mul(viewProj, mul(inst.model, float4(input.position, 1.0)));
     // Normals need the inverse transpose, tangents do not. A tangent lies along
     // the surface, so it transforms like a position.
-    output.normal       = normalize(mul((float3x3)modelInvTranspose, input.normal));
-    output.tangent      = normalize(mul((float3x3)model, input.tangent.xyz));
+    output.normal       = normalize(mul((float3x3)inst.modelInvTranspose, input.normal));
+    output.tangent      = normalize(mul((float3x3)inst.model, input.tangent.xyz));
     output.bitangentSign = input.tangent.w;
     output.uv0          = input.uv0;
     return output;

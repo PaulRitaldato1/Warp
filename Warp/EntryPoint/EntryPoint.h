@@ -7,12 +7,12 @@
 
 int main()
 {
-    UserApplicationBase* App = nullptr;
+	UserApplicationBase* App = nullptr;
 
-    FATAL_ASSERT(HookEngineFromApp(&App), "Failed to HookEngineFromApp");
+	FATAL_ASSERT(HookEngineFromApp(&App), "Failed to HookEngineFromApp");
 
-    FATAL_ASSERT(App != nullptr, "App Failed to exist");
+	FATAL_ASSERT(App != nullptr, "App Failed to exist");
 
-    WarpEngine Engine(App);
-    Engine.Run();
+	WarpEngine Engine(App);
+	Engine.Run();
 }

@@ -30,11 +30,11 @@ struct DeviceDesc
 	bool bEnableGPUValidationLayer = false;
 	// Total across all frames in flight, so the per-frame budget is this divided
 	// by framesInFlight.
-	u32  srvHeapCapacity           = 12288;
+	u32 srvHeapCapacity = 196608;
 
 	// The SRV heap is partitioned into this many regions so a frame being recorded
 	// never overwrites descriptors an in-flight frame is still reading.
-	u32  framesInFlight            = 3;
+	u32 framesInFlight = 3;
 };
 
 struct PhysicalDeviceInfo
@@ -57,13 +57,13 @@ public:
 	virtual void Initialize(const DeviceDesc& Desc) = 0;
 
 	// Create a command queue of the given type
-	virtual URef<CommandQueue>  CreateCommandQueue(CommandQueueType type) = 0;
+	virtual URef<CommandQueue> CreateCommandQueue(CommandQueueType type) = 0;
 
 	// Create a command list; one allocator slot is allocated per frame-in-flight
-	virtual URef<CommandList>   CreateCommandList(CommandQueueType type, u32 framesInFlight) = 0;
+	virtual URef<CommandList> CreateCommandList(CommandQueueType type, u32 framesInFlight) = 0;
 
 	// Create a GPU-visible upload heap backed by a ring buffer
-	virtual URef<UploadBuffer>  CreateUploadBuffer(u64 size, u32 framesInFlight) = 0;
+	virtual URef<UploadBuffer> CreateUploadBuffer(u64 size, u32 framesInFlight) = 0;
 
 	// Create a swap chain
 	virtual URef<SwapChain> CreateSwapChain(const SwapChainDesc& Desc) = 0;

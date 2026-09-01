@@ -31,6 +31,9 @@ private:
 	ResourceManager* m_resourceManager = nullptr;
 	Renderer* m_renderer			   = nullptr;
 
+	// Refilled each frame by DrawEntityList; a member only to keep its capacity.
+	Vector<Entity> m_entityCache;
+
 	// Cached list of mesh file paths found in Resources/.
 	Vector<String> m_meshFiles;
 	bool m_meshFilesScanned = false;

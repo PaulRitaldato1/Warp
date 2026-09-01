@@ -162,17 +162,24 @@ public:
 	}
 
 	// Returns all live entities in the world.
-	Vector<Entity> GetAllEntities() const
+	// Appends without clearing, so callers can keep one buffer alive and reuse its
+	// capacity instead of allocating per call.
+	void GetAllEntities(Vector<Entity>& outEntities) const
 	{
-		Vector<Entity> result;
 		for (u32 i = 1; i < m_entities.size(); ++i)
 		{
 			const EntityRecord& record = m_entities[i];
 			if (record.alive)
 			{
-				result.push_back(Entity{ i, record.generation });
+				outEntities.push_back(Entity{ i, record.generation });
 			}
 		}
+	}
+
+	Vector<Entity> GetAllEntities() const
+	{
+		Vector<Entity> result;
+		GetAllEntities(result);
 		return result;
 	}
 
