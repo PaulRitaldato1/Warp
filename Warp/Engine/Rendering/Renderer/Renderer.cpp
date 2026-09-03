@@ -279,6 +279,8 @@ void Renderer::BeginFrame()
 
 void Renderer::Draw()
 {
+	m_drawStats = {};
+
 	switch (m_renderPath)
 	{
 		case RenderPath::Deferred:
@@ -343,6 +345,7 @@ void Renderer::EndFrame()
 	}
 
 	// --- Deferred copies: no cross-queue wait, available within k_framesInFlight frames.
+	InFlightStaging entry;
 	for (PendingStagingUpload& upload : m_deferredUploads)
 	{
 		m_copyList->CopyBuffer(upload.stagingBuffer.get(), upload.destination, 0, 0, upload.size);
@@ -367,7 +370,6 @@ void Renderer::EndFrame()
 
 		for (PendingStagingUpload& upload : m_deferredUploads)
 		{
-			InFlightStaging entry;
 			entry.stagingBuffer = std::move(upload.stagingBuffer);
 			entry.fenceValue	= deferredFenceValue;
 			m_inFlightStagingBuffers.push_back(std::move(entry));
@@ -418,7 +420,6 @@ void Renderer::EndFrame()
 	}
 
 	m_swapChain->Present();
-
 	m_frameIndex = (m_frameIndex + 1) % k_framesInFlight;
 }
 
@@ -810,7 +811,7 @@ void Renderer::DrawDeferred()
 		}
 	}
 
-	m_instancingStats = { static_cast<u32>(m_drawList.batchItems.size()) };
+	m_drawStats.batches = static_cast<u32>(m_drawList.batchItems.size());
 
 	// ---------------------------------------------------------------------------
 	// Shadow pass — render depth from each shadow-casting directional light's POV
@@ -851,6 +852,7 @@ void Renderer::DrawDeferred()
 			// Depth only: position is the sole stream this pass reads.
 			cmd.SetVertexBuffer(item.positionBuffer);
 			cmd.SetIndexBuffer(item.indexBuffer);
+			++m_drawStats.drawCalls;
 			cmd.DrawIndexed(item.indexCount, 1, item.indexOffset, item.vertexOffset, 0);
 		}
 	}
@@ -930,6 +932,7 @@ void Renderer::DrawDeferred()
 									item.textures[TextureSlot::MetallicRoughness],
 									item.textures[TextureSlot::Occlusion], item.textures[TextureSlot::Emissive] });
 
+		++m_drawStats.drawCalls;
 		cmd.DrawIndexed(item.indexCount, item.instanceCount, item.indexOffset, item.vertexOffset, 0);
 	}
 
@@ -1014,6 +1017,7 @@ void Renderer::DrawDeferred()
 
 	cmd.SetShaderResources(3, { m_shadowTextures.directionalShadowMap.get() });
 
+	++m_drawStats.drawCalls;
 	cmd.Draw(3);
 
 	Warp::Debugging::GPUMarker::EndEvent(&cmd);

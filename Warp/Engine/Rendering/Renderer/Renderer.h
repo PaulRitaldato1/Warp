@@ -141,9 +141,10 @@ public:
 		u32 culled = 0;
 	};
 
-	struct InstancingStats
+	struct DrawStats
 	{
-		u32 batches;
+		u32 batches	  = 0;
+		u32 drawCalls = 0;
 	};
 
 	CullStats GetCullStats() const
@@ -151,9 +152,9 @@ public:
 		return m_cullStats;
 	}
 
-	InstancingStats GetInstancingStats() const
+	DrawStats GetDrawStats() const
 	{
-		return m_instancingStats;
+		return m_drawStats;
 	}
 
 protected:
@@ -234,7 +235,7 @@ protected:
 	u32 m_frameIndex = 0;
 
 	CullStats m_cullStats;
-	InstancingStats m_instancingStats;
+	DrawStats m_drawStats{};
 
 	// Per-worker command lists — long-lived, reset each frame via Begin(frameIndex).
 	// Indexed by worker thread index.

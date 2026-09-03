@@ -51,10 +51,11 @@ void EditorUI::DrawRendererStats()
 		cullStats.tested > 0 ? (100.f * static_cast<f32>(cullStats.culled) / static_cast<f32>(cullStats.tested)) : 0.f;
 	ImGui::Text("Culled %%:  %.1f", percent);
 
-	ImGui::SeparatorText("Instancing Stats");
+	ImGui::SeparatorText("Draw Stats");
 
-	const Renderer::InstancingStats instancingStats = m_renderer->GetInstancingStats();
-	ImGui::Text("Batches: %u", instancingStats.batches);
+	const Renderer::DrawStats drawStats = m_renderer->GetDrawStats();
+	ImGui::Text("Draw Calls: %u", drawStats.drawCalls);
+	ImGui::Text("Batches: %u", drawStats.batches);
 
 	ImGui::End();
 }
