@@ -38,6 +38,22 @@ struct LightList
 	}
 };
 
+struct InstanceSortKey
+{
+	u64 key;
+	u32 instanceIndex;
+};
+
+struct InstanceData
+{
+	Mat4 model;
+	Mat4 modelInvTranspose;
+	Vec3 boundsCenter;
+	f32 pad0;
+	Vec3 boundsExtents;
+	f32 pad1;
+};
+
 struct BatchItem
 {
 	Buffer* positionBuffer	= nullptr;

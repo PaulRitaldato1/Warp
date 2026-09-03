@@ -37,18 +37,24 @@ void EditorUI::DrawRendererStats()
 		return;
 	}
 
-	const Renderer::CullStats stats = m_renderer->GetCullStats();
-	const u32 visible				= stats.tested - stats.culled;
+	const Renderer::CullStats cullStats = m_renderer->GetCullStats();
+	const u32 visible					= cullStats.tested - cullStats.culled;
 
 	ImGui::SeparatorText("Frustum Culling");
-	ImGui::Text("Tested:  %u", stats.tested);
+	ImGui::Text("Tested:  %u", cullStats.tested);
 	ImGui::Text("Visible: %u", visible);
-	ImGui::Text("Culled:  %u", stats.culled);
+	ImGui::Text("Culled:  %u", cullStats.culled);
 
 	// Counts entities, not submeshes, and culled includes shadow casters that were
 	// dropped from the camera pass but still drawn into the shadow map.
-	const f32 percent = stats.tested > 0 ? (100.f * static_cast<f32>(stats.culled) / static_cast<f32>(stats.tested)) : 0.f;
+	const f32 percent =
+		cullStats.tested > 0 ? (100.f * static_cast<f32>(cullStats.culled) / static_cast<f32>(cullStats.tested)) : 0.f;
 	ImGui::Text("Culled %%:  %.1f", percent);
+
+	ImGui::SeparatorText("Instancing Stats");
+
+	const Renderer::InstancingStats instancingStats = m_renderer->GetInstancingStats();
+	ImGui::Text("Batches: %u", instancingStats.batches);
 
 	ImGui::End();
 }
@@ -169,9 +175,9 @@ void EditorUI::DrawEntityInspector(World& world)
 	ImGui::Text("Entity %u (gen %u)", m_selectedEntity.id, m_selectedEntity.generation);
 	ImGui::Separator();
 
-	ComponentMask mask = world.GetComponentMask(m_selectedEntity);
+	ComponentMask mask		= world.GetComponentMask(m_selectedEntity);
 	const auto& descriptors = GetComponentDescriptors();
-	u32 meshComponentId = ComponentID<MeshComponent>::Get();
+	u32 meshComponentId		= ComponentID<MeshComponent>::Get();
 
 	// Draw each component the entity has.
 	for (const auto& [componentId, descriptor] : descriptors)
@@ -190,7 +196,8 @@ void EditorUI::DrawEntityInspector(World& world)
 			{
 				descriptor.removeFromEntity(world, m_selectedEntity);
 				ImGui::EndPopup();
-				if (open) ImGui::TreePop();
+				if (open)
+					ImGui::TreePop();
 				// Mask changed — break out and re-draw next frame.
 				break;
 			}
@@ -264,13 +271,13 @@ void EditorUI::DrawMeshBrowser(World& world)
 
 		if (ImGui::Selectable("  Plane"))
 		{
-			u32 handle = m_resourceManager->CreatePlane(10.f, 10.f);
+			u32 handle		= m_resourceManager->CreatePlane(10.f, 10.f);
 			mesh.meshHandle = handle;
 			mesh.ClearPath();
 		}
 		if (ImGui::Selectable("  Box"))
 		{
-			u32 handle = m_resourceManager->CreateBox(1.f, 1.f, 1.f);
+			u32 handle		= m_resourceManager->CreateBox(1.f, 1.f, 1.f);
 			mesh.meshHandle = handle;
 			mesh.ClearPath();
 		}
@@ -344,7 +351,7 @@ void EditorUI::DrawEntityCreator(World& world)
 			}
 		}
 
-		m_selectedEntity    = entity;
+		m_selectedEntity	= entity;
 		m_showEntityCreator = false;
 
 		// Reset checkboxes.

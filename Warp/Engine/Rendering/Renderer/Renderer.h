@@ -141,9 +141,19 @@ public:
 		u32 culled = 0;
 	};
 
+	struct InstancingStats
+	{
+		u32 batches;
+	};
+
 	CullStats GetCullStats() const
 	{
 		return m_cullStats;
+	}
+
+	InstancingStats GetInstancingStats() const
+	{
+		return m_instancingStats;
 	}
 
 protected:
@@ -224,6 +234,7 @@ protected:
 	u32 m_frameIndex = 0;
 
 	CullStats m_cullStats;
+	InstancingStats m_instancingStats;
 
 	// Per-worker command lists — long-lived, reset each frame via Begin(frameIndex).
 	// Indexed by worker thread index.
@@ -288,6 +299,9 @@ protected:
 	URef<ImGuiBackend> m_imguiBackend;
 
 	DrawList m_drawList;
+	Vector<InstanceData> m_scratchInstances;
+	Vector<InstanceSortKey> m_instanceKeys;
+	Vector<InstanceData> m_sortedInstances;
 
 public:
 	// Queue a staging upload for the Renderer to process.

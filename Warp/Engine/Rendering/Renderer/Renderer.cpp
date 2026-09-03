@@ -1,7 +1,8 @@
 #include "DirectXMath.h"
 #include "Math/Math.h"
 #include "Math/Frustum.h"
-#include "Renderer/UploadBuffer.h"
+#include <ranges>
+#include <Rendering/Renderer/UploadBuffer.h>
 #include <Rendering/Lighting/LightData.h>
 #include <Rendering/Renderer/DescriptorHandle.h>
 #include <Rendering/Renderer/Pipeline.h>
@@ -46,22 +47,6 @@ struct ShadowViewConstants
 struct ShadowDrawConstants
 {
 	Mat4 model;
-};
-
-struct InstanceSortKey
-{
-	u64 key;
-	u32 instanceIndex;
-};
-
-struct InstanceData
-{
-	Mat4 model;
-	Mat4 modelInvTranspose;
-	Vec3 boundsCenter;
-	f32 pad0;
-	Vec3 boundsExtents;
-	f32 pad1;
 };
 
 Renderer::~Renderer() = default;
@@ -285,6 +270,11 @@ void Renderer::BeginFrame()
 			graphicsCmd.TransitionTexture(tex, ResourceState::ShaderResource);
 		}
 	}
+
+	m_drawList.Clear();
+	m_scratchInstances.clear();
+	m_instanceKeys.clear();
+	m_sortedInstances.clear();
 }
 
 void Renderer::Draw()
@@ -446,8 +436,6 @@ void Renderer::DrawDeferred()
 		return;
 	}
 
-	m_drawList.Clear();
-
 	CommandList& cmd = *m_graphicsLists[0];
 
 	// Find the active camera from the ECS.
@@ -579,9 +567,6 @@ void Renderer::DrawDeferred()
 	Texture* defaultMaterialTexture = m_resourceManager->GetDefaultMaterialTexture();
 	Texture* defaultNormalTexture	= m_resourceManager->GetDefaultNormalTexture();
 
-	Vector<InstanceData> scratchInstances;
-	Vector<Pair<InstanceSortKey, u32>> instanceKeys;
-
 	m_world->Each<TransformComponent, MeshComponent>(
 		[&](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
 		{
@@ -605,8 +590,9 @@ void Renderer::DrawDeferred()
 
 			Mat4 model;
 			Mat4 modelInvTranspose;
-			bool visibleToCamera = true;
-			bool visibleToShadow = false;
+			BoundingBox worldBounds;
+			bool bVisibleToCamera = true;
+			bool bVisibleToShadow = false;
 			{
 				using namespace DirectX;
 				SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
@@ -617,23 +603,22 @@ void Renderer::DrawDeferred()
 
 				// Bounds are model space, so they follow the transform. Refitting an
 				// AABB after rotation grows it, which costs some false positives.
-				BoundingBox worldBounds;
 				resource->mesh->bounds.Transform(worldBounds, M);
-				visibleToCamera = IsVisible(cameraFrustum, worldBounds);
+				bVisibleToCamera = IsVisible(cameraFrustum, worldBounds);
 
 				// Shadow casters are tested against the light instead, since geometry
 				// outside the view can still cast into it. Both frusta reject.
-				visibleToShadow = hasDirectionalShadow && meshComp.HasRenderFlag(RenderFlags_CastShadow) &&
-								  IsVisible(shadowFrustum, worldBounds);
+				bVisibleToShadow = hasDirectionalShadow && meshComp.HasRenderFlag(RenderFlags_CastShadow) &&
+								   IsVisible(shadowFrustum, worldBounds);
 
 				++m_drawList.meshesTested;
-				if (!visibleToCamera)
+				if (!bVisibleToCamera)
 				{
 					++m_drawList.meshesCulled;
 				}
 
 				// When neither pass will reference the item, skip building it at all.
-				if (!visibleToCamera && !visibleToShadow)
+				if (!bVisibleToCamera && !bVisibleToShadow)
 				{
 					return;
 				}
@@ -648,8 +633,10 @@ void Renderer::DrawDeferred()
 				XMStoreFloat4x4(&modelInvTranspose, uniformScale ? M : XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
 			}
 
-			for (const Submesh& submesh : resource->mesh->submeshes)
+			for (u32 submeshIndex = 0; submeshIndex < resource->mesh->submeshes.size(); ++submeshIndex)
 			{
+				Submesh& submesh = resource->mesh->submeshes[submeshIndex];
+
 				if (submesh.materialIndex < 0)
 				{
 					continue;
@@ -657,6 +644,20 @@ void Renderer::DrawDeferred()
 
 				const Material& material   = resource->mesh->materials[submesh.materialIndex];
 				const Vector<u32>& handles = resource->textureHandles;
+
+				if (bVisibleToCamera)
+				{
+					u64 key = (static_cast<u64>(meshComp.meshHandle) << 32) | submeshIndex;
+
+					InstanceData instance;
+					instance.model			   = model;
+					instance.modelInvTranspose = modelInvTranspose;
+					instance.boundsCenter	   = worldBounds.Center;
+					instance.boundsExtents	   = worldBounds.Extents;
+
+					m_instanceKeys.push_back({ key, static_cast<u32>(m_scratchInstances.size()) });
+					m_scratchInstances.push_back(instance);
+				}
 
 				DrawItem item;
 				item.model			   = model;
@@ -699,12 +700,12 @@ void Renderer::DrawDeferred()
 				u32 itemIndex = static_cast<u32>(m_drawList.items.size());
 				m_drawList.items.push_back(item);
 
-				if (visibleToShadow)
+				if (bVisibleToShadow)
 				{
 					m_drawList.shadowCasters.push_back(itemIndex);
 				}
 
-				if (visibleToCamera)
+				if (bVisibleToCamera)
 				{
 					if (meshComp.HasRenderFlag(RenderFlags_Unlit))
 					{
@@ -743,6 +744,73 @@ void Renderer::DrawDeferred()
 				lightList.shadowCasters.push_back(itemIndex);
 			}
 		});
+
+	// Sort instance keys
+	std::sort(m_instanceKeys.begin(), m_instanceKeys.end(),
+			  [](const InstanceSortKey& a, const InstanceSortKey& b) { return a.key < b.key; });
+
+	for (auto instanceChunk :
+		 m_instanceKeys |
+			 std::views::chunk_by([](const InstanceSortKey& a, const InstanceSortKey& b) { return a.key == b.key; }))
+	{
+		const InstanceSortKey& instanceKey = *instanceChunk.begin();
+
+		u32 decodedMeshHandle	= static_cast<u32>(instanceKey.key >> 32);
+		u32 decodedSubmeshIndex = static_cast<u32>(instanceKey.key & 0xFFFFFFFF);
+
+		MeshResource* resource = m_resourceManager->GetMeshResourceByHandle(decodedMeshHandle);
+		FATAL_ASSERT(resource, "Renderer::DrawDeferred: MeshResource is invalid when sorting keys");
+
+		const Submesh& submesh		  = resource->mesh->submeshes[decodedSubmeshIndex];
+		const Material& material	  = resource->mesh->materials[submesh.materialIndex];
+		const Vector<u32>& texHandles = resource->textureHandles;
+
+		BatchItem item;
+		item.positionBuffer	 = resource->positionBuffer.get();
+		item.attributeBuffer = resource->attributeBuffer.get();
+		item.indexBuffer	 = resource->indexBuffer.get();
+		item.indexCount		 = submesh.indexCount;
+		item.indexOffset	 = submesh.indexOffset;
+		item.vertexOffset	 = submesh.vertexOffset;
+		item.emissiveFactor	 = material.emissiveFactor;
+		item.instanceCount	 = static_cast<u32>(instanceChunk.size());
+		item.instanceOffset	 = static_cast<u32>(m_sortedInstances.size());
+
+		for (int slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
+		{
+			if (slot == TextureSlot::BaseColor)
+			{
+				item.textures[slot] = defaultTexture;
+			}
+			else if (slot == TextureSlot::Normal)
+			{
+				item.textures[slot] = defaultNormalTexture;
+			}
+			else
+			{
+				item.textures[slot] = defaultMaterialTexture;
+			}
+
+			int32 texIdx = material.TextureIndices[slot];
+			if (texIdx >= 0 && texIdx < static_cast<int32>(texHandles.size()))
+			{
+				TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(texHandles[texIdx]);
+				if (tex)
+				{
+					item.textures[slot] = tex->gpuTexture.get();
+				}
+			}
+		}
+
+		m_drawList.batchItems.push_back(item);
+		// add all the instance data from the chunk into the instanceChunk
+		for (const InstanceSortKey& sortKey : instanceChunk)
+		{
+			m_sortedInstances.push_back(m_scratchInstances[sortKey.instanceIndex]);
+		}
+	}
+
+	m_instancingStats = { static_cast<u32>(m_drawList.batchItems.size()) };
 
 	// ---------------------------------------------------------------------------
 	// Shadow pass — render depth from each shadow-casting directional light's POV
@@ -830,7 +898,7 @@ void Renderer::DrawDeferred()
 	// effect: a culled shadow caster stays in items for the shadow pass but never
 	// enters these lists. Unlit shares the lit path until DrawMeshesUnlit exists,
 	// so the flag keeps its current (absent) effect instead of dropping the mesh.
-	const Span<const u32> gbufferLists[] = { m_drawList.litMeshes, m_drawList.unlitMeshes };
+	//	const Span<const u32> gbufferLists[] = { m_drawList.litMeshes, m_drawList.unlitMeshes };
 
 	// Bound once for the whole pass rather than re-uploaded per submesh.
 	PerViewConstants perView;
@@ -839,28 +907,30 @@ void Renderer::DrawDeferred()
 	UploadResult perViewUpload = m_uploadBuffer->AllocAndCopy(&perView, sizeof(PerViewConstants), 256);
 	cmd.SetConstantBufferView(2, m_uploadBuffer->GetBackingBuffer(), perViewUpload.offset, perViewUpload.size);
 
-	for (Span<const u32> list : gbufferLists)
+	if (!m_drawList.batchItems.empty())
 	{
-		for (u32 itemIndex : list)
-		{
-			const DrawItem& item = m_drawList.items[itemIndex];
+		UploadResult instancesUpload =
+			m_uploadBuffer->AllocAndCopy(m_sortedInstances.data(), m_sortedInstances.size() * sizeof(InstanceData));
+		cmd.SetShaderResourceBuffer(3, m_uploadBuffer->GetBackingBuffer(), instancesUpload.offset);
+	}
 
-			PerDrawConstants constants;
-			constants.model				= item.model;
-			constants.modelInvTranspose = item.modelInvTranspose;
-			constants.emissiveFactor	= item.emissiveFactor;
+	for (const BatchItem& item : m_drawList.batchItems)
+	{
+		PerBatchConstants batchConstants;
+		batchConstants.emissiveFactor = item.emissiveFactor;
+		batchConstants.instanceOffset = item.instanceOffset;
 
-			UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(PerDrawConstants), 256);
-			cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
+		UploadResult upload = m_uploadBuffer->AllocAndCopy(&batchConstants, sizeof(PerBatchConstants), 256);
+		cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
 
-			Buffer* streams[] = { item.positionBuffer, item.attributeBuffer };
-			cmd.SetVertexBuffers(streams, 2);
-			cmd.SetIndexBuffer(item.indexBuffer);
-			cmd.SetShaderResources(1, { item.textures[TextureSlot::BaseColor], item.textures[TextureSlot::Normal],
-										item.textures[TextureSlot::MetallicRoughness],
-										item.textures[TextureSlot::Occlusion], item.textures[TextureSlot::Emissive] });
-			cmd.DrawIndexed(item.indexCount, 1, item.indexOffset, item.vertexOffset, 0);
-		}
+		Buffer* streams[] = { item.positionBuffer, item.attributeBuffer };
+		cmd.SetVertexBuffers(streams, 2);
+		cmd.SetIndexBuffer(item.indexBuffer);
+		cmd.SetShaderResources(1, { item.textures[TextureSlot::BaseColor], item.textures[TextureSlot::Normal],
+									item.textures[TextureSlot::MetallicRoughness],
+									item.textures[TextureSlot::Occlusion], item.textures[TextureSlot::Emissive] });
+
+		cmd.DrawIndexed(item.indexCount, item.instanceCount, item.indexOffset, item.vertexOffset, 0);
 	}
 
 	Warp::Debugging::GPUMarker::EndEvent(&cmd);
