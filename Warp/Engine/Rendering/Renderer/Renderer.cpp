@@ -46,7 +46,8 @@ struct ShadowViewConstants
 
 struct ShadowDrawConstants
 {
-	Mat4 model;
+	uint instanceOffset;
+	u32 padding[3];
 };
 
 Renderer::~Renderer() = default;
@@ -274,6 +275,8 @@ void Renderer::BeginFrame()
 	m_drawList.Clear();
 	m_scratchInstances.clear();
 	m_instanceKeys.clear();
+	m_shadowInstanceKeys.clear();
+	m_shadowSortedInstances.clear();
 	m_sortedInstances.clear();
 }
 
@@ -564,10 +567,6 @@ void Renderer::DrawDeferred()
 	// These lists decouple the ECS from the renderer for the rest of the frame.
 	// ---------------------------------------------------------------------------
 
-	Texture* defaultTexture			= m_resourceManager->GetDefaultTexture();
-	Texture* defaultMaterialTexture = m_resourceManager->GetDefaultMaterialTexture();
-	Texture* defaultNormalTexture	= m_resourceManager->GetDefaultNormalTexture();
-
 	m_world->Each<TransformComponent, MeshComponent>(
 		[&](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
 		{
@@ -646,77 +645,25 @@ void Renderer::DrawDeferred()
 				const Material& material   = resource->mesh->materials[submesh.materialIndex];
 				const Vector<u32>& handles = resource->textureHandles;
 
+				u64 key = (static_cast<u64>(meshComp.meshHandle) << 32) | submeshIndex;
+
+				InstanceData instance;
+				instance.model			   = model;
+				instance.modelInvTranspose = modelInvTranspose;
+				instance.boundsCenter	   = worldBounds.Center;
+				instance.boundsExtents	   = worldBounds.Extents;
+
 				if (bVisibleToCamera)
 				{
-					u64 key = (static_cast<u64>(meshComp.meshHandle) << 32) | submeshIndex;
-
-					InstanceData instance;
-					instance.model			   = model;
-					instance.modelInvTranspose = modelInvTranspose;
-					instance.boundsCenter	   = worldBounds.Center;
-					instance.boundsExtents	   = worldBounds.Extents;
-
 					m_instanceKeys.push_back({ key, static_cast<u32>(m_scratchInstances.size()) });
-					m_scratchInstances.push_back(instance);
 				}
-
-				DrawItem item;
-				item.model			   = model;
-				item.modelInvTranspose = modelInvTranspose;
-				item.positionBuffer	   = resource->positionBuffer.get();
-				item.attributeBuffer   = resource->attributeBuffer.get();
-				item.indexBuffer	   = resource->indexBuffer.get();
-				item.indexCount		   = submesh.indexCount;
-				item.indexOffset	   = submesh.indexOffset;
-				item.vertexOffset	   = submesh.vertexOffset;
-				item.emissiveFactor	   = material.emissiveFactor;
-				item.renderFlags	   = meshComp.renderFlags;
-
-				for (int slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
-				{
-					if (slot == TextureSlot::BaseColor)
-					{
-						item.textures[slot] = defaultTexture;
-					}
-					else if (slot == TextureSlot::Normal)
-					{
-						item.textures[slot] = defaultNormalTexture;
-					}
-					else
-					{
-						item.textures[slot] = defaultMaterialTexture;
-					}
-
-					int32 texIdx = material.TextureIndices[slot];
-					if (texIdx >= 0 && texIdx < static_cast<int32>(handles.size()))
-					{
-						TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(handles[texIdx]);
-						if (tex)
-						{
-							item.textures[slot] = tex->gpuTexture.get();
-						}
-					}
-				}
-
-				u32 itemIndex = static_cast<u32>(m_drawList.items.size());
-				m_drawList.items.push_back(item);
 
 				if (bVisibleToShadow)
 				{
-					m_drawList.shadowCasters.push_back(itemIndex);
+					m_shadowInstanceKeys.push_back({ key, static_cast<u32>(m_scratchInstances.size()) });
 				}
 
-				if (bVisibleToCamera)
-				{
-					if (meshComp.HasRenderFlag(RenderFlags_Unlit))
-					{
-						m_drawList.unlitMeshes.push_back(itemIndex);
-					}
-					else
-					{
-						m_drawList.litMeshes.push_back(itemIndex);
-					}
-				}
+				m_scratchInstances.push_back(instance);
 			}
 		});
 
@@ -747,69 +694,8 @@ void Renderer::DrawDeferred()
 		});
 
 	// Sort instance keys
-	std::sort(m_instanceKeys.begin(), m_instanceKeys.end(),
-			  [](const InstanceSortKey& a, const InstanceSortKey& b) { return a.key < b.key; });
-
-	for (auto instanceChunk :
-		 m_instanceKeys |
-			 std::views::chunk_by([](const InstanceSortKey& a, const InstanceSortKey& b) { return a.key == b.key; }))
-	{
-		const InstanceSortKey& instanceKey = *instanceChunk.begin();
-
-		u32 decodedMeshHandle	= static_cast<u32>(instanceKey.key >> 32);
-		u32 decodedSubmeshIndex = static_cast<u32>(instanceKey.key & 0xFFFFFFFF);
-
-		MeshResource* resource = m_resourceManager->GetMeshResourceByHandle(decodedMeshHandle);
-		FATAL_ASSERT(resource, "Renderer::DrawDeferred: MeshResource is invalid when sorting keys");
-
-		const Submesh& submesh		  = resource->mesh->submeshes[decodedSubmeshIndex];
-		const Material& material	  = resource->mesh->materials[submesh.materialIndex];
-		const Vector<u32>& texHandles = resource->textureHandles;
-
-		BatchItem item;
-		item.positionBuffer	 = resource->positionBuffer.get();
-		item.attributeBuffer = resource->attributeBuffer.get();
-		item.indexBuffer	 = resource->indexBuffer.get();
-		item.indexCount		 = submesh.indexCount;
-		item.indexOffset	 = submesh.indexOffset;
-		item.vertexOffset	 = submesh.vertexOffset;
-		item.emissiveFactor	 = material.emissiveFactor;
-		item.instanceCount	 = static_cast<u32>(instanceChunk.size());
-		item.instanceOffset	 = static_cast<u32>(m_sortedInstances.size());
-
-		for (int slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
-		{
-			if (slot == TextureSlot::BaseColor)
-			{
-				item.textures[slot] = defaultTexture;
-			}
-			else if (slot == TextureSlot::Normal)
-			{
-				item.textures[slot] = defaultNormalTexture;
-			}
-			else
-			{
-				item.textures[slot] = defaultMaterialTexture;
-			}
-
-			int32 texIdx = material.TextureIndices[slot];
-			if (texIdx >= 0 && texIdx < static_cast<int32>(texHandles.size()))
-			{
-				TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(texHandles[texIdx]);
-				if (tex)
-				{
-					item.textures[slot] = tex->gpuTexture.get();
-				}
-			}
-		}
-
-		m_drawList.batchItems.push_back(item);
-		// add all the instance data from the chunk into the instanceChunk
-		for (const InstanceSortKey& sortKey : instanceChunk)
-		{
-			m_sortedInstances.push_back(m_scratchInstances[sortKey.instanceIndex]);
-		}
-	}
+	BuildBatches(m_instanceKeys, m_drawList.batchItems, m_sortedInstances);
+	BuildBatches(m_shadowInstanceKeys, m_drawList.shadowBatchItems, m_shadowSortedInstances);
 
 	m_drawStats.batches = static_cast<u32>(m_drawList.batchItems.size());
 
@@ -837,26 +723,35 @@ void Renderer::DrawDeferred()
 		shadowView.lightViewProj = directionalLightViewProj;
 
 		UploadResult viewUpload = m_uploadBuffer->AllocAndCopy(&shadowView, sizeof(ShadowViewConstants), 256);
-		cmd.SetConstantBufferView(1, m_uploadBuffer->GetBackingBuffer(), viewUpload.offset, viewUpload.size);
+		cmd.SetConstantBufferView(2, m_uploadBuffer->GetBackingBuffer(), viewUpload.offset, viewUpload.size);
 
-		for (u32 shadowCasterIndex : m_drawList.shadowCasters)
+		if (!m_drawList.shadowBatchItems.empty())
 		{
-			const DrawItem& item = m_drawList.items[shadowCasterIndex];
+			UploadResult shadowInstanceUpload = m_uploadBuffer->AllocAndCopy(
+				m_shadowSortedInstances.data(), m_shadowSortedInstances.size() * sizeof(InstanceData));
+			cmd.SetShaderResourceBuffer(0, m_uploadBuffer->GetBackingBuffer(), shadowInstanceUpload.offset);
+		}
 
-			ShadowDrawConstants shadowConstants;
-			shadowConstants.model = item.model;
+		for (const BatchItem& shadowCasterBatch : m_drawList.shadowBatchItems)
+		{
 
-			UploadResult upload = m_uploadBuffer->AllocAndCopy(&shadowConstants, sizeof(ShadowDrawConstants), 256);
-			cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
+			ShadowDrawConstants shadowBatchConstants;
+			shadowBatchConstants.instanceOffset = shadowCasterBatch.instanceOffset;
+
+			UploadResult shadowBatchConstantsUpload =
+				m_uploadBuffer->AllocAndCopy(&shadowBatchConstants, sizeof(ShadowDrawConstants), 256);
+			cmd.SetConstantBufferView(1, m_uploadBuffer->GetBackingBuffer(), shadowBatchConstantsUpload.offset,
+									  shadowBatchConstantsUpload.size);
 
 			// Depth only: position is the sole stream this pass reads.
-			cmd.SetVertexBuffer(item.positionBuffer);
-			cmd.SetIndexBuffer(item.indexBuffer);
+			cmd.SetVertexBuffer(shadowCasterBatch.positionBuffer);
+			cmd.SetIndexBuffer(shadowCasterBatch.indexBuffer);
+
 			++m_drawStats.drawCalls;
-			cmd.DrawIndexed(item.indexCount, 1, item.indexOffset, item.vertexOffset, 0);
+			cmd.DrawIndexed(shadowCasterBatch.indexCount, shadowCasterBatch.instanceCount,
+							shadowCasterBatch.indexOffset, shadowCasterBatch.vertexOffset, 0);
 		}
 	}
-
 	// Transition shadow map for later use in the lighting pass.
 	cmd.TransitionTexture(m_shadowTextures.directionalShadowMap.get(), ResourceState::ShaderResource);
 
@@ -895,12 +790,6 @@ void Renderer::DrawDeferred()
 
 	cmd.SetPipelineState(m_deferredGeomPSO.get());
 	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
-
-	// Walking the sublists rather than items is what makes frustum culling take
-	// effect: a culled shadow caster stays in items for the shadow pass but never
-	// enters these lists. Unlit shares the lit path until DrawMeshesUnlit exists,
-	// so the flag keeps its current (absent) effect instead of dropping the mesh.
-	//	const Span<const u32> gbufferLists[] = { m_drawList.litMeshes, m_drawList.unlitMeshes };
 
 	// Bound once for the whole pass rather than re-uploaded per submesh.
 	PerViewConstants perView;
@@ -1113,6 +1002,77 @@ void Renderer::CreateMeshPipeline()
 	LOG_DEBUG("Renderer: mesh PSO ready");
 }
 
+void Renderer::BuildBatches(Vector<InstanceSortKey>& keys, Vector<BatchItem>& outBatchItems,
+							Vector<InstanceData>& outSortedInstances)
+{
+	Texture* defaultTexture			= m_resourceManager->GetDefaultTexture();
+	Texture* defaultMaterialTexture = m_resourceManager->GetDefaultMaterialTexture();
+	Texture* defaultNormalTexture	= m_resourceManager->GetDefaultNormalTexture();
+
+	std::sort(keys.begin(), keys.end(),
+			  [](const InstanceSortKey& a, const InstanceSortKey& b) { return a.key < b.key; });
+
+	for (auto instanceChunk :
+		 keys | std::views::chunk_by([](const InstanceSortKey& a, const InstanceSortKey& b) { return a.key == b.key; }))
+	{
+		const InstanceSortKey& instanceKey = *instanceChunk.begin();
+
+		u32 decodedMeshHandle	= static_cast<u32>(instanceKey.key >> 32);
+		u32 decodedSubmeshIndex = static_cast<u32>(instanceKey.key & 0xFFFFFFFF);
+
+		MeshResource* resource = m_resourceManager->GetMeshResourceByHandle(decodedMeshHandle);
+		FATAL_ASSERT(resource, "Renderer::DrawDeferred: MeshResource is invalid when sorting keys");
+
+		const Submesh& submesh		  = resource->mesh->submeshes[decodedSubmeshIndex];
+		const Material& material	  = resource->mesh->materials[submesh.materialIndex];
+		const Vector<u32>& texHandles = resource->textureHandles;
+
+		BatchItem item;
+		item.positionBuffer	 = resource->positionBuffer.get();
+		item.attributeBuffer = resource->attributeBuffer.get();
+		item.indexBuffer	 = resource->indexBuffer.get();
+		item.indexCount		 = submesh.indexCount;
+		item.indexOffset	 = submesh.indexOffset;
+		item.vertexOffset	 = submesh.vertexOffset;
+		item.emissiveFactor	 = material.emissiveFactor;
+		item.instanceCount	 = static_cast<u32>(instanceChunk.size());
+		item.instanceOffset	 = static_cast<u32>(outSortedInstances.size());
+
+		for (int slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
+		{
+			if (slot == TextureSlot::BaseColor)
+			{
+				item.textures[slot] = defaultTexture;
+			}
+			else if (slot == TextureSlot::Normal)
+			{
+				item.textures[slot] = defaultNormalTexture;
+			}
+			else
+			{
+				item.textures[slot] = defaultMaterialTexture;
+			}
+
+			int32 texIdx = material.TextureIndices[slot];
+			if (texIdx >= 0 && texIdx < static_cast<int32>(texHandles.size()))
+			{
+				TextureResource* tex = m_resourceManager->GetTextureResourceByHandle(texHandles[texIdx]);
+				if (tex)
+				{
+					item.textures[slot] = tex->gpuTexture.get();
+				}
+			}
+		}
+
+		outBatchItems.push_back(item);
+		// add all the instance data from the chunk into the instanceChunk
+		for (const InstanceSortKey& sortKey : instanceChunk)
+		{
+			outSortedInstances.push_back(m_scratchInstances[sortKey.instanceIndex]);
+		}
+	}
+}
+
 void Renderer::CreateDeferredGeometryPipeline()
 {
 	ShaderDesc vsDesc;
@@ -1322,8 +1282,9 @@ void Renderer::InitShadowPSO()
 	desc.rasterState.depthBiasClamp		  = 0.f;
 
 	desc.bindings = {
-		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — per-draw model
-		{ BindingType::ConstantBuffer, 1, 1 }, // rootIndex 1: b1 — per-view lightViewProj
+		{ BindingType::StructuredBuffer, 0, 1 }, // rootIndex 0: t0 — structured buffer with instance data
+		{ BindingType::ConstantBuffer, 0, 1 },	 // rootIndex 1: b0 - shadow constants
+		{ BindingType::ConstantBuffer, 1, 1 },	 // rootIndex 2: b1 — per-view lightViewProj
 	};
 
 	m_directionalShadowPSO = m_device->CreatePipelineState(desc);

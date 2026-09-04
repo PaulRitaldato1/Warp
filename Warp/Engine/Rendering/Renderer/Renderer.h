@@ -184,6 +184,9 @@ protected:
 	void InitShadowPSO();
 	void InitShadowTextures();
 
+	void BuildBatches(Vector<InstanceSortKey>& keys, Vector<BatchItem>& outBatchItems,
+					  Vector<InstanceData>& outSortedInstances);
+
 	// How many frames the CPU is allowed to run ahead of the GPU.
 	// Controls the number of command allocator slots, upload buffer slices,
 	// and FrameSyncPoints — NOT the swap chain back buffer count.
@@ -300,9 +303,12 @@ protected:
 	URef<ImGuiBackend> m_imguiBackend;
 
 	DrawList m_drawList;
+
 	Vector<InstanceData> m_scratchInstances;
 	Vector<InstanceSortKey> m_instanceKeys;
+	Vector<InstanceSortKey> m_shadowInstanceKeys;
 	Vector<InstanceData> m_sortedInstances;
+	Vector<InstanceData> m_shadowSortedInstances;
 
 public:
 	// Queue a staging upload for the Renderer to process.

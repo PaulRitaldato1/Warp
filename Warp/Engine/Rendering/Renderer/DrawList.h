@@ -103,11 +103,10 @@ struct DrawItem
 // Sublists store indices into `items` to avoid duplicating DrawItem data.
 struct DrawList
 {
-	Vector<DrawItem> items;
 	Vector<BatchItem> batchItems;
+	Vector<BatchItem> shadowBatchItems;
 
 	// Sublists — indices into items, built during the same gather pass.
-	Vector<u32> shadowCasters;
 	Vector<u32> litMeshes;
 	Vector<u32> unlitMeshes;
 
@@ -118,9 +117,8 @@ struct DrawList
 
 	void Clear()
 	{
-		items.clear();
 		batchItems.clear();
-		shadowCasters.clear();
+		shadowBatchItems.clear();
 		litMeshes.clear();
 		unlitMeshes.clear();
 		meshesTested = 0;
