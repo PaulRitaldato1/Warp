@@ -56,7 +56,7 @@ void EditorUI::DrawRendererStats()
 	const Renderer::DrawStats drawStats = m_renderer->GetDrawStats();
 	ImGui::Text("Draw Calls: %u", drawStats.drawCalls);
 	ImGui::Text("Batches: %u", drawStats.batches);
-
+	ImGui::Text("Triangles drawn: %u", drawStats.numTris);
 	ImGui::End();
 }
 

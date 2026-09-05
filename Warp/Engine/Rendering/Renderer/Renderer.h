@@ -145,6 +145,7 @@ public:
 	{
 		u32 batches	  = 0;
 		u32 drawCalls = 0;
+		u32 numTris	  = 0;
 	};
 
 	CullStats GetCullStats() const

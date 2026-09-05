@@ -748,6 +748,8 @@ void Renderer::DrawDeferred()
 			cmd.SetIndexBuffer(shadowCasterBatch.indexBuffer);
 
 			++m_drawStats.drawCalls;
+			m_drawStats.numTris += (shadowCasterBatch.indexCount / 3) * shadowCasterBatch.instanceCount;
+
 			cmd.DrawIndexed(shadowCasterBatch.indexCount, shadowCasterBatch.instanceCount,
 							shadowCasterBatch.indexOffset, shadowCasterBatch.vertexOffset, 0);
 		}
@@ -822,6 +824,8 @@ void Renderer::DrawDeferred()
 									item.textures[TextureSlot::Occlusion], item.textures[TextureSlot::Emissive] });
 
 		++m_drawStats.drawCalls;
+		m_drawStats.numTris += (item.indexCount / 3) * item.instanceCount;
+
 		cmd.DrawIndexed(item.indexCount, item.instanceCount, item.indexOffset, item.vertexOffset, 0);
 	}
 
