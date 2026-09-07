@@ -1,18 +1,20 @@
 #include "Core/ECS/Components/SkyLightComponent.h"
-#include <EntryPoint/EntryPoint.h>
 #include <Common/CommonTypes.h>
-#include <Input/Input.h>
-#include <Core/ECS/Components/TransformComponent.h>
-#include <Core/ECS/Components/MeshComponent.h>
 #include <Core/ECS/Components/CameraComponent.h>
+#include <Core/ECS/Components/MeshComponent.h>
 #include <Core/ECS/Components/OrbitComponent.h>
+#include <Core/ECS/Components/StaticTransformComponent.h>
+#include <Core/ECS/Components/TransformComponent.h>
 #include <Core/ECS/Systems/FreeCamSystem.h>
 #include <Core/ECS/Systems/OrbitSystem.h>
+#include <EntryPoint/EntryPoint.h>
+#include <Input/Input.h>
+
 #include <Rendering/Resource/ResourceManager.h>
 
 struct TempGame : public UserApplicationBase
 {
-	bool Initialize()
+	bool Initialize() final
 	{
 		World& world = engine->GetWorld();
 
@@ -24,12 +26,12 @@ struct TempGame : public UserApplicationBase
 		world.GetComponent<MeshComponent>(floor).meshHandle = planeHandle;
 		world.GetComponent<TransformComponent>(floor).Move({ 0.f, -1.f, 0.f });
 
-		for (u32 x = 0; x < 100; x++)
+		for (u32 x = 0; x < 1000; x++)
 		{
 			for (u32 y = 0; y < 100; y++)
 			{
 				u32 boxHandle = resourceManager->CreateBox(1, 1, 1);
-				Entity box	  = world.CreateEntity<TransformComponent, MeshComponent>();
+				Entity box	  = world.CreateEntity<TransformComponent, StaticTransformComponent, MeshComponent>();
 
 				// world.GetComponent<MeshComponent>(box).ClearRenderFlag(RenderFlags::RenderFlags_CastShadow);
 				world.GetComponent<MeshComponent>(box).meshHandle = boxHandle;
@@ -93,7 +95,7 @@ struct TempGame : public UserApplicationBase
 		return true;
 	}
 
-	bool Update(f32 deltaTime)
+	bool Update(f32 deltaTime) final
 	{
 		// World& world = engine->GetWorld();
 		// world.Each<TransformComponent, MeshComponent>(
@@ -103,7 +105,7 @@ struct TempGame : public UserApplicationBase
 		return true;
 	}
 
-	void OnResize(f32 deltaTime)
+	void OnResize(f32 deltaTime) final
 	{
 	}
 };
