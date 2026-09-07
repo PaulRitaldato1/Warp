@@ -35,6 +35,15 @@ public:
 		m_bufferPool[m_activeIndex].push_back(std::move(item));
 	}
 
+	// Reserves both buffers up front. Without this a push can reallocate while
+	// holding the lock, which turns a short critical section into a malloc.
+	void Reserve(size_t count)
+	{
+		std::unique_lock<Futex> lock(m_lock);
+		m_bufferPool[0].reserve(count);
+		m_bufferPool[1].reserve(count);
+	}
+
 	// Swaps front and back buffers.
 	// After this call, the old front becomes the back (consumer can read it),
 	// and the old back becomes the new front (producer writes to it).

@@ -7,6 +7,7 @@
 #include <Rendering/RenderBackend.h>
 #include <Rendering/Resource/ResourceManager.h>
 #include <Rendering/Window/Window.h>
+#include <Debugging/Profiler.h>
 #include <thread>
 
 WarpEngine::WarpEngine(UserApplicationBase* App)
@@ -105,6 +106,7 @@ bool WarpEngine::Run()
 		}
 
 		m_timer.Tick();
+		Profiler::Get().OnFrameEnd();
 
 		if (!m_bIsSuspended)
 		{
@@ -117,7 +119,10 @@ bool WarpEngine::Run()
 				break;
 			}
 
-			m_world->UpdateSystems(deltaTime);
+			{
+				PROFILE_SCOPE("World Update");
+				m_world->UpdateSystems(deltaTime);
+			}
 
 			if (m_renderer)
 			{
@@ -125,11 +130,15 @@ bool WarpEngine::Run()
 
 				if (m_renderer->IsImGuiInitialized())
 				{
+					PROFILE_SCOPE("BuildUI");
 					m_renderer->NewFrameImGui();
 					m_editorUI.BuildUI(*m_world);
 				}
 
-				m_renderer->Draw();
+				{
+					PROFILE_SCOPE("Draw");
+					m_renderer->Draw();
+				}
 				m_renderer->EndFrame();
 			}
 		}

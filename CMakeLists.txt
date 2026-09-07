@@ -172,9 +172,16 @@ endif()
 # or force-including it independently of the PCH.
 option(WARP_USE_PCH "Use precompiled headers" ON)
 
+# Compiles PROFILE_SCOPE out entirely when OFF. Forced off in release by the
+# WARP_RELEASE check in Profiler.h regardless of this setting.
+option(WARP_PROFILING "Enable the scope profiler" ON)
+
 add_library(WarpEngine SHARED ${ENGINE_SRCS} ${ENGINE_HDRS} ${IMGUI_SRCS})
 target_compile_features(WarpEngine PRIVATE cxx_std_23)
 target_compile_definitions(WarpEngine PRIVATE "WARP_EXPORT")
+if(NOT WARP_PROFILING)
+    target_compile_definitions(WarpEngine PUBLIC "PROFILING_ENABLE=0")
+endif()
 if(WARP_USE_PCH)
     target_precompile_headers(WarpEngine PRIVATE "Warp/Engine/Common/CommonTypes.h")
 endif()
