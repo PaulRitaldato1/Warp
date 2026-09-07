@@ -51,6 +51,11 @@ private:
 	DXGI_FORMAT m_format		   = DXGI_FORMAT_R8G8B8A8_UNORM;
 	SwapChainFormat m_engineFormat = SwapChainFormat::RGBA8;
 	bool m_vsync				   = false;
+
+	// Flags the swap chain was created with. ResizeBuffers must be passed exactly
+	// these or it fails. Tearing is only set when vsync is off and the adapter
+	// supports it, so this cannot be recomputed from m_vsync alone.
+	u32 m_swapChainFlags		   = 0;
 };
 
 #endif

@@ -60,6 +60,26 @@ void D3D12SwapChain::InitializeWithFactory(ID3D12Device* device, IDXGIFactory4* 
 	HWND hwnd = static_cast<HWND>(desc.Window->GetNativeHandle());
 	DYNAMIC_ASSERT(hwnd, "D3D12SwapChain: window native handle is null");
 
+	// Without ALLOW_TEARING, a flip-model swap chain still paces to the refresh rate
+	// even at syncInterval 0. CreateSwapChainForHwnd fails outright if the flag is
+	// set on an adapter that does not support it, so query first.
+	if (!m_vsync)
+	{
+		ComRef<IDXGIFactory5> factory5;
+		BOOL allowTearing = FALSE;
+		if (SUCCEEDED(factory->QueryInterface(IID_PPV_ARGS(&factory5))) &&
+			SUCCEEDED(factory5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing,
+													sizeof(allowTearing))) &&
+			allowTearing)
+		{
+			m_swapChainFlags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+		}
+		else
+		{
+			LOG_WARNING("D3D12SwapChain: tearing unsupported, frame rate will be capped to refresh");
+		}
+	}
+
 	DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
 	swapChainDesc.Width					= desc.Width;
 	swapChainDesc.Height				= desc.Height;
@@ -72,7 +92,7 @@ void D3D12SwapChain::InitializeWithFactory(ID3D12Device* device, IDXGIFactory4* 
 	swapChainDesc.Scaling				= DXGI_SCALING_STRETCH;
 	swapChainDesc.SwapEffect			= DXGI_SWAP_EFFECT_FLIP_DISCARD;
 	swapChainDesc.AlphaMode				= DXGI_ALPHA_MODE_UNSPECIFIED;
-	swapChainDesc.Flags					= 0;
+	swapChainDesc.Flags					= m_swapChainFlags;
 
 	ComRef<IDXGISwapChain1> swapChain1;
 	ThrowIfFailed(factory->CreateSwapChainForHwnd(queue, hwnd, &swapChainDesc, nullptr, nullptr, &swapChain1));
@@ -104,8 +124,10 @@ void D3D12SwapChain::Initialize(const SwapChainDesc& /*desc*/)
 void D3D12SwapChain::Present()
 {
 	DYNAMIC_ASSERT(m_swapChain, "D3D12SwapChain::Present: swap chain not initialized");
+	// Tearing is only legal at syncInterval 0 on a swap chain created with the flag.
 	UINT syncInterval = m_vsync ? 1 : 0;
-	HRESULT hr		  = m_swapChain->Present(syncInterval, 0);
+	UINT presentFlags = (m_swapChainFlags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+	HRESULT hr		  = m_swapChain->Present(syncInterval, presentFlags);
 
 	if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
 	{
@@ -133,7 +155,7 @@ void D3D12SwapChain::Resize(u32 width, u32 height)
 		buf.Reset();
 	}
 
-	ThrowIfFailed(m_swapChain->ResizeBuffers(m_bufferCount, width, height, m_format, 0));
+	ThrowIfFailed(m_swapChain->ResizeBuffers(m_bufferCount, width, height, m_format, m_swapChainFlags));
 
 	m_width	 = width;
 	m_height = height;

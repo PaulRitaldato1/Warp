@@ -35,7 +35,7 @@ UploadAllocation D3D12UploadBuffer::Alloc(u64 size, u64 alignment)
 	// aligned on return — no post-hoc rounding needed here.
 	u32 offset = 0;
 	const bool ok = m_ringBuffer.Alloc(static_cast<u32>(size), &offset, static_cast<u32>(alignment));
-	DYNAMIC_ASSERT(ok, "D3D12UploadBuffer::Alloc: upload heap out of space");
+	FATAL_ASSERT(ok, "D3D12UploadBuffer::Alloc: upload heap out of space");
 
 	UploadAllocation alloc;
 	alloc.cpuPtr  = static_cast<u8*>(m_mappedPtr) + offset;

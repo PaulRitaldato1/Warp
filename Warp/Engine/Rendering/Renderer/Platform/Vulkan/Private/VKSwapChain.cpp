@@ -106,16 +106,25 @@ void VKSwapChain::CreateSwapChain(const SwapChainDesc& desc)
 	Vector<VkPresentModeKHR> presentModes(pmCount);
 	vkGetPhysicalDeviceSurfacePresentModesKHR(m_physDevice, m_surface, &pmCount, presentModes.data());
 
+	// MAILBOX does not uncap the frame rate — it avoids blocking the CPU but still
+	// presents at refresh. IMMEDIATE is the counterpart to D3D12's ALLOW_TEARING.
+	// Both are optional; only FIFO is guaranteed, so prefer in order.
+	// Untested: Vulkan does not currently run on Windows and Linux has its own gaps.
 	VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR; // always available (vsync)
 	if (!m_vsync)
 	{
-		for (VkPresentModeKHR pm : presentModes)
+		const bool hasImmediate =
+			std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_IMMEDIATE_KHR) != presentModes.end();
+		const bool hasMailbox =
+			std::find(presentModes.begin(), presentModes.end(), VK_PRESENT_MODE_MAILBOX_KHR) != presentModes.end();
+
+		if (hasImmediate)
 		{
-			if (pm == VK_PRESENT_MODE_MAILBOX_KHR)
-			{
-				presentMode = pm;
-				break;
-			}
+			presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+		}
+		else if (hasMailbox)
+		{
+			presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
 		}
 	}
 
