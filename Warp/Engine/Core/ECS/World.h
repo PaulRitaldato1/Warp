@@ -4,13 +4,17 @@
 #include <Core/ECS/System.h>
 #include <Debugging/Assert.h>
 
+template <typename... Es>
+struct Without
+{};
+
 class WARP_API World
 {
 public:
-	World()                            = default;
-	World(const World&)                = delete;
-	World& operator=(const World&)     = delete;
-	World(World&&) noexcept            = default;
+	World()							   = default;
+	World(const World&)				   = delete;
+	World& operator=(const World&)	   = delete;
+	World(World&&) noexcept			   = default;
 	World& operator=(World&&) noexcept = default;
 
 	// Entity lifecycle
@@ -24,14 +28,14 @@ public:
 	{
 		Entity entity = CreateEntity();
 
-		ComponentMask mask     = BuildMask<Ts...>();
-		Archetype*    archetype = FindOrCreateArchetype(mask);
+		ComponentMask mask	 = BuildMask<Ts...>();
+		Archetype* archetype = FindOrCreateArchetype(mask);
 
 		u32 row = archetype->AddEntity(entity);
 
 		EntityRecord& record = m_entities[entity.id];
-		record.archetype     = archetype;
-		record.row           = row;
+		record.archetype	 = archetype;
+		record.row			 = row;
 
 		// Write default-constructed values — AddEntity zero-inits storage, which
 		// would silently ignore non-zero field defaults (e.g. intensity = 1.f).
@@ -41,8 +45,8 @@ public:
 	}
 
 	Entity DuplicateEntity(Entity source);
-	void   DestroyEntity(Entity entity);
-	bool   IsAlive(Entity entity) const;
+	void DestroyEntity(Entity entity);
+	bool IsAlive(Entity entity) const;
 
 	// Component operations
 	template <IsComponent T>
@@ -70,13 +74,13 @@ public:
 		}
 		else
 		{
-			u32 newRow = newArchetype->AddEntity(entity);
+			u32 newRow		 = newArchetype->AddEntity(entity);
 			record.archetype = newArchetype;
-			record.row = newRow;
+			record.row		 = newRow;
 		}
 
 		// Write the component data into the new archetype.
-		Span<T> column = newArchetype->GetColumn<T>();
+		Span<T> column	   = newArchetype->GetColumn<T>();
 		column[record.row] = component;
 
 		return column[record.row];
@@ -103,7 +107,7 @@ public:
 				FixupSwappedEntity(swappedEntity, record.row);
 			}
 			record.archetype = nullptr;
-			record.row = 0;
+			record.row		 = 0;
 		}
 		else
 		{
@@ -118,7 +122,7 @@ public:
 		FATAL_ASSERT(HasComponent<T>(entity), "World::GetComponent: entity does not have this component");
 
 		EntityRecord& record = m_entities[entity.id];
-		Span<T> column = record.archetype->GetColumn<T>();
+		Span<T> column		 = record.archetype->GetColumn<T>();
 		return column[record.row];
 	}
 
@@ -128,7 +132,7 @@ public:
 		FATAL_ASSERT(HasComponent<T>(entity), "World::GetComponent: entity does not have this component");
 
 		const EntityRecord& record = m_entities[entity.id];
-		Span<const T> column = record.archetype->GetColumn<T>();
+		Span<const T> column	   = record.archetype->GetColumn<T>();
 		return column[record.row];
 	}
 
@@ -200,16 +204,34 @@ public:
 		return record.archetype->GetMask().test(ComponentID<T>::Get());
 	}
 
+	template <IsComponent... Ts, typename... Es, typename Func>
+	void Each(Without<Es...>, Func&& fn)
+	{
+		ComponentMask queryMask	  = BuildMask<Ts...>();
+		ComponentMask excludeMask = BuildMask<Es...>();
+		EachMasked<Ts...>(queryMask, excludeMask, std::forward<Func>(fn));
+	}
+
 	// Query — calls fn(Entity, T1&, T2&, ...) for every entity with all of <Ts...>.
 	template <IsComponent... Ts, typename Func>
 	void Each(Func&& fn)
 	{
 		ComponentMask queryMask = BuildMask<Ts...>();
+		EachMasked<Ts...>(queryMask, ComponentMask{}, std::forward<Func>(fn));
+	}
 
+	template <typename... Ts, typename Func>
+	void EachMasked(const ComponentMask& queryMask, const ComponentMask& excludeMask, Func&& fn)
+	{
 		for (auto& [mask, archetype] : m_archetypes)
 		{
 			// Check if this archetype has all queried components (superset check).
 			if ((mask & queryMask) != queryMask)
+			{
+				continue;
+			}
+
+			if ((mask & excludeMask).any())
 			{
 				continue;
 			}
@@ -226,7 +248,7 @@ public:
 			auto callPerEntity = [&](auto... columns)
 			{
 				DYNAMIC_ASSERT(((columns.size() == entityCount) && ...),
-				               "World::Each: column size disagrees with entity count");
+							   "World::Each: column size disagrees with entity count");
 
 				for (u32 row = 0; row < entityCount; ++row)
 				{
@@ -245,7 +267,7 @@ public:
 	T& RegisterSystem(Args&&... args)
 	{
 		URef<System> system = std::make_unique<T>(std::forward<Args>(args)...);
-		T& ref = static_cast<T&>(*system);
+		T& ref				= static_cast<T&>(*system);
 		system->Init(*this);
 		m_systems.push_back(std::move(system));
 		return ref;
@@ -260,20 +282,20 @@ public:
 private:
 	struct EntityRecord
 	{
-		Archetype* archetype  = nullptr;
-		u32        row        = 0;
-		u32        generation = 0;
-		bool       alive      = false;
+		Archetype* archetype = nullptr;
+		u32 row				 = 0;
+		u32 generation		 = 0;
+		bool alive			 = false;
 	};
 
 	Archetype* FindOrCreateArchetype(ComponentMask mask);
-	void       MoveEntity(Entity entity, Archetype* from, u32 fromRow, Archetype* to);
+	void MoveEntity(Entity entity, Archetype* from, u32 fromRow, Archetype* to);
 
 	// Fixes up the entity record for an entity that was swap-moved within an archetype.
-	void       FixupSwappedEntity(Entity swappedEntity, u32 newRow);
+	void FixupSwappedEntity(Entity swappedEntity, u32 newRow);
 
-	Vector<EntityRecord> m_entities;  // indexed by entity.id
-	Vector<u32>          m_freeIds;   // recycled entity IDs
+	Vector<EntityRecord> m_entities; // indexed by entity.id
+	Vector<u32> m_freeIds;			 // recycled entity IDs
 
 	// ComponentMask needs a custom hash since std::bitset has no default hash.
 	// HashMap alias only takes 2 template args, so use std::unordered_map directly.
