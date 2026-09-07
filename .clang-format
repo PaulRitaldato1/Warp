@@ -2,7 +2,37 @@ BasedOnStyle: Microsoft
 IndentWidth: 4
 TabWidth: 4
 UseTab: Always
-BreakBeforeBraces: Allman
+# Was "BreakBeforeBraces: Allman". Expanded to Custom purely to reach
+# SplitEmptyRecord; every value below is exactly what Allman expands to,
+# except that one. An empty struct/class now closes on the brace line:
+#
+#   struct Tag        instead of    struct Tag
+#   {};                             {
+#                                   };
+#
+# Empty FUNCTION bodies keep the two-line form (SplitEmptyFunction: true).
+# clang-format cannot inline empty structs as "struct Tag {};" while
+# keeping other structs Allman -- AfterStruct is all-or-nothing.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel:  true
+  AfterClass:      true
+  AfterControlStatement: Always
+  AfterEnum:       true
+  AfterExternBlock: true
+  AfterFunction:   true
+  AfterNamespace:  true
+  AfterObjCDeclaration: true
+  AfterStruct:     true
+  AfterUnion:      true
+  BeforeCatch:     true
+  BeforeElse:      true
+  BeforeLambdaBody: true
+  BeforeWhile:     false
+  IndentBraces:    false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: true
 AllowShortFunctionsOnASingleLine: None
 AlignConsecutiveAssignments: true
 AlignTrailingComments: true
@@ -13,6 +43,33 @@ SpaceBeforeParens: ControlStatements
 AccessModifierOffset: -4
 Cpp11BracedListStyle: false
 NamespaceIndentation: None
-SortIncludes: false
+# Sorted on save.  clangd runs format::sortIncludes before reformat, so this
+# takes effect through eglot-format-buffer, not just the clang-format binary.
+#
+# CaseSensitive (ASCII order) rather than CaseInsensitive: Warp's own headers
+# are <Capitalised/Paths.h> and the std/third-party ones are lowercase, so
+# ASCII order groups project headers above <cstring>/<vector> for free.
+#
+# Preserve is what keeps this safe.  Sorting only ever reorders a CONTIGUOUS
+# run of #includes, and every order-sensitive site here is already broken up
+# by a #define or #ifdef:
+#
+#   #define TINYDDSLOADER_IMPLEMENTATION / #include <tinyddsloader.h>
+#   #define WIN32_LEAN_AND_MEAN          / #include <Windows.h>     (Futex.cpp)
+#   #define VMA_IMPLEMENTATION           / #include <vk_mem_alloc.h>
+#   #ifdef WARP_LINUX                    / #include <X11/Xlib.h>    (VKCommon.h)
+#
+# CAVEAT: a .cpp's own header is no longer pinned first.  clang-format only
+# recognises a main header written with QUOTES -- <Rendering/Foo.h> is never
+# a main-header candidate, whatever IncludeIsMainRegex says.  To pin one,
+# leave a blank line after it so it forms a block of its own.
+SortIncludes: CaseSensitive
 IncludeBlocks: Preserve
 IndentCaseLabels: true
+
+# Templates on their own line above the declaration. MultiLine (the
+# Microsoft default) only breaks when the declaration is long, which
+# inlined short ones. "AlwaysBreak..." is the pre-19 spelling of
+# BreakTemplateDeclarations; required here -- the local clang-format is 18,
+# which does not know the new name at all.
+AlwaysBreakTemplateDeclarations: Yes
