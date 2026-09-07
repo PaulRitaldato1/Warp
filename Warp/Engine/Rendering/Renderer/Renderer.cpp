@@ -1,30 +1,32 @@
 #include "DirectXMath.h"
-#include "Math/Math.h"
 #include "Math/Frustum.h"
-#include <ranges>
-#include <Rendering/Renderer/UploadBuffer.h>
-#include <Rendering/Lighting/LightData.h>
-#include <Rendering/Renderer/DescriptorHandle.h>
-#include <Rendering/Renderer/Pipeline.h>
-#include <Rendering/Renderer/Texture.h>
-#include <Rendering/Renderer/Renderer.h>
-#include <Rendering/Resource/ResourceManager.h>
-#include <Rendering/Resource/MeshResource.h>
-#include <Rendering/Resource/TextureResource.h>
-#include <Rendering/Renderer/ResourceState.h>
-#include <Core/ECS/World.h>
-#include <Core/ECS/Components/TransformComponent.h>
-#include <Core/ECS/Components/MeshComponent.h>
+#include "Math/Math.h"
 #include <Core/ECS/Components/CameraComponent.h>
 #include <Core/ECS/Components/LightComponent.h>
+#include <Core/ECS/Components/MeshComponent.h>
 #include <Core/ECS/Components/SkyLightComponent.h>
-#include <Rendering/Mesh/Mesh.h>
-#include <Rendering/Window/Window.h>
+#include <Core/ECS/Components/StaticTransformComponent.h>
+#include <Core/ECS/Components/TransformComponent.h>
+#include <Core/ECS/World.h>
 #include <Debugging/Assert.h>
 #include <Debugging/GPUMarker.h>
 #include <Debugging/Logging.h>
+#include <Debugging/Profiler.h>
+#include <Rendering/Lighting/LightData.h>
+#include <Rendering/Mesh/Mesh.h>
+#include <Rendering/Renderer/DescriptorHandle.h>
+#include <Rendering/Renderer/Pipeline.h>
+#include <Rendering/Renderer/Renderer.h>
+#include <Rendering/Renderer/ResourceState.h>
+#include <Rendering/Renderer/Texture.h>
+#include <Rendering/Renderer/UploadBuffer.h>
+#include <Rendering/Resource/MeshResource.h>
+#include <Rendering/Resource/ResourceManager.h>
+#include <Rendering/Resource/TextureResource.h>
+#include <Rendering/Window/Window.h>
 #include <UI/ImGuiBackend.h>
 #include <algorithm>
+#include <ranges>
 
 // Split by update frequency. The per-view halves are bound once per pass; only
 // the per-draw halves are re-uploaded for each submesh.
@@ -567,105 +569,109 @@ void Renderer::DrawDeferred()
 	// These lists decouple the ECS from the renderer for the rest of the frame.
 	// ---------------------------------------------------------------------------
 
-	m_world->Each<TransformComponent, MeshComponent>(
-		[&](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
-		{
-			if (!meshComp.HasRenderFlag(RenderFlags_Visible))
+	{
+		PROFILE_SCOPE("Gather");
+		m_world->Each<TransformComponent, MeshComponent>(
+			[&](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
 			{
-				return;
-			}
-
-			// Handles are resolved at assignment time, so this only reads. A mesh
-			// still uploading has a handle but no resource yet, and is skipped.
-			if (!meshComp.IsHandleValid())
-			{
-				return;
-			}
-
-			MeshResource* resource = m_resourceManager->GetMeshResourceByHandle(meshComp.meshHandle);
-			if (!resource)
-			{
-				return;
-			}
-
-			Mat4 model;
-			Mat4 modelInvTranspose;
-			BoundingBox worldBounds;
-			bool bVisibleToCamera = true;
-			bool bVisibleToShadow = false;
-			{
-				using namespace DirectX;
-				SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
-				SimdMat R = XMMatrixRotationQuaternion(XMLoadFloat4(&transform.rotation));
-				SimdMat T = XMMatrixTranslation(transform.position.x, transform.position.y, transform.position.z);
-				SimdMat M = XMMatrixMultiply(XMMatrixMultiply(S, R), T);
-				XMStoreFloat4x4(&model, M);
-
-				// Bounds are model space, so they follow the transform. Refitting an
-				// AABB after rotation grows it, which costs some false positives.
-				resource->mesh->bounds.Transform(worldBounds, M);
-				bVisibleToCamera = IsVisible(cameraFrustum, worldBounds);
-
-				// Shadow casters are tested against the light instead, since geometry
-				// outside the view can still cast into it. Both frusta reject.
-				bVisibleToShadow = hasDirectionalShadow && meshComp.HasRenderFlag(RenderFlags_CastShadow) &&
-								   IsVisible(shadowFrustum, worldBounds);
-
-				++m_drawList.meshesTested;
-				if (!bVisibleToCamera)
-				{
-					++m_drawList.meshesCulled;
-				}
-
-				// When neither pass will reference the item, skip building it at all.
-				if (!bVisibleToCamera && !bVisibleToShadow)
+				if (!meshComp.HasRenderFlag(RenderFlags_Visible))
 				{
 					return;
 				}
 
-				// Under uniform scale the inverse transpose is the rotation times 1/s,
-				// and the shader normalizes, so M itself gives the same normal. Only
-				// non-uniform scale needs the inverse, which is the expensive path.
-				constexpr f32 k_scaleEpsilon = 1e-5f;
-				const bool uniformScale		 = fabsf(transform.scale.x - transform.scale.y) < k_scaleEpsilon &&
-											   fabsf(transform.scale.y - transform.scale.z) < k_scaleEpsilon;
-
-				XMStoreFloat4x4(&modelInvTranspose, uniformScale ? M : XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
-			}
-
-			for (u32 submeshIndex = 0; submeshIndex < resource->mesh->submeshes.size(); ++submeshIndex)
-			{
-				Submesh& submesh = resource->mesh->submeshes[submeshIndex];
-
-				if (submesh.materialIndex < 0)
+				// Handles are resolved at assignment time, so this only reads. A mesh
+				// still uploading has a handle but no resource yet, and is skipped.
+				if (!meshComp.IsHandleValid())
 				{
-					continue;
+					return;
 				}
 
-				const Material& material   = resource->mesh->materials[submesh.materialIndex];
-				const Vector<u32>& handles = resource->textureHandles;
-
-				u64 key = (static_cast<u64>(meshComp.meshHandle) << 32) | submeshIndex;
-
-				InstanceData instance;
-				instance.model			   = model;
-				instance.modelInvTranspose = modelInvTranspose;
-				instance.boundsCenter	   = worldBounds.Center;
-				instance.boundsExtents	   = worldBounds.Extents;
-
-				if (bVisibleToCamera)
+				MeshResource* resource = m_resourceManager->GetMeshResourceByHandle(meshComp.meshHandle);
+				if (!resource)
 				{
-					m_instanceKeys.push_back({ key, static_cast<u32>(m_scratchInstances.size()) });
+					return;
 				}
 
-				if (bVisibleToShadow)
+				Mat4 model;
+				Mat4 modelInvTranspose;
+				BoundingBox worldBounds;
+				bool bVisibleToCamera = true;
+				bool bVisibleToShadow = false;
 				{
-					m_shadowInstanceKeys.push_back({ key, static_cast<u32>(m_scratchInstances.size()) });
+					using namespace DirectX;
+					SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
+					SimdMat R = XMMatrixRotationQuaternion(XMLoadFloat4(&transform.rotation));
+					SimdMat T = XMMatrixTranslation(transform.position.x, transform.position.y, transform.position.z);
+					SimdMat M = XMMatrixMultiply(XMMatrixMultiply(S, R), T);
+					XMStoreFloat4x4(&model, M);
+
+					// Bounds are model space, so they follow the transform. Refitting an
+					// AABB after rotation grows it, which costs some false positives.
+					resource->mesh->bounds.Transform(worldBounds, M);
+					bVisibleToCamera = IsVisible(cameraFrustum, worldBounds);
+
+					// Shadow casters are tested against the light instead, since geometry
+					// outside the view can still cast into it. Both frusta reject.
+					bVisibleToShadow = hasDirectionalShadow && meshComp.HasRenderFlag(RenderFlags_CastShadow) &&
+									   IsVisible(shadowFrustum, worldBounds);
+
+					++m_drawList.meshesTested;
+					if (!bVisibleToCamera)
+					{
+						++m_drawList.meshesCulled;
+					}
+
+					// When neither pass will reference the item, skip building it at all.
+					if (!bVisibleToCamera && !bVisibleToShadow)
+					{
+						return;
+					}
+
+					// Under uniform scale the inverse transpose is the rotation times 1/s,
+					// and the shader normalizes, so M itself gives the same normal. Only
+					// non-uniform scale needs the inverse, which is the expensive path.
+					constexpr f32 k_scaleEpsilon = 1e-5f;
+					const bool uniformScale		 = fabsf(transform.scale.x - transform.scale.y) < k_scaleEpsilon &&
+												   fabsf(transform.scale.y - transform.scale.z) < k_scaleEpsilon;
+
+					XMStoreFloat4x4(&modelInvTranspose,
+									uniformScale ? M : XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
 				}
 
-				m_scratchInstances.push_back(instance);
-			}
-		});
+				for (u32 submeshIndex = 0; submeshIndex < resource->mesh->submeshes.size(); ++submeshIndex)
+				{
+					Submesh& submesh = resource->mesh->submeshes[submeshIndex];
+
+					if (submesh.materialIndex < 0)
+					{
+						continue;
+					}
+
+					const Material& material   = resource->mesh->materials[submesh.materialIndex];
+					const Vector<u32>& handles = resource->textureHandles;
+
+					u64 key = (static_cast<u64>(meshComp.meshHandle) << 32) | submeshIndex;
+
+					InstanceData instance;
+					instance.model			   = model;
+					instance.modelInvTranspose = modelInvTranspose;
+					instance.boundsCenter	   = worldBounds.Center;
+					instance.boundsExtents	   = worldBounds.Extents;
+
+					if (bVisibleToCamera)
+					{
+						m_instanceKeys.push_back({ key, static_cast<u32>(m_scratchInstances.size()) });
+					}
+
+					if (bVisibleToShadow)
+					{
+						m_shadowInstanceKeys.push_back({ key, static_cast<u32>(m_scratchInstances.size()) });
+					}
+
+					m_scratchInstances.push_back(instance);
+				}
+			});
+	}
 
 	m_cullStats = { m_drawList.meshesTested, m_drawList.meshesCulled };
 
@@ -694,8 +700,11 @@ void Renderer::DrawDeferred()
 		});
 
 	// Sort instance keys
-	BuildBatches(m_instanceKeys, m_drawList.batchItems, m_sortedInstances);
-	BuildBatches(m_shadowInstanceKeys, m_drawList.shadowBatchItems, m_shadowSortedInstances);
+	{
+		PROFILE_SCOPE("BuildBatches");
+		BuildBatches(m_instanceKeys, m_drawList.batchItems, m_sortedInstances);
+		BuildBatches(m_shadowInstanceKeys, m_drawList.shadowBatchItems, m_shadowSortedInstances);
+	}
 
 	m_drawStats.batches = static_cast<u32>(m_drawList.batchItems.size());
 

@@ -196,7 +196,10 @@ protected:
 	// Swap chain back buffers — independent of k_framesInFlight.
 	static constexpr u32 k_backBufferCount = 2;
 
-	static constexpr u64 k_uploadHeapSize = 32 * 1024 * 1024; // 32 MB
+	// Split k_framesInFlight ways. At 100k instances the camera and shadow arrays
+	// are 16 MB each per frame, so a tab needs ~32 MB. Phase 5's persistent buffer
+	// removes instance data from here entirely.
+	static constexpr u64 k_uploadHeapSize = 128 * 1024 * 1024; // 128 MB
 	static constexpr u64 k_frameArenaSize = 4 * 1024 * 1024;  //  4 MB
 
 	URef<Device> m_device;

@@ -4,6 +4,7 @@
 #include <Core/ECS/Components/MeshComponent.h>
 #include <Rendering/Resource/ResourceManager.h>
 #include <Rendering/Renderer/Renderer.h>
+#include <Debugging/Profiler.h>
 #include <imgui.h>
 #include <filesystem>
 
@@ -57,6 +58,27 @@ void EditorUI::DrawRendererStats()
 	ImGui::Text("Draw Calls: %u", drawStats.drawCalls);
 	ImGui::Text("Batches: %u", drawStats.batches);
 	ImGui::Text("Triangles drawn: %u", drawStats.numTris);
+
+	ImGui::SeparatorText("CPU Timings");
+
+	if (ImGui::Button(Profiler::Get().IsCapturing() ? "Stop Capture" : "Capture Trace"))
+	{
+		if (Profiler::Get().IsCapturing())
+		{
+			Profiler::Get().EndSession();
+		}
+		else
+		{
+			Profiler::Get().BeginSession();
+		}
+	}
+
+	// Last frame's totals. Empty when profiling is compiled out.
+	for (const ProfileFrameEntry& entry : Profiler::Get().GetFrameEntries())
+	{
+		ImGui::Text("%-16s %7.3f ms  x%u", entry.name, entry.totalMillis, entry.callCount);
+	}
+
 	ImGui::End();
 }
 
