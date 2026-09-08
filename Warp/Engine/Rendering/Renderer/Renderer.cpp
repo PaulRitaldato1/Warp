@@ -647,9 +647,6 @@ void Renderer::DrawDeferred()
 						continue;
 					}
 
-					const Material& material   = resource->mesh->materials[submesh.materialIndex];
-					const Vector<u32>& handles = resource->textureHandles;
-
 					u64 key = (static_cast<u64>(meshComp.meshHandle) << 32) | submeshIndex;
 
 					InstanceData instance;

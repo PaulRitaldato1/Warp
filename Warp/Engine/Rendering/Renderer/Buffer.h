@@ -12,9 +12,9 @@ enum class BufferType
 struct BufferDesc
 {
 	BufferType type;
-	u32        numElements = 0;
-	u32        stride      = 0;   // bytes per element
-	String     name;
+	u32 numElements = 0;
+	u32 stride		= 0; // bytes per element
+	String name;
 };
 
 // Forward declare for PendingStagingUpload.
@@ -27,10 +27,13 @@ class Buffer;
 struct PendingStagingUpload
 {
 	URef<Buffer> stagingBuffer;
-	Buffer*      destination = nullptr;
-	u64          size        = 0;
+	Buffer* destination = nullptr;
+	u64 size			= 0;
 
-	bool IsValid() const { return stagingBuffer != nullptr; }
+	bool IsValid() const
+	{
+		return stagingBuffer != nullptr;
+	}
 };
 
 class Buffer
@@ -44,9 +47,9 @@ public:
 
 	// CPU-side map/unmap — only valid for internal staging buffers.
 	// Asserts on GPU-only buffers.
-	virtual void* Map()   = 0;
-	virtual void  Unmap() = 0;
+	virtual void* Map()	 = 0;
+	virtual void Unmap() = 0;
 
-	virtual u64   GetSize() const          = 0;
-	virtual void* GetNativeHandle() const  = 0;
+	virtual u64 GetSize() const			  = 0;
+	virtual void* GetNativeHandle() const = 0;
 };
