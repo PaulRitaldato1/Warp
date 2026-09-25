@@ -193,6 +193,7 @@ void VKCommandList::SetPipelineState(PipelineState* state)
 	VKPipeline* vkPipeline = static_cast<VKPipeline*>(state);
 	m_currentLayout		   = vkPipeline->GetNativeLayout();
 	m_currentBindingMap	   = &vkPipeline->GetRootToVulkanBindingMap();
+	m_currentBindPoint	   = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline->GetNativePipeline());
 }
 
@@ -200,6 +201,9 @@ void VKCommandList::SetComputePipelineState(ComputePipelineState* state)
 {
 	DYNAMIC_ASSERT(state, "VKCommandList::SetComputePipelineState: state is null");
 	VKComputePipeline* vkPipeline = static_cast<VKComputePipeline*>(state);
+	m_currentLayout				  = vkPipeline->GetNativeLayout();
+	m_currentBindingMap			  = &vkPipeline->GetRootToVulkanBindingMap();
+	m_currentBindPoint			  = VK_PIPELINE_BIND_POINT_COMPUTE;
 	vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, vkPipeline->GetNativePipeline());
 }
 
@@ -580,7 +584,7 @@ void VKCommandList::SetConstantBuffer(u32 rootIndex, Buffer* buffer)
 	write.descriptorType	   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	write.pBufferInfo		   = &bufInfo;
 
-	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, 1, &write);
+	m_pushDescriptorFn(m_cmdBuf, m_currentBindPoint, m_currentLayout, 0, 1, &write);
 }
 
 void VKCommandList::SetConstantBufferView(u32 rootIndex, Buffer* buffer, u64 offset, u64 size)
@@ -605,7 +609,7 @@ void VKCommandList::SetConstantBufferView(u32 rootIndex, Buffer* buffer, u64 off
 	write.descriptorType	   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	write.pBufferInfo		   = &bufInfo;
 
-	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, 1, &write);
+	m_pushDescriptorFn(m_cmdBuf, m_currentBindPoint, m_currentLayout, 0, 1, &write);
 }
 
 void VKCommandList::SetShaderResource(u32 rootIndex, Texture* texture)
@@ -632,7 +636,7 @@ void VKCommandList::SetShaderResource(u32 rootIndex, Texture* texture)
 	write.descriptorType	   = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 	write.pImageInfo		   = &imageInfo;
 
-	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, 1, &write);
+	m_pushDescriptorFn(m_cmdBuf, m_currentBindPoint, m_currentLayout, 0, 1, &write);
 }
 
 void VKCommandList::SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures)
@@ -673,7 +677,7 @@ void VKCommandList::SetShaderResources(u32 rootIndex, const Vector<Texture*>& te
 
 	if (!writes.empty())
 	{
-		m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0,
+		m_pushDescriptorFn(m_cmdBuf, m_currentBindPoint, m_currentLayout, 0,
 						   static_cast<u32>(writes.size()), writes.data());
 	}
 }
@@ -700,7 +704,14 @@ void VKCommandList::SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 o
 	write.descriptorType	   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	write.pBufferInfo		   = &bufInfo;
 
-	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, 1, &write);
+	m_pushDescriptorFn(m_cmdBuf, m_currentBindPoint, m_currentLayout, 0, 1, &write);
+}
+
+// A RWStructuredBuffer is a storage buffer too; only the binding shift differs,
+// and that was resolved when the layout was built.
+void VKCommandList::SetUnorderedAccessBuffer(u32 rootIndex, Buffer* buffer, u64 offset)
+{
+	SetShaderResourceBuffer(rootIndex, buffer, offset);
 }
 
 // ---------------------------------------------------------------------------

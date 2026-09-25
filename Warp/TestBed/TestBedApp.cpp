@@ -31,7 +31,7 @@ struct TempGame : public UserApplicationBase
 			for (u32 y = 0; y < 100; y++)
 			{
 				u32 boxHandle = resourceManager->CreateBox(1, 1, 1);
-				Entity box	  = world.CreateEntity<TransformComponent, StaticTransformComponent, MeshComponent>();
+				Entity box	  = world.CreateEntity<TransformComponent, MeshComponent>();
 
 				// world.GetComponent<MeshComponent>(box).ClearRenderFlag(RenderFlags::RenderFlags_CastShadow);
 				world.GetComponent<MeshComponent>(box).meshHandle = boxHandle;

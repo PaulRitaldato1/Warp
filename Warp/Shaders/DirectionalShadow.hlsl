@@ -11,9 +11,9 @@ struct InstanceData
     float4x4 model;
     float4x4 modelInvTranspose;
     float3 boundsCenter;
-    float pad0;
+    uint batchStart;
     float3 boundsExtents;
-    float pad1;
+    uint batchInfo;
 };
 
 cbuffer PerView : register(b1)
@@ -28,7 +28,12 @@ cbuffer ShadowDrawConstants : register(b0)
 
 StructuredBuffer<InstanceData> instances : register(t0);
 
+// Slots are allocated in arbitrary order, so a batch is a list of slot indices
+// rather than a contiguous range.
+StructuredBuffer<uint> instanceIndices : register(t1);
+
 float4 VSMain(VSInput input) : SV_Position
 {
-    return mul(lightViewProj, mul(instances[instanceOffset + input.instanceID].model, float4(input.position, 1.0)));
+    InstanceData inst = instances[instanceIndices[instanceOffset + input.instanceID]];
+    return mul(lightViewProj, mul(inst.model, float4(input.position, 1.0)));
 }

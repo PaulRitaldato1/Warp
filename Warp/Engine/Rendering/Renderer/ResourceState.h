@@ -18,6 +18,9 @@ enum class ResourceState
 	// Shader read/write (compute UAV).
 	UnorderedAccess,  // D3D12: UNORDERED_ACCESS
 
+	// Draw arguments read by an indirect draw.
+	IndirectArgument, // D3D12: INDIRECT_ARGUMENT
+
 	// Render output.
 	RenderTarget,     // D3D12: RENDER_TARGET
 	DepthWrite,       // D3D12: DEPTH_WRITE

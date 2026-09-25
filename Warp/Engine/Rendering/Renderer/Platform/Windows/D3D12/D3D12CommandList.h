@@ -46,6 +46,7 @@ public:
 	void SetShaderResource(u32 rootIndex, Texture* texture)                            override;
 	void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures)           override;
 	void SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 offset)            override;
+	void SetUnorderedAccessBuffer(u32 rootIndex, Buffer* buffer, u64 offset)           override;
 
 	void CopyBuffer(Buffer* src, Buffer* dst,
 	                u64 srcOffset, u64 dstOffset, u64 size) override;
@@ -77,7 +78,14 @@ public:
 	void SetSRVHeap(D3D12DescriptorHeap* heap) { m_srvHeap = heap;   }
 
 private:
+	void BindRootCBV(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS address);
+	void BindRootSRV(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS address);
+	void BindRootTable(u32 rootIndex, D3D12_GPU_DESCRIPTOR_HANDLE table);
+
 	ComRef<ID3D12GraphicsCommandList>      m_list;
+
+	// Selects SetCompute* or SetGraphics* for root argument binds.
+	bool m_bComputeBound = false;
 	Vector<ComRef<ID3D12CommandAllocator>> m_allocators; // one per frame-in-flight
 
 	// Non-owning — lifetime managed by D3D12Device.

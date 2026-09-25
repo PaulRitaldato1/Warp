@@ -6,26 +6,25 @@
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 
-// ===========================================================================
-// D3D12Pipeline — graphics PSO
-// ===========================================================================
-
 // ---------------------------------------------------------------------------
-// Data-driven root signature — built from PipelineDesc::bindings.
+// Data-driven root signature, shared by graphics and compute.
 //
 // Each BindingSlot becomes one root parameter:
-//   ConstantBuffer   → root CBV  at register bN
-//   TextureTable     → descriptor table of N SRVs starting at register tN
-//   StructuredBuffer → root SRV  at register tN
+//   ConstantBuffer     → root CBV  at register bN
+//   TextureTable       → descriptor table of N SRVs starting at register tN
+//   StructuredBuffer   → root SRV  at register tN
+//   RWStructuredBuffer → root UAV  at register uN
 //
-// Static samplers are always present:
-//   s0: linear wrap   (material textures)
-//   s1: point clamp   (GBuffer sampling)
+// Graphics limits tables and samplers to the pixel shader and allows the input
+// assembler. Compute has only one stage, so everything is visible to it.
 // ---------------------------------------------------------------------------
 
-void D3D12Pipeline::BuildRootSignature(ID3D12Device* device, const Vector<BindingSlot>& bindings,
-                                        const Vector<SamplerDesc>& samplers)
+static ComRef<ID3D12RootSignature> CreateRootSignature(ID3D12Device* device, const Vector<BindingSlot>& bindings,
+													   const Vector<SamplerDesc>& samplers, bool bCompute)
 {
+	const D3D12_SHADER_VISIBILITY stageVisibility =
+		bCompute ? D3D12_SHADER_VISIBILITY_ALL : D3D12_SHADER_VISIBILITY_PIXEL;
+
 	// Build root parameters from binding slots.
 	// Descriptor ranges must outlive the root signature creation call,
 	// so store them alongside their root parameters.
@@ -57,12 +56,20 @@ void D3D12Pipeline::BuildRootSignature(ID3D12Device* device, const Vector<Bindin
 				params[index].ParameterType						  = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 				params[index].DescriptorTable.NumDescriptorRanges = 1;
 				params[index].DescriptorTable.pDescriptorRanges	  = &ranges[index];
-				params[index].ShaderVisibility					  = D3D12_SHADER_VISIBILITY_PIXEL;
+				params[index].ShaderVisibility					  = stageVisibility;
 				break;
 			}
 			case BindingType::StructuredBuffer:
 			{
 				params[index].ParameterType				= D3D12_ROOT_PARAMETER_TYPE_SRV;
+				params[index].Descriptor.ShaderRegister = slot.shaderRegister;
+				params[index].Descriptor.RegisterSpace	= 0;
+				params[index].ShaderVisibility			= D3D12_SHADER_VISIBILITY_ALL;
+				break;
+			}
+			case BindingType::RWStructuredBuffer:
+			{
+				params[index].ParameterType				= D3D12_ROOT_PARAMETER_TYPE_UAV;
 				params[index].Descriptor.ShaderRegister = slot.shaderRegister;
 				params[index].Descriptor.RegisterSpace	= 0;
 				params[index].ShaderVisibility			= D3D12_SHADER_VISIBILITY_ALL;
@@ -109,7 +116,7 @@ void D3D12Pipeline::BuildRootSignature(ID3D12Device* device, const Vector<Bindin
 		dst.MaxAnisotropy	 = 1;
 		dst.MaxLOD			 = D3D12_FLOAT32_MAX;
 		dst.ShaderRegister	 = src.shaderRegister;
-		dst.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+		dst.ShaderVisibility = stageVisibility;
 
 		if (src.addressMode == SamplerAddressMode::Border)
 		{
@@ -122,17 +129,31 @@ void D3D12Pipeline::BuildRootSignature(ID3D12Device* device, const Vector<Bindin
 	rootSigDesc.pParameters				  = params.data();
 	rootSigDesc.NumStaticSamplers		  = static_cast<UINT>(d3dSamplers.size());
 	rootSigDesc.pStaticSamplers			  = d3dSamplers.data();
-	rootSigDesc.Flags					  = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+	rootSigDesc.Flags =
+		bCompute ? D3D12_ROOT_SIGNATURE_FLAG_NONE : D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
 	ComRef<ID3DBlob> serialized, errorBlob;
 	HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, &serialized, &errorBlob);
 	if (errorBlob)
 	{
-		LOG_WARNING("D3D12Pipeline root sig serialization: {}", static_cast<char*>(errorBlob->GetBufferPointer()));
+		LOG_WARNING("D3D12 root sig serialization: {}", static_cast<char*>(errorBlob->GetBufferPointer()));
 	}
 	ThrowIfFailed(hr);
+
+	ComRef<ID3D12RootSignature> rootSignature;
 	ThrowIfFailed(device->CreateRootSignature(0, serialized->GetBufferPointer(), serialized->GetBufferSize(),
-											  IID_PPV_ARGS(&m_rootSignature)));
+											  IID_PPV_ARGS(&rootSignature)));
+	return rootSignature;
+}
+
+// ===========================================================================
+// D3D12Pipeline — graphics PSO
+// ===========================================================================
+
+void D3D12Pipeline::BuildRootSignature(ID3D12Device* device, const Vector<BindingSlot>& bindings,
+									   const Vector<SamplerDesc>& samplers)
+{
+	m_rootSignature = CreateRootSignature(device, bindings, samplers, false);
 }
 
 void D3D12Pipeline::InitializeWithDevice(ID3D12Device* device, const PipelineDesc& desc)
@@ -304,64 +325,12 @@ void D3D12Pipeline::Cleanup()
 // D3D12ComputePipeline
 // ===========================================================================
 
-// Default compute root signature:
-//   Param 0 — Root CBV  (b0, space0): dispatch constants
-//   Param 1 — Descriptor table: 8 UAVs (u0-u7, space0) — read/write resources
-//   Param 2 — Descriptor table: 8 SRVs (t0-t7, space0) — read-only inputs
-
-void D3D12ComputePipeline::BuildRootSignature(ID3D12Device* device)
-{
-	D3D12_DESCRIPTOR_RANGE ranges[2] = {};
-	// UAVs: u0-u7
-	ranges[0].RangeType							= D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-	ranges[0].NumDescriptors					= 8;
-	ranges[0].BaseShaderRegister				= 0;
-	ranges[0].RegisterSpace						= 0;
-	ranges[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-	// SRVs: t0-t7
-	ranges[1].RangeType							= D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	ranges[1].NumDescriptors					= 8;
-	ranges[1].BaseShaderRegister				= 0;
-	ranges[1].RegisterSpace						= 0;
-	ranges[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-	D3D12_ROOT_PARAMETER params[3]		= {};
-	params[0].ParameterType				= D3D12_ROOT_PARAMETER_TYPE_CBV;
-	params[0].Descriptor.ShaderRegister = 0; // b0
-	params[0].ShaderVisibility			= D3D12_SHADER_VISIBILITY_ALL;
-
-	params[1].ParameterType						  = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	params[1].DescriptorTable.NumDescriptorRanges = 1;
-	params[1].DescriptorTable.pDescriptorRanges	  = &ranges[0]; // UAVs
-	params[1].ShaderVisibility					  = D3D12_SHADER_VISIBILITY_ALL;
-
-	params[2].ParameterType						  = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-	params[2].DescriptorTable.NumDescriptorRanges = 1;
-	params[2].DescriptorTable.pDescriptorRanges	  = &ranges[1]; // SRVs
-	params[2].ShaderVisibility					  = D3D12_SHADER_VISIBILITY_ALL;
-
-	D3D12_ROOT_SIGNATURE_DESC rootSigDesc = {};
-	rootSigDesc.NumParameters			  = _countof(params);
-	rootSigDesc.pParameters				  = params;
-	rootSigDesc.Flags					  = D3D12_ROOT_SIGNATURE_FLAG_NONE;
-
-	ComRef<ID3DBlob> serialized, errorBlob;
-	HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, &serialized, &errorBlob);
-	if (errorBlob)
-	{
-		LOG_WARNING("D3D12ComputePipeline root sig: {}", static_cast<char*>(errorBlob->GetBufferPointer()));
-	}
-	ThrowIfFailed(hr);
-	ThrowIfFailed(device->CreateRootSignature(0, serialized->GetBufferPointer(), serialized->GetBufferSize(),
-											  IID_PPV_ARGS(&m_rootSignature)));
-}
-
 void D3D12ComputePipeline::InitializeWithDevice(ID3D12Device* device, const ComputePipelineDesc& desc)
 {
 	DYNAMIC_ASSERT(device, "D3D12ComputePipeline::InitializeWithDevice: device is null");
 	DYNAMIC_ASSERT(desc.computeShader, "D3D12ComputePipeline::InitializeWithDevice: computeShader required");
 
-	BuildRootSignature(device);
+	m_rootSignature = CreateRootSignature(device, desc.bindings, {}, true);
 
 	D3D12Shader* cs = static_cast<D3D12Shader*>(desc.computeShader);
 

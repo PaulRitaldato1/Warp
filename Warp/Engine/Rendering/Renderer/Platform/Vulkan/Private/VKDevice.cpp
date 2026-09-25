@@ -458,9 +458,4 @@ URef<Shader> VKDevice::CreateShader(const ShaderDesc& desc)
 	return shader;
 }
 
-void VKDevice::WaitForIdle()
-{
-	vkDeviceWaitIdle(m_device);
-}
-
 #endif // WARP_BUILD_VK

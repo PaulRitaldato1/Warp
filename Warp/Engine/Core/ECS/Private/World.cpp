@@ -31,6 +31,7 @@ Entity World::CreateEntity()
 	record.alive      = true;
 	record.archetype  = nullptr;
 	record.row        = 0;
+	record.dirtyMask.reset();
 
 	return entity;
 }
@@ -76,6 +77,14 @@ Entity World::DuplicateEntity(Entity source)
 	newRecord.archetype = archetype;
 	newRecord.row       = newRow;
 
+	for (u32 bitIndex = 0; bitIndex < k_maxComponents; ++bitIndex)
+	{
+		if (mask.test(bitIndex))
+		{
+			MarkDirtyIfTracked(bitIndex, newEntity);
+		}
+	}
+
 	return newEntity;
 }
 
@@ -88,6 +97,15 @@ void World::DestroyEntity(Entity entity)
 	// Remove from archetype if it has components.
 	if (record.archetype)
 	{
+		const ComponentMask mask = record.archetype->GetMask();
+		for (u32 bitIndex = 0; bitIndex < k_maxComponents; ++bitIndex)
+		{
+			if (mask.test(bitIndex))
+			{
+				MarkRemovedIfTracked(bitIndex, entity);
+			}
+		}
+
 		Entity swappedEntity = record.archetype->RemoveEntity(record.row);
 		if (swappedEntity != k_nullEntity)
 		{
@@ -99,6 +117,10 @@ void World::DestroyEntity(Entity entity)
 	record.row       = 0;
 	record.alive     = false;
 	record.generation++;
+
+	// Its dirty list entries go stale via the generation. Clearing the bits
+	// lets a recycled id be marked again.
+	record.dirtyMask.reset();
 
 	m_freeIds.push_back(entity.id);
 }

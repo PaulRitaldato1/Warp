@@ -96,9 +96,14 @@ void VKCommandQueue::WaitForQueue(CommandQueue& other, u64 fenceValue)
 	m_pendingWaitValue     = fenceValue;
 }
 
-void VKCommandQueue::Reset()
+void VKCommandQueue::WaitForIdle()
 {
 	vkQueueWaitIdle(m_queue);
+}
+
+void VKCommandQueue::Reset()
+{
+	WaitForIdle();
 }
 
 #endif // WARP_BUILD_VK

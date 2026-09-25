@@ -53,8 +53,6 @@ public:
 	ID3D12RootSignature* GetNativeRootSig() const { return m_rootSignature.Get(); }
 
 private:
-	void BuildRootSignature(ID3D12Device* device);
-
 	ComRef<ID3D12PipelineState> m_pso;
 	ComRef<ID3D12RootSignature> m_rootSignature;
 };

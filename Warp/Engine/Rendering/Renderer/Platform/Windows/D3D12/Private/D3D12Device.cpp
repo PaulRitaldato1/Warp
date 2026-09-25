@@ -189,21 +189,4 @@ URef<Shader> D3D12Device::CreateShader(const ShaderDesc& desc)
 	return shader;
 }
 
-void D3D12Device::WaitForIdle()
-{
-	DYNAMIC_ASSERT(m_device, "D3D12Device::WaitForIdle: device not initialized");
-
-	D3D12Fence fence;
-	fence.InitializeWithDevice(m_device.Get());
-
-	// Create a temporary direct command queue just to issue a GPU signal
-	ComRef<ID3D12CommandQueue> tmpQueue;
-	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
-	queueDesc.Type					   = D3D12_COMMAND_LIST_TYPE_DIRECT;
-	ThrowIfFailed(m_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&tmpQueue)));
-
-	fence.GPUSignal(tmpQueue.Get());
-	fence.WaitForValue(fence.GetNextValue() - 1);
-}
-
 #endif

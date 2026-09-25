@@ -55,6 +55,12 @@ public:
 		return m_isStagingBuffer;
 	}
 
+	// Upload and readback heaps both have a fixed state, so neither is transitioned.
+	bool IsCPUVisible() const
+	{
+		return m_isStagingBuffer || m_isReadback;
+	}
+
 	// Creates a staging-only buffer on D3D12_HEAP_TYPE_UPLOAD.
 	// Used by UploadData() and D3D12UploadBuffer for the backing resource.
 	static URef<D3D12Buffer> CreateStagingBuffer(ID3D12Device* device, u64 size);
@@ -67,6 +73,7 @@ private:
 	D3D12_RESOURCE_STATES m_currentState = D3D12_RESOURCE_STATE_COMMON;
 	ID3D12Device* m_device				 = nullptr;
 	bool m_isStagingBuffer				 = false;
+	bool m_isReadback					 = false;
 };
 
 #endif

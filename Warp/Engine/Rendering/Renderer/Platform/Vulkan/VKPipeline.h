@@ -84,10 +84,18 @@ public:
 		return m_layout;
 	}
 
+	const Vector<u32>& GetRootToVulkanBindingMap() const
+	{
+		return m_rootToVulkanBinding;
+	}
+
 private:
-	VkDevice m_device		  = VK_NULL_HANDLE;
-	VkPipeline m_pipeline	  = VK_NULL_HANDLE;
-	VkPipelineLayout m_layout = VK_NULL_HANDLE;
+	VkDevice m_device							= VK_NULL_HANDLE;
+	VkPipeline m_pipeline						= VK_NULL_HANDLE;
+	VkPipelineLayout m_layout					= VK_NULL_HANDLE;
+	VkDescriptorSetLayout m_descriptorSetLayout = VK_NULL_HANDLE;
+
+	Vector<u32> m_rootToVulkanBinding;
 };
 
 #endif // WARP_BUILD_VK

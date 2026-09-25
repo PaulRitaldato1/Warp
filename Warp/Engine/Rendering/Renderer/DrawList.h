@@ -38,21 +38,17 @@ struct LightList
 	}
 };
 
-struct InstanceSortKey
-{
-	u64 key;
-	u32 instanceIndex;
-};
-
+// Matches InstanceData in DeferredGeometry.hlsl and DirectionalShadow.hlsl.
 struct InstanceData
 {
 	Mat4 model;
 	Mat4 modelInvTranspose;
 	Vec3 boundsCenter;
-	f32 pad0;
+	u32 batchStart; // for Phase 6's cull shader
 	Vec3 boundsExtents;
-	f32 pad1;
+	u32 batchInfo; // batch count low 16 bits, render flags high 16
 };
+static_assert(sizeof(InstanceData) == 160, "InstanceData layout must match the shaders");
 
 struct BatchItem
 {

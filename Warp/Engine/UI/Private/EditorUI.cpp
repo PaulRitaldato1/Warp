@@ -58,6 +58,10 @@ void EditorUI::DrawRendererStats()
 	ImGui::Text("Draw Calls: %u", drawStats.drawCalls);
 	ImGui::Text("Batches: %u", drawStats.batches);
 	ImGui::Text("Triangles drawn: %u", drawStats.numTris);
+	ImGui::Text("Dirty transforms: %u", drawStats.dirtyTransforms);
+	ImGui::Text("Dirty meshes: %u", drawStats.dirtyMeshes);
+	ImGui::Text("Removed meshes: %u", drawStats.removedMeshes);
+	ImGui::Text("Uploaded slots: %u", drawStats.uploadedSlots);
 
 	ImGui::SeparatorText("CPU Timings");
 

@@ -30,8 +30,6 @@ public:
 	URef<Texture> CreateTexture(const TextureDesc& desc) override;
 	URef<Shader> CreateShader(const ShaderDesc& desc) override;
 
-	void WaitForIdle() override;
-
 	ID3D12Device2* GetNativeDevice() const
 	{
 		return m_device.Get();

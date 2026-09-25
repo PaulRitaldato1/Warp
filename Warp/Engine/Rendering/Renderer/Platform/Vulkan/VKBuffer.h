@@ -42,6 +42,7 @@ public:
 	                                          VkBufferUsageFlags extraUsageFlags = 0);
 
 private:
+	void CreateReadbackBuffer();
 
 	VmaAllocator    m_allocator     = VK_NULL_HANDLE;
 	VkDevice        m_device        = VK_NULL_HANDLE;
@@ -52,6 +53,7 @@ private:
 	void*           m_mappedPtr     = nullptr;
 	VkAccessFlags2  m_currentAccess = VK_ACCESS_2_NONE;
 	bool            m_isStagingBuffer = false;
+	bool            m_bPersistentlyMapped = false;
 };
 
 #endif // WARP_BUILD_VK

@@ -102,6 +102,7 @@ void D3D12CommandList::SetPipelineState(PipelineState* state)
 	D3D12Pipeline* d3dPipeline = static_cast<D3D12Pipeline*>(state);
 	m_list->SetPipelineState(d3dPipeline->GetNativePSO());
 	m_list->SetGraphicsRootSignature(d3dPipeline->GetNativeRootSig());
+	m_bComputeBound = false;
 }
 
 void D3D12CommandList::SetComputePipelineState(ComputePipelineState* state)
@@ -110,6 +111,7 @@ void D3D12CommandList::SetComputePipelineState(ComputePipelineState* state)
 	D3D12ComputePipeline* d3dPipeline = static_cast<D3D12ComputePipeline*>(state);
 	m_list->SetPipelineState(d3dPipeline->GetNativePSO());
 	m_list->SetComputeRootSignature(d3dPipeline->GetNativeRootSig());
+	m_bComputeBound = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,18 +221,44 @@ void D3D12CommandList::ClearDepthStencil(Texture* dsv, f32 depth, u8 stencil)
 // Resource binding
 // ---------------------------------------------------------------------------
 
+// D3D12 keeps separate graphics and compute root arguments, so each bind goes
+// to whichever pipeline was set last.
+
+void D3D12CommandList::BindRootCBV(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS address)
+{
+	if (m_bComputeBound)
+		m_list->SetComputeRootConstantBufferView(rootIndex, address);
+	else
+		m_list->SetGraphicsRootConstantBufferView(rootIndex, address);
+}
+
+void D3D12CommandList::BindRootSRV(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS address)
+{
+	if (m_bComputeBound)
+		m_list->SetComputeRootShaderResourceView(rootIndex, address);
+	else
+		m_list->SetGraphicsRootShaderResourceView(rootIndex, address);
+}
+
+void D3D12CommandList::BindRootTable(u32 rootIndex, D3D12_GPU_DESCRIPTOR_HANDLE table)
+{
+	if (m_bComputeBound)
+		m_list->SetComputeRootDescriptorTable(rootIndex, table);
+	else
+		m_list->SetGraphicsRootDescriptorTable(rootIndex, table);
+}
+
 void D3D12CommandList::SetConstantBuffer(u32 rootIndex, Buffer* buffer)
 {
 	DYNAMIC_ASSERT(buffer, "D3D12CommandList::SetConstantBuffer: buffer is null");
-	m_list->SetGraphicsRootConstantBufferView(
-		rootIndex, static_cast<D3D12Buffer*>(buffer)->GetGPUAddress());
+	BindRootCBV(rootIndex, static_cast<D3D12Buffer*>(buffer)->GetGPUAddress());
 }
 
 void D3D12CommandList::SetConstantBufferView(u32 rootIndex, Buffer* buffer, u64 offset, u64 /*size*/)
 {
 	DYNAMIC_ASSERT(buffer, "D3D12CommandList::SetConstantBufferView: buffer is null");
 	D3D12_GPU_VIRTUAL_ADDRESS addr = static_cast<D3D12Buffer*>(buffer)->GetGPUAddress() + offset;
-	m_list->SetGraphicsRootConstantBufferView(rootIndex, addr);
+	BindRootCBV(rootIndex, addr);
 }
 
 void D3D12CommandList::SetShaderResource(u32 rootIndex, Texture* texture)
@@ -246,7 +274,7 @@ void D3D12CommandList::SetShaderResource(u32 rootIndex, Texture* texture)
 	D3D12_CPU_DESCRIPTOR_HANDLE src = { static_cast<SIZE_T>(srcHandle.ptr) };
 	D3D12DescriptorHeap::Allocation alloc = m_srvHeap->Alloc(1);
 	m_device->CopyDescriptorsSimple(1, alloc.cpu, src, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	m_list->SetGraphicsRootDescriptorTable(rootIndex, alloc.gpu);
+	BindRootTable(rootIndex, alloc.gpu);
 }
 
 void D3D12CommandList::SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures)
@@ -284,14 +312,25 @@ void D3D12CommandList::SetShaderResources(u32 rootIndex, const Vector<Texture*>&
 		m_device->CopyDescriptorsSimple(1, dst, src, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
 
-	m_list->SetGraphicsRootDescriptorTable(rootIndex, alloc.gpu);
+	BindRootTable(rootIndex, alloc.gpu);
 }
 
 void D3D12CommandList::SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 offset)
 {
 	DYNAMIC_ASSERT(buffer, "D3D12CommandList::SetShaderResourceBuffer: buffer is null");
 	D3D12_GPU_VIRTUAL_ADDRESS address = static_cast<D3D12Buffer*>(buffer)->GetGPUAddress() + offset;
-	m_list->SetGraphicsRootShaderResourceView(rootIndex, address);
+	BindRootSRV(rootIndex, address);
+}
+
+void D3D12CommandList::SetUnorderedAccessBuffer(u32 rootIndex, Buffer* buffer, u64 offset)
+{
+	DYNAMIC_ASSERT(buffer, "D3D12CommandList::SetUnorderedAccessBuffer: buffer is null");
+	D3D12_GPU_VIRTUAL_ADDRESS address = static_cast<D3D12Buffer*>(buffer)->GetGPUAddress() + offset;
+
+	if (m_bComputeBound)
+		m_list->SetComputeRootUnorderedAccessView(rootIndex, address);
+	else
+		m_list->SetGraphicsRootUnorderedAccessView(rootIndex, address);
 }
 
 // ---------------------------------------------------------------------------
@@ -387,8 +426,8 @@ void D3D12CommandList::TransitionBuffer(Buffer* buffer, ResourceState newState)
 	DYNAMIC_ASSERT(buffer, "D3D12CommandList::TransitionBuffer: buffer is null");
 	D3D12Buffer* d3dBuffer = static_cast<D3D12Buffer*>(buffer);
 
-	// Upload-heap buffers must stay in GENERIC_READ — skip the barrier.
-	if (d3dBuffer->IsUploadHeap())
+	// Upload heaps stay in GENERIC_READ and readback heaps in COPY_DEST.
+	if (d3dBuffer->IsCPUVisible())
 		return;
 
 	D3D12_RESOURCE_STATES after = ToD3D12ResourceState(newState);

@@ -95,6 +95,7 @@ public:
 	void SetShaderResource(u32 rootIndex, Texture* texture)                  override;
 	void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures) override;
 	void SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 offset)  override;
+	void SetUnorderedAccessBuffer(u32 rootIndex, Buffer* buffer, u64 offset) override;
 
 	// ---------------------------------------------------------------------------
 	// Draw / dispatch
@@ -115,6 +116,7 @@ private:
 	VkCommandBuffer        m_cmdBuf        = VK_NULL_HANDLE;
 	VkPipelineLayout       m_currentLayout     = VK_NULL_HANDLE; // cached from last SetPipelineState
 	const Vector<u32>*     m_currentBindingMap = nullptr;        // rootIndex -> Vulkan binding index
+	VkPipelineBindPoint    m_currentBindPoint  = VK_PIPELINE_BIND_POINT_GRAPHICS; // push descriptors target this
 
 	// Push descriptor support
 	PFN_vkCmdPushDescriptorSetKHR m_pushDescriptorFn = nullptr;

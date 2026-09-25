@@ -28,10 +28,21 @@ void VKBuffer::CreateBuffer(const BufferDesc& desc)
 	m_size = static_cast<u64>(desc.numElements) * desc.stride;
 	DYNAMIC_ASSERT(m_size > 0, "VKBuffer: buffer size must be > 0");
 
+	if (desc.type == BufferType::Readback)
+	{
+		CreateReadbackBuffer();
+		return;
+	}
+
+	// Storage covers both StructuredBuffer and RWStructuredBuffer, so
+	// bUnorderedAccess needs nothing extra here.
 	VkBufferUsageFlags usageFlags =
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
 		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT  |
 		VK_BUFFER_USAGE_INDEX_BUFFER_BIT   |
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+		VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT   |
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT   |
 		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
@@ -61,6 +72,29 @@ void VKBuffer::CreateBuffer(const BufferDesc& desc)
 	m_deviceAddress = vkGetBufferDeviceAddress(m_device, &addrInfo);
 }
 
+void VKBuffer::CreateReadbackBuffer()
+{
+	VmaAllocationCreateInfo allocInfo = {};
+	allocInfo.usage					  = VMA_MEMORY_USAGE_GPU_TO_CPU;
+	allocInfo.flags					  = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+	VkBufferCreateInfo bufferInfo = {};
+	bufferInfo.sType			  = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.size				  = m_size;
+	bufferInfo.usage			  = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	bufferInfo.sharingMode		  = VK_SHARING_MODE_EXCLUSIVE;
+
+	VmaAllocationInfo allocationInfo = {};
+	VK_CHECK(vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo, &m_buffer, &m_allocation, &allocationInfo),
+			 "VKBuffer: readback vmaCreateBuffer failed");
+
+	// Host visible like a staging buffer, so it is mapped and skips barriers the same way.
+	m_mappedPtr			  = allocationInfo.pMappedData;
+	m_isStagingBuffer	  = true;
+	m_bPersistentlyMapped = true;
+	m_deviceAddress		  = 0;
+}
+
 URef<VKBuffer> VKBuffer::CreateStagingBuffer(VmaAllocator allocator, VkDevice device, u64 size,
                                               VkBufferUsageFlags extraUsageFlags)
 {
@@ -87,7 +121,8 @@ URef<VKBuffer> VKBuffer::CreateStagingBuffer(VmaAllocator allocator, VkDevice de
 	                         &staging->m_buffer, &staging->m_allocation, &allocationInfo),
 	         "VKBuffer: staging vmaCreateBuffer failed");
 
-	staging->m_mappedPtr = allocationInfo.pMappedData;
+	staging->m_mappedPtr		   = allocationInfo.pMappedData;
+	staging->m_bPersistentlyMapped = true;
 
 	if (usageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
 	{
@@ -146,6 +181,13 @@ void* VKBuffer::Map()
 
 void VKBuffer::Unmap()
 {
+	// Created with VMA_ALLOCATION_CREATE_MAPPED_BIT, which VMA owns. Unmapping
+	// it here would underflow VMA's map count.
+	if (m_bPersistentlyMapped)
+	{
+		return;
+	}
+
 	if (m_isStagingBuffer && m_mappedPtr)
 	{
 		vmaUnmapMemory(m_allocator, m_allocation);

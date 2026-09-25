@@ -83,8 +83,8 @@ public:
 	// Create a shader
 	virtual URef<Shader> CreateShader(const ShaderDesc& Desc) = 0;
 
-	// Synchronize the device (wait for all operations to complete)
-	virtual void WaitForIdle() = 0;
+	// No WaitForIdle here: the device does not own the queues, so it cannot know
+	// what work is outstanding. Use Renderer::WaitForGPUIdle.
 
 	virtual const char* GetAPIName() = 0;
 

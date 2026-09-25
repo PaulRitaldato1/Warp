@@ -30,9 +30,17 @@ struct ComponentID
 {
 	static u32 Get()
 	{
-		static u32 id = RegisterOrGetComponentId(
-			std::type_index(typeid(T)), sizeof(T), alignof(T));
-		return id;
+		// const T shares T's ID. Const only marks read access in a query.
+		if constexpr (std::is_const_v<T>)
+		{
+			return ComponentID<std::remove_const_t<T>>::Get();
+		}
+		else
+		{
+			static u32 id = RegisterOrGetComponentId(
+				std::type_index(typeid(T)), sizeof(T), alignof(T));
+			return id;
+		}
 	}
 };
 

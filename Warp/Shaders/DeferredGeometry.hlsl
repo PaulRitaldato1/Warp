@@ -17,9 +17,9 @@ struct InstanceData
     float4x4 model;
     float4x4 modelInvTranspose;
     float3 boundsCenter;
-    float pad0;
+    uint batchStart;
     float3 boundsExtents;
-    float pad1;
+    uint batchInfo;
 };
 
 struct GBufferOutput
@@ -56,13 +56,17 @@ Texture2D    MetallicRoughnessTexture : register(t2);
 Texture2D    OcclusionTexture         : register(t3);
 Texture2D    EmissiveTexture          : register(t4);
 StructuredBuffer<InstanceData> instances : register (t5);
+
+// Slots are allocated in arbitrary order, so a batch is a list of slot indices
+// rather than a contiguous range.
+StructuredBuffer<uint> instanceIndices : register(t6);
 SamplerState Sampler                  : register(s0);
 
 
 VSOutput VSMain(VSInput input)
 {
     VSOutput output;
-    InstanceData inst = instances[instanceOffset + input.instanceID];
+    InstanceData inst = instances[instanceIndices[instanceOffset + input.instanceID]];
 
     output.position     = mul(viewProj, mul(inst.model, float4(input.position, 1.0)));
     // Normals need the inverse transpose, tangents do not. A tangent lies along

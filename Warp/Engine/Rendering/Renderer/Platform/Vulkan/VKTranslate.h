@@ -129,6 +129,10 @@ inline VkAccessFlags2 ToVkBufferAccess(ResourceState state)
 		case ResourceState::ConstantBuffer: return VK_ACCESS_2_UNIFORM_READ_BIT;
 		case ResourceState::CopySource:     return VK_ACCESS_2_TRANSFER_READ_BIT;
 		case ResourceState::CopyDest:       return VK_ACCESS_2_TRANSFER_WRITE_BIT;
+		case ResourceState::ShaderResource: return VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+		case ResourceState::UnorderedAccess:
+			return VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+		case ResourceState::IndirectArgument: return VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
 		default:                            return VK_ACCESS_2_NONE;
 	}
 }

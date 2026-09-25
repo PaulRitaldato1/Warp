@@ -24,6 +24,7 @@ public:
 	void WaitForValue(u64 value)                           override;
 	u64  GetCompletedValue() const                         override;
 	void WaitForQueue(CommandQueue& other, u64 fenceValue) override;
+	void WaitForIdle()                                     override;
 	void Reset()                                           override;
 
 	VkQueue GetNative()       const { return m_queue; }

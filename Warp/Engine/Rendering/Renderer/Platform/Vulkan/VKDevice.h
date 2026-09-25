@@ -30,7 +30,6 @@ public:
 	URef<Buffer>               CreateBuffer(const BufferDesc& desc)              override;
 	URef<Texture>              CreateTexture(const TextureDesc& desc)            override;
 	URef<Shader>               CreateShader(const ShaderDesc& desc)              override;
-	void                       WaitForIdle()                                     override;
 
 	VkInstance       GetNativeInstance()  const { return m_instance; }
 	VkPhysicalDevice GetNativePhysDevice()const { return m_physDevice; }

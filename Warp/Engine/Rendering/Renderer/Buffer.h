@@ -7,14 +7,19 @@ enum class BufferType
 	Vertex,
 	Index,
 	Constant,
+	Structured, // read as a StructuredBuffer in a shader
+	Readback,	// CPU-readable copy destination. Map after the GPU is done with it.
 };
 
 struct BufferDesc
 {
-	BufferType type;
+	BufferType type = BufferType::Vertex;
 	u32 numElements = 0;
 	u32 stride		= 0; // bytes per element
 	String name;
+
+	// Allows binding as a RWStructuredBuffer. D3D12 needs this at creation.
+	bool bUnorderedAccess = false;
 };
 
 // Forward declare for PendingStagingUpload.

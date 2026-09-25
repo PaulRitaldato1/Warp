@@ -41,6 +41,8 @@ public:
 		// would silently ignore non-zero field defaults (e.g. intensity = 1.f).
 		((archetype->GetColumn<Ts>()[row] = Ts{}), ...);
 
+		(MarkDirtyIfTracked(ComponentID<Ts>::Get(), entity), ...);
+
 		return entity;
 	}
 
@@ -83,6 +85,8 @@ public:
 		Span<T> column	   = newArchetype->GetColumn<T>();
 		column[record.row] = component;
 
+		MarkDirtyIfTracked(ComponentID<T>::Get(), entity);
+
 		return column[record.row];
 	}
 
@@ -91,6 +95,8 @@ public:
 	{
 		FATAL_ASSERT(IsAlive(entity), "World::RemoveComponent: entity is not alive");
 		FATAL_ASSERT(HasComponent<T>(entity), "World::RemoveComponent: entity does not have this component");
+
+		MarkRemovedIfTracked(ComponentID<T>::Get(), entity);
 
 		EntityRecord& record = m_entities[entity.id];
 
@@ -116,10 +122,14 @@ public:
 		}
 	}
 
+	// Non-const access counts as a write and marks T dirty. Use Read to read
+	// without marking.
 	template <IsComponent T>
 	T& GetComponent(Entity entity)
 	{
 		FATAL_ASSERT(HasComponent<T>(entity), "World::GetComponent: entity does not have this component");
+
+		MarkDirtyIfTracked(ComponentID<T>::Get(), entity);
 
 		EntityRecord& record = m_entities[entity.id];
 		Span<T> column		 = record.archetype->GetColumn<T>();
@@ -136,6 +146,13 @@ public:
 		return column[record.row];
 	}
 
+	// Read without marking dirty, even through a non-const World.
+	template <IsComponent T>
+	const T& Read(Entity entity) const
+	{
+		return GetComponent<T>(entity);
+	}
+
 	// Runtime access by component ID — used by the generic editor inspector.
 	void* GetComponentRaw(u32 componentId, Entity entity)
 	{
@@ -144,6 +161,8 @@ public:
 		FATAL_ASSERT(record.archetype, "World::GetComponentRaw: entity has no archetype");
 		byte* column = record.archetype->GetColumnRaw(componentId);
 		FATAL_ASSERT(column, "World::GetComponentRaw: entity does not have this component");
+
+		MarkDirtyIfTracked(componentId, entity);
 
 		const Vector<ComponentInfo>& registry = GetComponentRegistry();
 		FATAL_ASSERT(componentId < registry.size(), "World::GetComponentRaw: invalid component ID");
@@ -213,6 +232,8 @@ public:
 	}
 
 	// Query — calls fn(Entity, T1&, T2&, ...) for every entity with all of <Ts...>.
+	// Non-const Ts mark every visited entity dirty. Pass const T for read only
+	// access, e.g. Each<const TransformComponent, MeshComponent>.
 	template <IsComponent... Ts, typename Func>
 	void Each(Func&& fn)
 	{
@@ -223,6 +244,20 @@ public:
 	template <typename... Ts, typename Func>
 	void EachMasked(const ComponentMask& queryMask, const ComponentMask& excludeMask, Func&& fn)
 	{
+		// Only writes to tracked types need recording. Usually empty, which skips
+		// the marking loop entirely.
+		ComponentMask writeMask;
+		(
+			[&]
+			{
+				if constexpr (!std::is_const_v<Ts>)
+				{
+					writeMask.set(ComponentID<Ts>::Get());
+				}
+			}(),
+			...);
+		writeMask &= m_trackedMask;
+
 		for (auto& [mask, archetype] : m_archetypes)
 		{
 			// Check if this archetype has all queried components (superset check).
@@ -257,7 +292,65 @@ public:
 			};
 
 			callPerEntity(archetype->GetColumn<Ts>()...);
+
+			if (writeMask.any())
+			{
+				MarkDirtyRange(writeMask, entities);
+			}
 		}
+	}
+
+	// --- Change tracking ---
+	// Opt in per type. Untracked types record nothing, so a dirty list nobody
+	// drains can't grow. Each entity appears at most once per list until cleared.
+
+	template <IsComponent T>
+	void TrackChanges()
+	{
+		m_trackedMask.set(ComponentID<T>::Get());
+	}
+
+	// For writes the World can't see, e.g. through a pointer kept past a query.
+	template <IsComponent T>
+	void MarkDirty(Entity entity)
+	{
+		MarkDirtyIfTracked(ComponentID<T>::Get(), entity);
+	}
+
+	// May hold entities destroyed since they were marked. Check IsAlive.
+	template <IsComponent T>
+	const Vector<Entity>& GetDirty() const
+	{
+		return m_dirtyLists[ComponentID<T>::Get()];
+	}
+
+	template <IsComponent T>
+	void ClearDirty()
+	{
+		const u32 componentId  = ComponentID<T>::Get();
+		Vector<Entity>& dirty = m_dirtyLists[componentId];
+		for (Entity entity : dirty)
+		{
+			if (IsAlive(entity))
+			{
+				m_entities[entity.id].dirtyMask.reset(componentId);
+			}
+		}
+		dirty.clear();
+	}
+
+	// From RemoveComponent and DestroyEntity. Usually dead by the time this is
+	// read, so only the id is meaningful. Not deduplicated.
+	template <IsComponent T>
+	const Vector<Entity>& GetRemoved() const
+	{
+		return m_removedLists[ComponentID<T>::Get()];
+	}
+
+	template <IsComponent T>
+	void ClearRemoved()
+	{
+		m_removedLists[ComponentID<T>::Get()].clear();
 	}
 
 	// --- System management ---
@@ -286,7 +379,53 @@ private:
 		u32 row				 = 0;
 		u32 generation		 = 0;
 		bool alive			 = false;
+
+		// Which tracked components are already in their dirty list.
+		ComponentMask dirtyMask;
 	};
+
+	static constexpr size_t k_maxComponents = ComponentMask().size();
+
+	void MarkDirtyIfTracked(u32 componentId, Entity entity)
+	{
+		if (!m_trackedMask.test(componentId))
+		{
+			return;
+		}
+
+		EntityRecord& record = m_entities[entity.id];
+		if (record.dirtyMask.test(componentId))
+		{
+			return;
+		}
+
+		record.dirtyMask.set(componentId);
+		m_dirtyLists[componentId].push_back(entity);
+	}
+
+	void MarkRemovedIfTracked(u32 componentId, Entity entity)
+	{
+		if (m_trackedMask.test(componentId))
+		{
+			m_removedLists[componentId].push_back(entity);
+		}
+	}
+
+	void MarkDirtyRange(const ComponentMask& writeMask, const Vector<Entity>& entities)
+	{
+		for (u32 componentId = 0; componentId < k_maxComponents; ++componentId)
+		{
+			if (!writeMask.test(componentId))
+			{
+				continue;
+			}
+
+			for (Entity entity : entities)
+			{
+				MarkDirtyIfTracked(componentId, entity);
+			}
+		}
+	}
 
 	Archetype* FindOrCreateArchetype(ComponentMask mask);
 	void MoveEntity(Entity entity, Archetype* from, u32 fromRow, Archetype* to);
@@ -302,6 +441,10 @@ private:
 	std::unordered_map<ComponentMask, URef<Archetype>, ComponentMaskHash> m_archetypes;
 
 	u32 m_nextId = 1; // 0 is reserved for k_nullEntity
+
+	ComponentMask m_trackedMask;
+	Array<Vector<Entity>, k_maxComponents> m_dirtyLists;
+	Array<Vector<Entity>, k_maxComponents> m_removedLists;
 
 	// Systems — executed in registration order.
 	Vector<URef<System>> m_systems;

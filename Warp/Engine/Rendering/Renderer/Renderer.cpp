@@ -5,7 +5,6 @@
 #include <Core/ECS/Components/LightComponent.h>
 #include <Core/ECS/Components/MeshComponent.h>
 #include <Core/ECS/Components/SkyLightComponent.h>
-#include <Core/ECS/Components/StaticTransformComponent.h>
 #include <Core/ECS/Components/TransformComponent.h>
 #include <Core/ECS/World.h>
 #include <Debugging/Assert.h>
@@ -94,12 +93,94 @@ void Renderer::Init(IWindow* window, URef<Device> device)
 	LOG_DEBUG("Renderer initialized ({})", m_device->GetAPIName());
 }
 
+void Renderer::RunComputeSelfTest()
+{
+	// Not a multiple of 64, so the shader's bounds check is exercised too.
+	constexpr u32 k_count	   = 1000;
+	constexpr u32 k_multiplier = 3;
+
+	ShaderDesc csDesc;
+	csDesc.type		  = ShaderType::Compute;
+	csDesc.entryPoint = "CSMain";
+	csDesc.filePath	  = "Shaders/ComputeTest.hlsl";
+	URef<Shader> cs	  = m_device->CreateShader(csDesc);
+
+	ComputePipelineDesc psoDesc;
+	psoDesc.computeShader = cs.get();
+	psoDesc.bindings	  = {
+		{ BindingType::ConstantBuffer, 0, 1 },	   // rootIndex 0: b0 — count, multiplier
+		{ BindingType::RWStructuredBuffer, 0, 1 }, // rootIndex 1: u0 — output
+	};
+	URef<ComputePipelineState> pso = m_device->CreateComputePipelineState(psoDesc);
+
+	BufferDesc outputDesc;
+	outputDesc.type				= BufferType::Structured;
+	outputDesc.numElements		= k_count;
+	outputDesc.stride			= sizeof(u32);
+	outputDesc.name				= "ComputeTestOutput";
+	outputDesc.bUnorderedAccess = true;
+	URef<Buffer> output			= m_device->CreateBuffer(outputDesc);
+
+	BufferDesc readbackDesc		  = outputDesc;
+	readbackDesc.type			  = BufferType::Readback;
+	readbackDesc.name			  = "ComputeTestReadback";
+	readbackDesc.bUnorderedAccess = false;
+	URef<Buffer> readback		  = m_device->CreateBuffer(readbackDesc);
+
+	struct TestConstants
+	{
+		u32 count;
+		u32 multiplier;
+	};
+	const TestConstants constants = { k_count, k_multiplier };
+
+	CommandList& cmd = *m_graphicsLists[0];
+	cmd.Begin(0);
+
+	UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(TestConstants), 256);
+
+	cmd.SetComputePipelineState(pso.get());
+	cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
+	cmd.TransitionBuffer(output.get(), ResourceState::UnorderedAccess);
+	cmd.SetUnorderedAccessBuffer(1, output.get(), 0);
+	cmd.Dispatch((k_count + 63) / 64, 1, 1);
+
+	cmd.TransitionBuffer(output.get(), ResourceState::CopySource);
+	cmd.CopyBuffer(output.get(), readback.get(), 0, 0, k_count * sizeof(u32));
+	cmd.End();
+
+	m_graphicsQueue->WaitForValue(m_graphicsQueue->Submit(cmd));
+
+	const u32* values = static_cast<const u32*>(readback->Map());
+	u32 mismatches	  = 0;
+	for (u32 i = 0; i < k_count; ++i)
+	{
+		if (values[i] != i * k_multiplier)
+		{
+			++mismatches;
+		}
+	}
+	readback->Unmap();
+
+	FATAL_ASSERT(mismatches == 0, "Renderer::RunComputeSelfTest: compute output did not match");
+	LOG_DEBUG("Renderer: compute self test passed ({} values)", k_count);
+}
+
+void Renderer::WaitForGPUIdle()
+{
+	// Null before Init, so Shutdown is safe on a renderer that never started.
+	for (CommandQueue* queue : { m_graphicsQueue.get(), m_computeQueue.get(), m_copyQueue.get() })
+	{
+		if (queue)
+		{
+			queue->WaitForIdle();
+		}
+	}
+}
+
 void Renderer::Shutdown()
 {
-	if (m_device)
-	{
-		m_device->WaitForIdle();
-	}
+	WaitForGPUIdle();
 
 	ShutdownImGui();
 
@@ -167,10 +248,9 @@ void Renderer::OnResize(u32 width, u32 height)
 		return;
 	}
 
-	if (m_device)
-	{
-		m_device->WaitForIdle();
-	}
+	// The depth and GBuffer textures are released below, and the GPU may still be
+	// reading them from a frame in flight.
+	WaitForGPUIdle();
 
 	m_swapChain->Resize(width, height);
 
@@ -230,6 +310,9 @@ void Renderer::BeginFrame()
 	// Retire the oldest frame's upload-buffer slice so the ring buffer can reuse it.
 	m_uploadBuffer->OnBeginFrame();
 
+	// Safe now that this slot's fence has been waited on above.
+	m_retiredBuffers[m_frameIndex].clear();
+
 	// Reset all CPU-side per-frame allocations.
 	m_frameArena.Reset();
 
@@ -275,11 +358,17 @@ void Renderer::BeginFrame()
 	}
 
 	m_drawList.Clear();
-	m_scratchInstances.clear();
-	m_instanceKeys.clear();
-	m_shadowInstanceKeys.clear();
-	m_shadowSortedInstances.clear();
-	m_sortedInstances.clear();
+}
+
+void Renderer::SetWorld(World* world)
+{
+	m_world = world;
+	m_scene.Reset();
+	if (m_world)
+	{
+		m_world->TrackChanges<TransformComponent>();
+		m_world->TrackChanges<MeshComponent>();
+	}
 }
 
 void Renderer::Draw()
@@ -451,8 +540,8 @@ void Renderer::DrawDeferred()
 	{
 		bool hasCamera = false;
 
-		m_world->Each<TransformComponent, CameraComponent>(
-			[&](Entity entity, TransformComponent& transform, CameraComponent& camera)
+		m_world->Each<const TransformComponent, const CameraComponent>(
+			[&](Entity entity, const TransformComponent& transform, const CameraComponent& camera)
 			{
 				if (camera.isActive)
 				{
@@ -493,8 +582,8 @@ void Renderer::DrawDeferred()
 	SkyParameters skyParameters{};
 	Vector<LightInfo> skyLightInfos;
 
-	m_world->Each<TransformComponent, SkyLightComponent>(
-		[&](Entity entity, TransformComponent& transform, SkyLightComponent& skyComp)
+	m_world->Each<const TransformComponent, const SkyLightComponent>(
+		[&](Entity entity, const TransformComponent& transform, const SkyLightComponent& skyComp)
 		{
 			if (skyParameters.brightness)
 			{
@@ -565,116 +654,35 @@ void Renderer::DrawDeferred()
 	}
 
 	// ---------------------------------------------------------------------------
-	// Gather draw list and light list from the ECS (single pass each).
-	// These lists decouple the ECS from the renderer for the rest of the frame.
+	// Sync persistent instance data from the ECS, then cull it per pass. Sync only
+	// touches entities that changed; the cull walks every slot but reads only
+	// cached bounds.
 	// ---------------------------------------------------------------------------
 
+	const RenderScene::SyncStats syncStats = m_scene.Sync(*m_world, *m_resourceManager);
+	m_drawStats.dirtyTransforms			   = syncStats.dirtyTransforms;
+	m_drawStats.dirtyMeshes				   = syncStats.dirtyMeshes;
+	m_drawStats.removedMeshes			   = syncStats.removed;
+
+	m_scene.Cull(cameraFrustum, RenderFlags_Visible, m_cameraCull);
+
+	// Shadow casters are tested against the light instead, since geometry outside
+	// the view can still cast into it.
+	if (hasDirectionalShadow)
 	{
-		PROFILE_SCOPE("Gather");
-		m_world->Each<TransformComponent, MeshComponent>(
-			[&](Entity entity, TransformComponent& transform, MeshComponent& meshComp)
-			{
-				if (!meshComp.HasRenderFlag(RenderFlags_Visible))
-				{
-					return;
-				}
-
-				// Handles are resolved at assignment time, so this only reads. A mesh
-				// still uploading has a handle but no resource yet, and is skipped.
-				if (!meshComp.IsHandleValid())
-				{
-					return;
-				}
-
-				MeshResource* resource = m_resourceManager->GetMeshResourceByHandle(meshComp.meshHandle);
-				if (!resource)
-				{
-					return;
-				}
-
-				Mat4 model;
-				Mat4 modelInvTranspose;
-				BoundingBox worldBounds;
-				bool bVisibleToCamera = true;
-				bool bVisibleToShadow = false;
-				{
-					using namespace DirectX;
-					SimdMat S = XMMatrixScaling(transform.scale.x, transform.scale.y, transform.scale.z);
-					SimdMat R = XMMatrixRotationQuaternion(XMLoadFloat4(&transform.rotation));
-					SimdMat T = XMMatrixTranslation(transform.position.x, transform.position.y, transform.position.z);
-					SimdMat M = XMMatrixMultiply(XMMatrixMultiply(S, R), T);
-					XMStoreFloat4x4(&model, M);
-
-					// Bounds are model space, so they follow the transform. Refitting an
-					// AABB after rotation grows it, which costs some false positives.
-					resource->mesh->bounds.Transform(worldBounds, M);
-					bVisibleToCamera = IsVisible(cameraFrustum, worldBounds);
-
-					// Shadow casters are tested against the light instead, since geometry
-					// outside the view can still cast into it. Both frusta reject.
-					bVisibleToShadow = hasDirectionalShadow && meshComp.HasRenderFlag(RenderFlags_CastShadow) &&
-									   IsVisible(shadowFrustum, worldBounds);
-
-					++m_drawList.meshesTested;
-					if (!bVisibleToCamera)
-					{
-						++m_drawList.meshesCulled;
-					}
-
-					// When neither pass will reference the item, skip building it at all.
-					if (!bVisibleToCamera && !bVisibleToShadow)
-					{
-						return;
-					}
-
-					// Under uniform scale the inverse transpose is the rotation times 1/s,
-					// and the shader normalizes, so M itself gives the same normal. Only
-					// non-uniform scale needs the inverse, which is the expensive path.
-					constexpr f32 k_scaleEpsilon = 1e-5f;
-					const bool uniformScale		 = fabsf(transform.scale.x - transform.scale.y) < k_scaleEpsilon &&
-												   fabsf(transform.scale.y - transform.scale.z) < k_scaleEpsilon;
-
-					XMStoreFloat4x4(&modelInvTranspose,
-									uniformScale ? M : XMMatrixTranspose(XMMatrixInverse(nullptr, M)));
-				}
-
-				for (u32 submeshIndex = 0; submeshIndex < resource->mesh->submeshes.size(); ++submeshIndex)
-				{
-					Submesh& submesh = resource->mesh->submeshes[submeshIndex];
-
-					if (submesh.materialIndex < 0)
-					{
-						continue;
-					}
-
-					u64 key = (static_cast<u64>(meshComp.meshHandle) << 32) | submeshIndex;
-
-					InstanceData instance;
-					instance.model			   = model;
-					instance.modelInvTranspose = modelInvTranspose;
-					instance.boundsCenter	   = worldBounds.Center;
-					instance.boundsExtents	   = worldBounds.Extents;
-
-					if (bVisibleToCamera)
-					{
-						m_instanceKeys.push_back({ key, static_cast<u32>(m_scratchInstances.size()) });
-					}
-
-					if (bVisibleToShadow)
-					{
-						m_shadowInstanceKeys.push_back({ key, static_cast<u32>(m_scratchInstances.size()) });
-					}
-
-					m_scratchInstances.push_back(instance);
-				}
-			});
+		m_scene.Cull(shadowFrustum, static_cast<u32>(RenderFlags_Visible | RenderFlags_CastShadow), m_shadowCull);
+	}
+	else
+	{
+		m_shadowCull.indices.clear();
+		m_shadowCull.batches.clear();
 	}
 
-	m_cullStats = { m_drawList.meshesTested, m_drawList.meshesCulled };
+	m_cullStats = { m_cameraCull.tested, m_cameraCull.culled };
 
 	LightList lightList;
-	m_world->Each<TransformComponent, LightComponent>(
-		[&](Entity entity, TransformComponent& transform, LightComponent& lightComp)
+	m_world->Each<const TransformComponent, const LightComponent>(
+		[&](Entity entity, const TransformComponent& transform, const LightComponent& lightComp)
 		{
 			LightItem item;
 			item.position		= transform.position;
@@ -696,14 +704,16 @@ void Renderer::DrawDeferred()
 			}
 		});
 
-	// Sort instance keys
-	{
-		PROFILE_SCOPE("BuildBatches");
-		BuildBatches(m_instanceKeys, m_drawList.batchItems, m_sortedInstances);
-		BuildBatches(m_shadowInstanceKeys, m_drawList.shadowBatchItems, m_shadowSortedInstances);
-	}
+	BuildBatchItems(m_cameraCull, m_drawList.batchItems);
+	BuildBatchItems(m_shadowCull, m_drawList.shadowBatchItems);
 
 	m_drawStats.batches = static_cast<u32>(m_drawList.batchItems.size());
+
+	// Both passes read the same instance buffer, so it is written once up front.
+	UploadInstances(cmd);
+	UploadSlotIndices(cmd, m_cameraCull.indices, m_slotIndexBuffer, m_slotIndexCapacity, "SlotIndexBuffer");
+	UploadSlotIndices(cmd, m_shadowCull.indices, m_shadowSlotIndexBuffer, m_shadowSlotIndexCapacity,
+					  "ShadowSlotIndexBuffer");
 
 	// ---------------------------------------------------------------------------
 	// Shadow pass — render depth from each shadow-casting directional light's POV
@@ -733,9 +743,8 @@ void Renderer::DrawDeferred()
 
 		if (!m_drawList.shadowBatchItems.empty())
 		{
-			UploadResult shadowInstanceUpload = m_uploadBuffer->AllocAndCopy(
-				m_shadowSortedInstances.data(), m_shadowSortedInstances.size() * sizeof(InstanceData));
-			cmd.SetShaderResourceBuffer(0, m_uploadBuffer->GetBackingBuffer(), shadowInstanceUpload.offset);
+			cmd.SetShaderResourceBuffer(0, m_instanceBuffer.get(), 0);
+			cmd.SetShaderResourceBuffer(3, m_shadowSlotIndexBuffer.get(), 0);
 		}
 
 		for (const BatchItem& shadowCasterBatch : m_drawList.shadowBatchItems)
@@ -808,9 +817,8 @@ void Renderer::DrawDeferred()
 
 	if (!m_drawList.batchItems.empty())
 	{
-		UploadResult instancesUpload =
-			m_uploadBuffer->AllocAndCopy(m_sortedInstances.data(), m_sortedInstances.size() * sizeof(InstanceData));
-		cmd.SetShaderResourceBuffer(3, m_uploadBuffer->GetBackingBuffer(), instancesUpload.offset);
+		cmd.SetShaderResourceBuffer(3, m_instanceBuffer.get(), 0);
+		cmd.SetShaderResourceBuffer(4, m_slotIndexBuffer.get(), 0);
 	}
 
 	for (const BatchItem& item : m_drawList.batchItems)
@@ -1012,26 +1020,135 @@ void Renderer::CreateMeshPipeline()
 	LOG_DEBUG("Renderer: mesh PSO ready");
 }
 
-void Renderer::BuildBatches(Vector<InstanceSortKey>& keys, Vector<BatchItem>& outBatchItems,
-							Vector<InstanceData>& outSortedInstances)
+bool Renderer::EnsureBufferCapacity(URef<Buffer>& buffer, u32& capacity, u32 needed, u32 stride, const char* name)
+{
+	if (buffer && needed <= capacity)
+	{
+		return false;
+	}
+
+	// Geometric growth so a steadily rising instance count does not reallocate
+	// every frame.
+	u32 newCapacity = capacity > 0 ? capacity : 1024;
+	while (newCapacity < needed)
+	{
+		newCapacity *= 2;
+	}
+
+	if (buffer)
+	{
+		m_retiredBuffers[m_frameIndex].push_back(std::move(buffer));
+	}
+
+	BufferDesc desc;
+	desc.type		 = BufferType::Structured;
+	desc.numElements = newCapacity;
+	desc.stride		 = stride;
+	desc.name		 = name;
+
+	buffer	 = m_device->CreateBuffer(desc);
+	capacity = newCapacity;
+
+	LOG_DEBUG("Renderer: {} grown to {} elements", name, newCapacity);
+	return true;
+}
+
+void Renderer::UploadInstances(CommandList& cmd)
+{
+	PROFILE_SCOPE("UploadInstances");
+
+	const Vector<InstanceData>& instances = m_scene.GetInstances();
+	Vector<u32>& pending				  = m_scene.GetPendingUploads();
+	const u32 slotCount					  = static_cast<u32>(instances.size());
+
+	if (slotCount == 0)
+	{
+		m_scene.ClearUploads();
+		return;
+	}
+
+	const bool bGrown =
+		EnsureBufferCapacity(m_instanceBuffer, m_instanceCapacity, slotCount, sizeof(InstanceData), "InstanceBuffer");
+
+	// A regrown buffer starts empty. Past a quarter dirty, one big copy beats
+	// many small ones.
+	const bool bFullUpload = bGrown || pending.size() * 4 > slotCount;
+	if (!bFullUpload && pending.empty())
+	{
+		return;
+	}
+
+	Buffer* staging = m_uploadBuffer->GetBackingBuffer();
+	cmd.TransitionBuffer(m_instanceBuffer.get(), ResourceState::CopyDest);
+
+	if (bFullUpload)
+	{
+		const u64 bytes		= static_cast<u64>(slotCount) * sizeof(InstanceData);
+		UploadResult staged = m_uploadBuffer->AllocAndCopy(instances.data(), bytes);
+		cmd.CopyBuffer(staging, m_instanceBuffer.get(), staged.offset, 0, bytes);
+		m_drawStats.uploadedSlots = slotCount;
+	}
+	else
+	{
+		// One copy per run of consecutive slots.
+		std::sort(pending.begin(), pending.end());
+		for (size_t runStart = 0; runStart < pending.size();)
+		{
+			size_t runEnd = runStart + 1;
+			while (runEnd < pending.size() && pending[runEnd] == pending[runEnd - 1] + 1)
+			{
+				++runEnd;
+			}
+
+			const u32 firstSlot = pending[runStart];
+			const u64 bytes		= static_cast<u64>(runEnd - runStart) * sizeof(InstanceData);
+			UploadResult staged = m_uploadBuffer->AllocAndCopy(&instances[firstSlot], bytes);
+			cmd.CopyBuffer(staging, m_instanceBuffer.get(), staged.offset,
+						   static_cast<u64>(firstSlot) * sizeof(InstanceData), bytes);
+
+			runStart = runEnd;
+		}
+		m_drawStats.uploadedSlots = static_cast<u32>(pending.size());
+	}
+
+	cmd.TransitionBuffer(m_instanceBuffer.get(), ResourceState::ShaderResource);
+	m_scene.ClearUploads();
+}
+
+void Renderer::UploadSlotIndices(CommandList& cmd, const Vector<u32>& indices, URef<Buffer>& buffer, u32& capacity,
+								 const char* name)
+{
+	if (indices.empty())
+	{
+		return;
+	}
+
+	const u32 count = static_cast<u32>(indices.size());
+	const u64 bytes = static_cast<u64>(count) * sizeof(u32);
+
+	EnsureBufferCapacity(buffer, capacity, count, sizeof(u32), name);
+	UploadResult staged = m_uploadBuffer->AllocAndCopy(indices.data(), bytes);
+
+	cmd.TransitionBuffer(buffer.get(), ResourceState::CopyDest);
+	cmd.CopyBuffer(m_uploadBuffer->GetBackingBuffer(), buffer.get(), staged.offset, 0, bytes);
+	cmd.TransitionBuffer(buffer.get(), ResourceState::ShaderResource);
+}
+
+void Renderer::BuildBatchItems(const RenderScene::CullResult& cull, Vector<BatchItem>& outBatchItems)
 {
 	Texture* defaultTexture			= m_resourceManager->GetDefaultTexture();
 	Texture* defaultMaterialTexture = m_resourceManager->GetDefaultMaterialTexture();
 	Texture* defaultNormalTexture	= m_resourceManager->GetDefaultNormalTexture();
 
-	std::sort(keys.begin(), keys.end(),
-			  [](const InstanceSortKey& a, const InstanceSortKey& b) { return a.key < b.key; });
-
-	for (auto instanceChunk :
-		 keys | std::views::chunk_by([](const InstanceSortKey& a, const InstanceSortKey& b) { return a.key == b.key; }))
+	for (const RenderScene::VisibleBatch& visible : cull.batches)
 	{
-		const InstanceSortKey& instanceKey = *instanceChunk.begin();
+		const u64 key = m_scene.GetBatch(visible.batchIndex).key;
 
-		u32 decodedMeshHandle	= static_cast<u32>(instanceKey.key >> 32);
-		u32 decodedSubmeshIndex = static_cast<u32>(instanceKey.key & 0xFFFFFFFF);
+		u32 decodedMeshHandle	= static_cast<u32>(key >> 32);
+		u32 decodedSubmeshIndex = static_cast<u32>(key & 0xFFFFFFFF);
 
 		MeshResource* resource = m_resourceManager->GetMeshResourceByHandle(decodedMeshHandle);
-		FATAL_ASSERT(resource, "Renderer::DrawDeferred: MeshResource is invalid when sorting keys");
+		FATAL_ASSERT(resource, "Renderer::BuildBatchItems: MeshResource is invalid for a live batch");
 
 		const Submesh& submesh		  = resource->mesh->submeshes[decodedSubmeshIndex];
 		const Material& material	  = resource->mesh->materials[submesh.materialIndex];
@@ -1045,8 +1162,8 @@ void Renderer::BuildBatches(Vector<InstanceSortKey>& keys, Vector<BatchItem>& ou
 		item.indexOffset	 = submesh.indexOffset;
 		item.vertexOffset	 = submesh.vertexOffset;
 		item.emissiveFactor	 = material.emissiveFactor;
-		item.instanceCount	 = static_cast<u32>(instanceChunk.size());
-		item.instanceOffset	 = static_cast<u32>(outSortedInstances.size());
+		item.instanceCount	 = visible.count;
+		item.instanceOffset	 = visible.offset;
 
 		for (int slot = 0; slot < TextureSlot::TextureSlotCount; ++slot)
 		{
@@ -1075,11 +1192,6 @@ void Renderer::BuildBatches(Vector<InstanceSortKey>& keys, Vector<BatchItem>& ou
 		}
 
 		outBatchItems.push_back(item);
-		// add all the instance data from the chunk into the instanceChunk
-		for (const InstanceSortKey& sortKey : instanceChunk)
-		{
-			outSortedInstances.push_back(m_scratchInstances[sortKey.instanceIndex]);
-		}
 	}
 }
 
@@ -1120,12 +1232,14 @@ void Renderer::CreateDeferredGeometryPipeline()
 	meshDesc.enableBlending		  = false;
 	meshDesc.rasterState.cullMode = RasterizerState::CullMode::Back;
 	meshDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
-	meshDesc.bindings			  = { { BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — per-draw constants
-									  { BindingType::TextureTable, 0,
-										TextureSlot::TextureSlotCount },	 // rootIndex 1: t0-t4 — material textures
-									  { BindingType::ConstantBuffer, 1, 1 }, // rootIndex 2: b1 — per-view constants
-									  { BindingType::StructuredBuffer, TextureSlot::TextureSlotCount, 1 } };
-	meshDesc.samplers			  = {
+	meshDesc.bindings			  = {
+		{ BindingType::ConstantBuffer, 0, 1 },								 // rootIndex 0: b0 — per-draw constants
+		{ BindingType::TextureTable, 0, TextureSlot::TextureSlotCount },	 // rootIndex 1: t0-t4 — material textures
+		{ BindingType::ConstantBuffer, 1, 1 },								 // rootIndex 2: b1 — per-view constants
+		{ BindingType::StructuredBuffer, TextureSlot::TextureSlotCount, 1 }, // rootIndex 3: t5 — instance data
+		{ BindingType::StructuredBuffer, TextureSlot::TextureSlotCount + 1, 1 }
+	}; // rootIndex 4: t6 — slot indices
+	meshDesc.samplers = {
 		{ 0, SamplerFilter::Linear, SamplerAddressMode::Wrap },
 	};
 	m_deferredGeomPSO = m_device->CreatePipelineState(meshDesc);
@@ -1295,6 +1409,7 @@ void Renderer::InitShadowPSO()
 		{ BindingType::StructuredBuffer, 0, 1 }, // rootIndex 0: t0 — structured buffer with instance data
 		{ BindingType::ConstantBuffer, 0, 1 },	 // rootIndex 1: b0 - shadow constants
 		{ BindingType::ConstantBuffer, 1, 1 },	 // rootIndex 2: b1 — per-view lightViewProj
+		{ BindingType::StructuredBuffer, 1, 1 }, // rootIndex 3: t1 — slot indices
 	};
 
 	m_directionalShadowPSO = m_device->CreatePipelineState(desc);

@@ -116,6 +116,7 @@ enum class BindingType : u8
 	ConstantBuffer,	  // D3D12: root CBV.              Vulkan: uniform buffer.
 	TextureTable,	  // D3D12: SRV descriptor table.  Vulkan: combined image sampler array.
 	StructuredBuffer, // D3D12: root SRV.              Vulkan: storage buffer.
+	RWStructuredBuffer, // D3D12: root UAV (u register). Vulkan: storage buffer.
 };
 
 struct BindingSlot
@@ -195,6 +196,9 @@ struct PipelineDesc
 struct ComputePipelineDesc
 {
 	Shader* computeShader = nullptr;
+
+	// Same rules as PipelineDesc::bindings. The array index is the rootIndex.
+	Vector<BindingSlot> bindings;
 };
 
 // ---------------------------------------------------------------------------

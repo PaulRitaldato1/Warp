@@ -18,10 +18,8 @@ public:
 	void WaitForValue(u64 value) override;
 	u64  GetCompletedValue() const override;
 	void WaitForQueue(CommandQueue& other, u64 fenceValue) override;
+	void WaitForIdle() override;
 	void Reset() override;
-
-	// D3D12-specific
-	void WaitForIdle();
 
 	ID3D12CommandQueue* GetNative() const { return m_queue.Get(); }
 

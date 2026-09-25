@@ -17,6 +17,7 @@
 #include <Rendering/Renderer/Pipeline.h>
 #include <Rendering/Renderer/TextureUpload.h>
 #include <Renderer/DrawList.h>
+#include <Rendering/Renderer/RenderScene.h>
 
 class IWindow;
 class World;
@@ -82,6 +83,9 @@ public:
 	void Shutdown();
 	void OnResize(u32 width, u32 height);
 
+	// Blocks until every queue has finished all submitted work.
+	void WaitForGPUIdle();
+
 	// Frame loop — implemented once in Renderer.cpp using abstract types.
 	// These are not virtual: render path logic is shared across all APIs.
 	void BeginFrame();
@@ -104,10 +108,7 @@ public:
 		return m_renderPath;
 	}
 
-	void SetWorld(World* world)
-	{
-		m_world = world;
-	}
+	void SetWorld(World* world);
 
 	World* GetWorld() const
 	{
@@ -146,6 +147,12 @@ public:
 		u32 batches	  = 0;
 		u32 drawCalls = 0;
 		u32 numTris	  = 0;
+
+		// Changes since last frame, and the slots re-uploaded because of them.
+		u32 dirtyTransforms = 0;
+		u32 dirtyMeshes		= 0;
+		u32 removedMeshes	= 0;
+		u32 uploadedSlots	= 0;
 	};
 
 	CullStats GetCullStats() const
@@ -185,8 +192,23 @@ protected:
 	void InitShadowPSO();
 	void InitShadowTextures();
 
-	void BuildBatches(Vector<InstanceSortKey>& keys, Vector<BatchItem>& outBatchItems,
-					  Vector<InstanceData>& outSortedInstances);
+	// Throwaway Phase 2 check: a compute shader writes a known pattern into a UAV,
+	// the CPU reads it back and asserts. Runs once from Init.
+	void RunComputeSelfTest();
+
+	// Resolves each visible batch's buffers and textures. Per frame, since
+	// textures can finish loading after the batch was created.
+	void BuildBatchItems(const RenderScene::CullResult& cull, Vector<BatchItem>& outBatchItems);
+
+	// Copies the scene's written slots into m_instanceBuffer, or all of them after a grow.
+	void UploadInstances(CommandList& cmd);
+
+	void UploadSlotIndices(CommandList& cmd, const Vector<u32>& indices, URef<Buffer>& buffer, u32& capacity,
+						   const char* name);
+
+	// Reallocates if needed. Contents are not preserved, so callers that rely on
+	// them must rewrite after a true return.
+	bool EnsureBufferCapacity(URef<Buffer>& buffer, u32& capacity, u32 needed, u32 stride, const char* name);
 
 	// How many frames the CPU is allowed to run ahead of the GPU.
 	// Controls the number of command allocator slots, upload buffer slices,
@@ -196,9 +218,8 @@ protected:
 	// Swap chain back buffers — independent of k_framesInFlight.
 	static constexpr u32 k_backBufferCount = 2;
 
-	// Split k_framesInFlight ways. At 100k instances the camera and shadow arrays
-	// are 16 MB each per frame, so a tab needs ~32 MB. Phase 5's persistent buffer
-	// removes instance data from here entirely.
+	// Split k_framesInFlight ways. Instance data only passes through here when it
+	// changes, but a full upload after a grow is 16 MB at 100k instances.
 	static constexpr u64 k_uploadHeapSize = 128 * 1024 * 1024; // 128 MB
 	static constexpr u64 k_frameArenaSize = 4 * 1024 * 1024;  //  4 MB
 
@@ -255,6 +276,22 @@ protected:
 	// Use for transient per-frame structures (draw lists, sort keys, etc.).
 	Arena m_frameArena{ k_frameArenaSize };
 
+	// GPU copy of RenderScene's instances, indexed by slot. Shared by both passes,
+	// written only where slots changed, and grown on demand rather than capped.
+	URef<Buffer> m_instanceBuffer;
+	u32 m_instanceCapacity = 0;
+
+	// Visible slot indices per pass, rebuilt by the cull every frame.
+	URef<Buffer> m_slotIndexBuffer;
+	URef<Buffer> m_shadowSlotIndexBuffer;
+	u32 m_slotIndexCapacity		  = 0;
+	u32 m_shadowSlotIndexCapacity = 0;
+
+	// Buffers replaced by a grow, parked in the frame slot that was current when
+	// they were retired. BeginFrame waits on that slot's fence before clearing it,
+	// so the GPU is provably finished with them.
+	Array<Vector<URef<Buffer>>, k_framesInFlight> m_retiredBuffers;
+
 	// GPU-visible ring buffer: OnBeginFrame() retires the oldest frame's slice.
 	// Use for constant buffer data (transforms, material params, light data).
 	URef<UploadBuffer> m_uploadBuffer;
@@ -308,11 +345,9 @@ protected:
 
 	DrawList m_drawList;
 
-	Vector<InstanceData> m_scratchInstances;
-	Vector<InstanceSortKey> m_instanceKeys;
-	Vector<InstanceSortKey> m_shadowInstanceKeys;
-	Vector<InstanceData> m_sortedInstances;
-	Vector<InstanceData> m_shadowSortedInstances;
+	RenderScene m_scene;
+	RenderScene::CullResult m_cameraCull;
+	RenderScene::CullResult m_shadowCull;
 
 public:
 	// Queue a staging upload for the Renderer to process.

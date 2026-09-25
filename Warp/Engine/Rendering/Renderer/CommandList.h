@@ -85,6 +85,7 @@ public:
 	virtual void TransitionBuffer(Buffer* buffer, ResourceState newState) = 0;
 
 	// Resource binding — rootIndex maps to D3D12 root parameter / Vulkan set+binding.
+	// Binds go to whichever of the graphics or compute pipeline was set last.
 	// SetConstantBuffer: binds a Buffer as a CBV (b register).
 	// SetShaderResource: binds a Texture as an SRV (t register).
 	// NOTE: full bindless/descriptor-heap management is a future feature.
@@ -108,6 +109,10 @@ public:
 	// D3D12: SetGraphicsRootShaderResourceView.  Vulkan: push descriptor SSBO bind.
 	// Use for StructuredBuffer<T> in HLSL.
 	virtual void SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 offset) = 0;
+
+	// Bind a buffer as a RWStructuredBuffer UAV at rootIndex. The buffer must be
+	// created with BufferDesc::bUnorderedAccess and be in UnorderedAccess state.
+	virtual void SetUnorderedAccessBuffer(u32 rootIndex, Buffer* buffer, u64 offset) = 0;
 
 	// ---------------------------------------------------------------------------
 	// Copy / transfer

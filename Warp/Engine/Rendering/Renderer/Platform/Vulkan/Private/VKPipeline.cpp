@@ -8,6 +8,168 @@
 #include <Renderer/DxcCommon.h>
 
 // ---------------------------------------------------------------------------
+// Descriptor set layout, shared by graphics and compute.
+//
+// Each BindingSlot maps to one or more Vulkan bindings at shift + HLSL register,
+// matching the -fvk-*-shift arguments DXC compiles with:
+//   ConstantBuffer     → 1 UBO binding
+//   TextureTable       → N sampled image bindings
+//   StructuredBuffer   → 1 SSBO binding (t shift)
+//   RWStructuredBuffer → 1 SSBO binding (u shift)
+//   Samplers           → immutable, one binding each
+// ---------------------------------------------------------------------------
+
+static void BuildDescriptorSetLayout(VkDevice device, const Vector<BindingSlot>& bindings,
+									 const Vector<SamplerDesc>& samplers, VkShaderStageFlags stages,
+									 VkDescriptorSetLayout& outLayout, Vector<u32>& outRootToBinding,
+									 Vector<VkSampler>& outSamplers)
+{
+	Vector<VkDescriptorSetLayoutBinding> vkBindings;
+	outRootToBinding.resize(bindings.size());
+	u32 vulkanBindingIndex = 0;
+
+	for (u32 rootIndex = 0; rootIndex < static_cast<u32>(bindings.size()); ++rootIndex)
+	{
+		const BindingSlot& slot = bindings[rootIndex];
+
+		switch (slot.type)
+		{
+			case BindingType::ConstantBuffer:
+			{
+				vulkanBindingIndex = slot.shaderRegister + Warp::Dxc::VkBindingShift::B;
+				VkDescriptorSetLayoutBinding binding = {};
+				binding.binding						 = vulkanBindingIndex;
+				binding.descriptorType				 = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+				binding.descriptorCount				 = 1;
+				binding.stageFlags					 = stages;
+				vkBindings.push_back(binding);
+				break;
+			}
+			case BindingType::TextureTable:
+			{
+				vulkanBindingIndex = slot.shaderRegister + Warp::Dxc::VkBindingShift::T;
+				for (u32 texIndex = 0; texIndex < slot.count; ++texIndex)
+				{
+					VkDescriptorSetLayoutBinding binding = {};
+					binding.binding						 = vulkanBindingIndex + texIndex;
+					binding.descriptorType				 = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+					binding.descriptorCount				 = 1;
+					binding.stageFlags					 = stages;
+					vkBindings.push_back(binding);
+				}
+				break;
+			}
+			case BindingType::StructuredBuffer:
+			case BindingType::RWStructuredBuffer:
+			{
+				// Both are storage buffers to Vulkan. Only the register class differs.
+				const u32 shift = slot.type == BindingType::StructuredBuffer ? Warp::Dxc::VkBindingShift::T
+																			 : Warp::Dxc::VkBindingShift::U;
+				vulkanBindingIndex = slot.shaderRegister + shift;
+				VkDescriptorSetLayoutBinding binding = {};
+				binding.binding						 = vulkanBindingIndex;
+				binding.descriptorType				 = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+				binding.descriptorCount				 = 1;
+				binding.stageFlags					 = stages;
+				vkBindings.push_back(binding);
+				break;
+			}
+		}
+
+		outRootToBinding[rootIndex] = vulkanBindingIndex;
+	}
+
+	// Reserved up front: each binding points into this vector.
+	outSamplers.reserve(samplers.size());
+
+	for (const SamplerDesc& samplerDesc : samplers)
+	{
+		VkSamplerCreateInfo samplerCreateInfo{};
+		samplerCreateInfo.maxLod		   = VK_LOD_CLAMP_NONE;
+		samplerCreateInfo.borderColor	   = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+		samplerCreateInfo.anisotropyEnable = VK_FALSE;
+		samplerCreateInfo.sType			   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+		switch (samplerDesc.filter)
+		{
+			case SamplerFilter::Linear:
+			{
+				samplerCreateInfo.magFilter	 = VK_FILTER_LINEAR;
+				samplerCreateInfo.minFilter	 = VK_FILTER_LINEAR;
+				samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+				break;
+			}
+			case SamplerFilter::ComparisonLinear:
+			{
+				samplerCreateInfo.magFilter		= VK_FILTER_LINEAR;
+				samplerCreateInfo.minFilter		= VK_FILTER_LINEAR;
+				samplerCreateInfo.compareEnable = VK_TRUE;
+				samplerCreateInfo.compareOp		= VK_COMPARE_OP_LESS_OR_EQUAL;
+				samplerCreateInfo.mipmapMode	= VK_SAMPLER_MIPMAP_MODE_NEAREST;
+				break;
+			}
+			case SamplerFilter::Point:
+			{
+				samplerCreateInfo.magFilter	 = VK_FILTER_NEAREST;
+				samplerCreateInfo.minFilter	 = VK_FILTER_NEAREST;
+				samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+				break;
+			}
+		}
+
+		switch (samplerDesc.addressMode)
+		{
+			case SamplerAddressMode::Border:
+			{
+				samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+				samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+				samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+				break;
+			}
+			case SamplerAddressMode::Clamp:
+			{
+				samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+				samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+				samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+				break;
+			}
+			case SamplerAddressMode::Wrap:
+			{
+				samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+				samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+				samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+				break;
+			}
+		}
+
+		VkSampler sampler{};
+
+		VK_CHECK(vkCreateSampler(device, &samplerCreateInfo, nullptr, &sampler),
+				 "BuildDescriptorSetLayout: vkCreateSampler failed");
+
+		outSamplers.push_back(sampler);
+
+		VkDescriptorSetLayoutBinding binding = {};
+		binding.binding						 = samplerDesc.shaderRegister + Warp::Dxc::VkBindingShift::S;
+		binding.descriptorType				 = VK_DESCRIPTOR_TYPE_SAMPLER;
+		binding.descriptorCount				 = 1;
+		binding.stageFlags					 = stages;
+		binding.pImmutableSamplers			 = &outSamplers.back();
+		vkBindings.push_back(binding);
+	}
+
+	VkDescriptorSetLayoutCreateInfo setLayoutInfo = {};
+	setLayoutInfo.sType							  = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	setLayoutInfo.flags							  = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+	setLayoutInfo.bindingCount					  = static_cast<u32>(vkBindings.size());
+	setLayoutInfo.pBindings						  = vkBindings.data();
+
+	VK_CHECK(vkCreateDescriptorSetLayout(device, &setLayoutInfo, nullptr, &outLayout),
+			 "BuildDescriptorSetLayout: vkCreateDescriptorSetLayout failed");
+}
+
+// ---------------------------------------------------------------------------
 // VKPipeline — graphics PSO with dynamic rendering
 // ---------------------------------------------------------------------------
 
@@ -215,161 +377,8 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	dynamicState.dynamicStateCount				  = 2;
 	dynamicState.pDynamicStates					  = dynamicStates;
 
-	// -------------------------------------------------------------------------
-	// Descriptor set layout — built from PipelineDesc::bindings.
-	//
-	// Each BindingSlot maps to one or more sequential Vulkan bindings:
-	//   ConstantBuffer   → 1 UBO binding
-	//   TextureTable     → N combined-image-sampler bindings
-	//   StructuredBuffer → 1 SSBO binding
-	//   Sampler
-	// -------------------------------------------------------------------------
-
-	{
-		Vector<VkDescriptorSetLayoutBinding> vkBindings;
-		m_rootToVulkanBinding.resize(desc.bindings.size());
-		u32 vulkanBindingIndex = 0;
-
-		for (u32 rootIndex = 0; rootIndex < static_cast<u32>(desc.bindings.size()); ++rootIndex)
-		{
-			const BindingSlot& slot = desc.bindings[rootIndex];
-
-			switch (slot.type)
-			{
-				case BindingType::ConstantBuffer:
-				{
-					vulkanBindingIndex =
-						slot.shaderRegister + Warp::Dxc::VkBindingShift::B; /*CB offset to match HLSL output from DXC*/
-					VkDescriptorSetLayoutBinding binding = {};
-					binding.binding						 = vulkanBindingIndex;
-					binding.descriptorType				 = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-					binding.descriptorCount				 = 1;
-					binding.stageFlags					 = VK_SHADER_STAGE_ALL_GRAPHICS;
-					vkBindings.push_back(binding);
-					break;
-				}
-				case BindingType::TextureTable:
-				{
-					vulkanBindingIndex =
-						slot.shaderRegister +
-						Warp::Dxc::VkBindingShift::T; /*Texture/SRV offset to match HLSL output from DXC*/
-					for (u32 texIndex = 0; texIndex < slot.count; ++texIndex)
-					{
-						VkDescriptorSetLayoutBinding binding = {};
-						binding.binding						 = vulkanBindingIndex + texIndex;
-						binding.descriptorType				 = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-						binding.descriptorCount				 = 1;
-						binding.stageFlags					 = VK_SHADER_STAGE_ALL_GRAPHICS;
-						vkBindings.push_back(binding);
-					}
-					break;
-				}
-				case BindingType::StructuredBuffer:
-				{
-					vulkanBindingIndex =
-						slot.shaderRegister +
-						Warp::Dxc::VkBindingShift::T; /*Texture/SRV offset to match HLSL output from DXC*/
-					VkDescriptorSetLayoutBinding binding = {};
-					binding.binding						 = vulkanBindingIndex;
-					binding.descriptorType				 = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-					binding.descriptorCount				 = 1;
-					binding.stageFlags					 = VK_SHADER_STAGE_ALL_GRAPHICS;
-					vkBindings.push_back(binding);
-					break;
-				}
-			}
-
-			m_rootToVulkanBinding[rootIndex] = vulkanBindingIndex;
-		}
-
-		m_samplers.reserve(desc.samplers.size());
-
-		for (const SamplerDesc& samplerDesc : desc.samplers)
-		{
-			VkSamplerCreateInfo samplerCreateInfo{};
-			samplerCreateInfo.maxLod		   = VK_LOD_CLAMP_NONE;
-			samplerCreateInfo.borderColor	   = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-			samplerCreateInfo.anisotropyEnable = VK_FALSE;
-			samplerCreateInfo.sType			   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-
-			switch (samplerDesc.filter)
-			{
-				case SamplerFilter::Linear:
-				{
-					samplerCreateInfo.magFilter	 = VK_FILTER_LINEAR;
-					samplerCreateInfo.minFilter	 = VK_FILTER_LINEAR;
-					samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-
-					break;
-				}
-				case SamplerFilter::ComparisonLinear:
-				{
-					samplerCreateInfo.magFilter		= VK_FILTER_LINEAR;
-					samplerCreateInfo.minFilter		= VK_FILTER_LINEAR;
-					samplerCreateInfo.compareEnable = VK_TRUE;
-					samplerCreateInfo.compareOp		= VK_COMPARE_OP_LESS_OR_EQUAL;
-					samplerCreateInfo.mipmapMode	= VK_SAMPLER_MIPMAP_MODE_NEAREST;
-					break;
-				}
-				case SamplerFilter::Point:
-				{
-					samplerCreateInfo.magFilter	 = VK_FILTER_NEAREST;
-					samplerCreateInfo.minFilter	 = VK_FILTER_NEAREST;
-					samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-					break;
-				}
-			}
-
-			switch (samplerDesc.addressMode)
-			{
-				case SamplerAddressMode::Border:
-				{
-					samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-					samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-					samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-					break;
-				}
-				case SamplerAddressMode::Clamp:
-				{
-					samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-					samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-					samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-					break;
-				}
-				case SamplerAddressMode::Wrap:
-				{
-					samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-					samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-					samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-					break;
-				}
-			}
-
-			VkSampler sampler{};
-
-			VK_CHECK(vkCreateSampler(m_device, &samplerCreateInfo, nullptr, &sampler),
-					 "VKPipeline: vkCreateSampler failed");
-
-			m_samplers.push_back(sampler);
-
-			VkDescriptorSetLayoutBinding binding = {};
-			binding.binding						 = samplerDesc.shaderRegister + Warp::Dxc::VkBindingShift::S;
-			binding.descriptorType				 = VK_DESCRIPTOR_TYPE_SAMPLER;
-			binding.descriptorCount				 = 1;
-			binding.stageFlags					 = VK_SHADER_STAGE_ALL_GRAPHICS;
-			binding.pImmutableSamplers			 = &m_samplers.back();
-			vkBindings.push_back(binding);
-		}
-
-		VkDescriptorSetLayoutCreateInfo setLayoutInfo = {};
-		setLayoutInfo.sType							  = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		setLayoutInfo.flags							  = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-		setLayoutInfo.bindingCount					  = static_cast<u32>(vkBindings.size());
-		setLayoutInfo.pBindings						  = vkBindings.data();
-
-		VK_CHECK(vkCreateDescriptorSetLayout(m_device, &setLayoutInfo, nullptr, &m_descriptorSetLayout),
-				 "VKPipeline: vkCreateDescriptorSetLayout failed");
-	}
+	BuildDescriptorSetLayout(m_device, desc.bindings, desc.samplers, VK_SHADER_STAGE_ALL_GRAPHICS,
+							 m_descriptorSetLayout, m_rootToVulkanBinding, m_samplers);
 
 	// -------------------------------------------------------------------------
 	// Pipeline layout
@@ -476,8 +485,14 @@ void VKComputePipeline::Initialize(const ComputePipelineDesc& desc)
 	DYNAMIC_ASSERT(desc.computeShader, "VKComputePipeline: computeShader is null");
 	VKShader* cs = static_cast<VKShader*>(desc.computeShader);
 
+	Vector<VkSampler> noSamplers;
+	BuildDescriptorSetLayout(m_device, desc.bindings, {}, VK_SHADER_STAGE_COMPUTE_BIT, m_descriptorSetLayout,
+							 m_rootToVulkanBinding, noSamplers);
+
 	VkPipelineLayoutCreateInfo layoutInfo = {};
 	layoutInfo.sType					  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	layoutInfo.setLayoutCount			  = 1;
+	layoutInfo.pSetLayouts				  = &m_descriptorSetLayout;
 	VK_CHECK(vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_layout),
 			 "VKComputePipeline: vkCreatePipelineLayout failed");
 
@@ -504,6 +519,11 @@ void VKComputePipeline::Cleanup()
 	{
 		vkDestroyPipelineLayout(m_device, m_layout, nullptr);
 		m_layout = VK_NULL_HANDLE;
+	}
+	if (m_descriptorSetLayout != VK_NULL_HANDLE)
+	{
+		vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
+		m_descriptorSetLayout = VK_NULL_HANDLE;
 	}
 }
 

@@ -35,6 +35,10 @@ public:
 	// Returns the latest fence value the GPU has completed (non-blocking).
 	virtual u64  GetCompletedValue() const = 0;
 
+	// Block the CPU until everything submitted to this queue has finished.
+	// Covers this queue only; Renderer::WaitForGPUIdle waits on all of them.
+	virtual void WaitForIdle()             = 0;
+
 	// GPU-side wait: this queue will not start executing subsequent work
 	// until the other queue's fence reaches the given value.
 	// Does NOT stall the CPU — only inserts a GPU dependency.

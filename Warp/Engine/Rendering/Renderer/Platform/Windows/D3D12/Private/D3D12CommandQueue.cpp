@@ -70,6 +70,8 @@ void D3D12CommandQueue::Reset()
 void D3D12CommandQueue::WaitForIdle()
 {
 	DYNAMIC_ASSERT(m_fence, "D3D12CommandQueue::WaitForIdle: fence not initialized");
+
+	// Every Submit signals, so the last signaled value covers all submitted work.
 	m_fence->WaitForValue(m_fence->GetNextValue() - 1);
 }
 

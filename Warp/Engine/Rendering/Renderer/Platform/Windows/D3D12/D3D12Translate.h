@@ -101,6 +101,8 @@ inline D3D12_RESOURCE_STATES ToD3D12ResourceState(ResourceState state)
 			       D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 		case ResourceState::UnorderedAccess:
 			return D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+		case ResourceState::IndirectArgument:
+			return D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
 		case ResourceState::RenderTarget:
 			return D3D12_RESOURCE_STATE_RENDER_TARGET;
 		case ResourceState::DepthWrite:
