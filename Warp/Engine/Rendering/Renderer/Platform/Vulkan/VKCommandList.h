@@ -106,6 +106,7 @@ public:
 	void DrawIndexed(u32 indexCount, u32 instanceCount = 1,
 	                 u32 firstIndex = 0, u32 baseVertex = 0,
 	                 u32 firstInstance = 0)               override;
+	void DrawIndexedIndirect(Buffer* argsBuffer, u64 offset, u32 drawCount = 1) override;
 	void Dispatch(u32 x, u32 y, u32 z)                   override;
 
 	VkCommandBuffer GetNative() const { return m_cmdBuf; }

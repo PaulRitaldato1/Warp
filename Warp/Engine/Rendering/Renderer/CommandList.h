@@ -5,8 +5,23 @@
 #include <Rendering/Renderer/ResourceState.h>
 #include <Rendering/Renderer/DescriptorHandle.h>
 
+#include <cstddef>
+
 class Buffer;
 class Texture;
+
+// One indirect draw record. Matches D3D12_DRAW_INDEXED_ARGUMENTS and
+// VkDrawIndexedIndirectCommand field for field, so both backends read it as is.
+struct DrawIndexedArgs
+{
+	u32 indexCount	   = 0;
+	u32 instanceCount  = 0;
+	u32 firstIndex	   = 0;
+	int32 baseVertex   = 0; // signed in both APIs
+	u32 firstInstance  = 0; // keep 0, see instanceOffset in the shaders
+};
+static_assert(sizeof(DrawIndexedArgs) == 20, "DrawIndexedArgs must match the native indirect layouts");
+static_assert(offsetof(DrawIndexedArgs, instanceCount) == 4, "instanceCount must stay at byte 4");
 
 class CommandList
 {
@@ -139,6 +154,10 @@ public:
 	virtual void DrawIndexed(u32 indexCount, u32 instanceCount = 1,
 	                         u32 firstIndex = 0, u32 baseVertex = 0,
 	                         u32 firstInstance = 0) = 0;
+
+	// Reads drawCount DrawIndexedArgs records from argsBuffer, starting at a byte
+	// offset. The buffer must be in IndirectArgument state.
+	virtual void DrawIndexedIndirect(Buffer* argsBuffer, u64 offset, u32 drawCount = 1) = 0;
 
 	virtual void Dispatch(u32 groupCountX, u32 groupCountY, u32 groupCountZ) = 0;
 };

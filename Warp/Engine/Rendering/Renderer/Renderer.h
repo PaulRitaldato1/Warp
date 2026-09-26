@@ -206,6 +206,10 @@ protected:
 	void UploadSlotIndices(CommandList& cmd, const Vector<u32>& indices, URef<Buffer>& buffer, u32& capacity,
 						   const char* name);
 
+	// Writes one DrawIndexedArgs per batch and leaves the buffer in IndirectArgument.
+	void UploadDrawArgs(CommandList& cmd, const Vector<BatchItem>& batchItems, Vector<DrawIndexedArgs>& scratch,
+						URef<Buffer>& buffer, u32& capacity, const char* name);
+
 	// Reallocates if needed. Contents are not preserved, so callers that rely on
 	// them must rewrite after a true return.
 	bool EnsureBufferCapacity(URef<Buffer>& buffer, u32& capacity, u32 needed, u32 stride, const char* name);
@@ -286,6 +290,14 @@ protected:
 	URef<Buffer> m_shadowSlotIndexBuffer;
 	u32 m_slotIndexCapacity		  = 0;
 	u32 m_shadowSlotIndexCapacity = 0;
+
+	// Indirect draw records, one per batch in draw order.
+	URef<Buffer> m_drawArgsBuffer;
+	URef<Buffer> m_shadowDrawArgsBuffer;
+	u32 m_drawArgsCapacity		 = 0;
+	u32 m_shadowDrawArgsCapacity = 0;
+	Vector<DrawIndexedArgs> m_drawArgs;
+	Vector<DrawIndexedArgs> m_shadowDrawArgs;
 
 	// Buffers replaced by a grow, parked in the frame slot that was current when
 	// they were retired. BeginFrame waits on that slot's fence before clearing it,

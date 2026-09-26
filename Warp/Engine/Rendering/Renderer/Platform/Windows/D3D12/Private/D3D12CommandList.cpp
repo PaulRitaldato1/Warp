@@ -452,6 +452,18 @@ void D3D12CommandList::DrawIndexed(u32 indexCount, u32 instanceCount,
 	                              static_cast<INT>(baseVertex), firstInstance);
 }
 
+void D3D12CommandList::DrawIndexedIndirect(Buffer* argsBuffer, u64 offset, u32 drawCount)
+{
+	DYNAMIC_ASSERT(argsBuffer, "D3D12CommandList::DrawIndexedIndirect: argsBuffer is null");
+	DYNAMIC_ASSERT(m_drawIndexedSignature,
+				   "D3D12CommandList::DrawIndexedIndirect: no command signature, only graphics lists get one");
+
+	D3D12Buffer* d3dArgs = static_cast<D3D12Buffer*>(argsBuffer);
+
+	// No count buffer, so drawCount is exact.
+	m_list->ExecuteIndirect(m_drawIndexedSignature, drawCount, d3dArgs->GetNativeResource(), offset, nullptr, 0);
+}
+
 void D3D12CommandList::Dispatch(u32 x, u32 y, u32 z)
 {
 	m_list->Dispatch(x, y, z);

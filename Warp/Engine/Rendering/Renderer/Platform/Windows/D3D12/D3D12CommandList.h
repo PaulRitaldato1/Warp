@@ -67,6 +67,7 @@ public:
 	void DrawIndexed(u32 indexCount, u32 instanceCount = 1,
 	                 u32 firstIndex = 0, u32 baseVertex = 0,
 	                 u32 firstInstance = 0) override;
+	void DrawIndexedIndirect(Buffer* argsBuffer, u64 offset, u32 drawCount = 1) override;
 	void Dispatch(u32 x, u32 y, u32 z) override;
 
 	ID3D12GraphicsCommandList* GetNative() const { return m_list.Get(); }
@@ -76,6 +77,7 @@ public:
 	// The heap is bound via SetDescriptorHeaps at the start of every Begin().
 	void SetDevice(ID3D12Device*       device) { m_device  = device; }
 	void SetSRVHeap(D3D12DescriptorHeap* heap) { m_srvHeap = heap;   }
+	void SetDrawIndexedSignature(ID3D12CommandSignature* signature) { m_drawIndexedSignature = signature; }
 
 private:
 	void BindRootCBV(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS address);
@@ -91,6 +93,7 @@ private:
 	// Non-owning — lifetime managed by D3D12Device.
 	ID3D12Device*      m_device  = nullptr;
 	D3D12DescriptorHeap* m_srvHeap = nullptr;
+	ID3D12CommandSignature* m_drawIndexedSignature = nullptr;
 };
 
 #endif

@@ -50,6 +50,9 @@ private:
 
 	// Shader-visible CBV/SRV/UAV heap shared by all graphics command lists.
 	D3D12DescriptorHeap m_srvHeap;
+
+	// Created once and shared by every graphics command list's DrawIndexedIndirect.
+	ComRef<ID3D12CommandSignature> m_drawIndexedSignature;
 };
 
 #endif

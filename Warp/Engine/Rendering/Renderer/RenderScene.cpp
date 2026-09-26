@@ -260,8 +260,7 @@ void RenderScene::WriteInstance(u32 slot, const TransformComponent& transform, c
 	instance.boundsCenter  = bounds.Center;
 	instance.boundsExtents = bounds.Extents;
 
-	// Unused until Phase 6, where the cull shader needs to know which batches to
-	// append to without the CPU.
+	// Not read by any shader yet.
 	instance.batchStart = info.batchStart;
 	instance.batchInfo	= (info.batchCount & 0xFFFF) | (info.renderFlags << 16);
 

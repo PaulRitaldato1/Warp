@@ -72,6 +72,20 @@ void D3D12Device::Initialize(const DeviceDesc& desc)
 	}
 
 	m_srvHeap.Initialize(m_device.Get(), desc.srvHeapCapacity, desc.framesInFlight);
+
+	// Describes one indirect record as a plain indexed draw. No root signature
+	// needed, since the record changes no root arguments.
+	D3D12_INDIRECT_ARGUMENT_DESC argDesc = {};
+	argDesc.Type						 = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED;
+
+	D3D12_COMMAND_SIGNATURE_DESC signatureDesc = {};
+	signatureDesc.ByteStride				   = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
+	signatureDesc.NumArgumentDescs			   = 1;
+	signatureDesc.pArgumentDescs			   = &argDesc;
+
+	static_assert(sizeof(D3D12_DRAW_INDEXED_ARGUMENTS) == sizeof(DrawIndexedArgs),
+				  "DrawIndexedArgs must match D3D12_DRAW_INDEXED_ARGUMENTS");
+	ThrowIfFailed(m_device->CreateCommandSignature(&signatureDesc, nullptr, IID_PPV_ARGS(&m_drawIndexedSignature)));
 }
 
 static D3D12_COMMAND_LIST_TYPE ToD3D12QueueType(CommandQueueType type)
@@ -122,6 +136,7 @@ URef<CommandList> D3D12Device::CreateCommandList(CommandQueueType type, u32 fram
 	{
 		list->SetDevice(m_device.Get());
 		list->SetSRVHeap(&m_srvHeap);
+		list->SetDrawIndexedSignature(m_drawIndexedSignature.Get());
 	}
 
 	return list;

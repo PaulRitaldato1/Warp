@@ -715,6 +715,11 @@ void Renderer::DrawDeferred()
 	UploadSlotIndices(cmd, m_shadowCull.indices, m_shadowSlotIndexBuffer, m_shadowSlotIndexCapacity,
 					  "ShadowSlotIndexBuffer");
 
+	// One args record per batch, in draw order, so batch i draws from byte i * 20.
+	UploadDrawArgs(cmd, m_drawList.batchItems, m_drawArgs, m_drawArgsBuffer, m_drawArgsCapacity, "DrawArgsBuffer");
+	UploadDrawArgs(cmd, m_drawList.shadowBatchItems, m_shadowDrawArgs, m_shadowDrawArgsBuffer,
+				   m_shadowDrawArgsCapacity, "ShadowDrawArgsBuffer");
+
 	// ---------------------------------------------------------------------------
 	// Shadow pass — render depth from each shadow-casting directional light's POV
 	// ---------------------------------------------------------------------------
@@ -747,8 +752,9 @@ void Renderer::DrawDeferred()
 			cmd.SetShaderResourceBuffer(3, m_shadowSlotIndexBuffer.get(), 0);
 		}
 
-		for (const BatchItem& shadowCasterBatch : m_drawList.shadowBatchItems)
+		for (u32 batchIndex = 0; batchIndex < static_cast<u32>(m_drawList.shadowBatchItems.size()); ++batchIndex)
 		{
+			const BatchItem& shadowCasterBatch = m_drawList.shadowBatchItems[batchIndex];
 
 			ShadowDrawConstants shadowBatchConstants;
 			shadowBatchConstants.instanceOffset = shadowCasterBatch.instanceOffset;
@@ -765,8 +771,7 @@ void Renderer::DrawDeferred()
 			++m_drawStats.drawCalls;
 			m_drawStats.numTris += (shadowCasterBatch.indexCount / 3) * shadowCasterBatch.instanceCount;
 
-			cmd.DrawIndexed(shadowCasterBatch.indexCount, shadowCasterBatch.instanceCount,
-							shadowCasterBatch.indexOffset, shadowCasterBatch.vertexOffset, 0);
+			cmd.DrawIndexedIndirect(m_shadowDrawArgsBuffer.get(), batchIndex * sizeof(DrawIndexedArgs));
 		}
 	}
 	// Transition shadow map for later use in the lighting pass.
@@ -821,8 +826,10 @@ void Renderer::DrawDeferred()
 		cmd.SetShaderResourceBuffer(4, m_slotIndexBuffer.get(), 0);
 	}
 
-	for (const BatchItem& item : m_drawList.batchItems)
+	for (u32 batchIndex = 0; batchIndex < static_cast<u32>(m_drawList.batchItems.size()); ++batchIndex)
 	{
+		const BatchItem& item = m_drawList.batchItems[batchIndex];
+
 		PerBatchConstants batchConstants;
 		batchConstants.emissiveFactor = item.emissiveFactor;
 		batchConstants.instanceOffset = item.instanceOffset;
@@ -840,7 +847,7 @@ void Renderer::DrawDeferred()
 		++m_drawStats.drawCalls;
 		m_drawStats.numTris += (item.indexCount / 3) * item.instanceCount;
 
-		cmd.DrawIndexed(item.indexCount, item.instanceCount, item.indexOffset, item.vertexOffset, 0);
+		cmd.DrawIndexedIndirect(m_drawArgsBuffer.get(), batchIndex * sizeof(DrawIndexedArgs));
 	}
 
 	Warp::Debugging::GPUMarker::EndEvent(&cmd);
@@ -1132,6 +1139,38 @@ void Renderer::UploadSlotIndices(CommandList& cmd, const Vector<u32>& indices, U
 	cmd.TransitionBuffer(buffer.get(), ResourceState::CopyDest);
 	cmd.CopyBuffer(m_uploadBuffer->GetBackingBuffer(), buffer.get(), staged.offset, 0, bytes);
 	cmd.TransitionBuffer(buffer.get(), ResourceState::ShaderResource);
+}
+
+void Renderer::UploadDrawArgs(CommandList& cmd, const Vector<BatchItem>& batchItems, Vector<DrawIndexedArgs>& scratch,
+							  URef<Buffer>& buffer, u32& capacity, const char* name)
+{
+	if (batchItems.empty())
+	{
+		return;
+	}
+
+	// The same values DrawIndexed took.
+	scratch.clear();
+	for (const BatchItem& item : batchItems)
+	{
+		DrawIndexedArgs args;
+		args.indexCount	   = item.indexCount;
+		args.instanceCount = item.instanceCount;
+		args.firstIndex	   = item.indexOffset;
+		args.baseVertex	   = static_cast<int32>(item.vertexOffset);
+		args.firstInstance = 0;
+		scratch.push_back(args);
+	}
+
+	const u32 count = static_cast<u32>(scratch.size());
+	const u64 bytes = static_cast<u64>(count) * sizeof(DrawIndexedArgs);
+
+	EnsureBufferCapacity(buffer, capacity, count, sizeof(DrawIndexedArgs), name);
+	UploadResult staged = m_uploadBuffer->AllocAndCopy(scratch.data(), bytes);
+
+	cmd.TransitionBuffer(buffer.get(), ResourceState::CopyDest);
+	cmd.CopyBuffer(m_uploadBuffer->GetBackingBuffer(), buffer.get(), staged.offset, 0, bytes);
+	cmd.TransitionBuffer(buffer.get(), ResourceState::IndirectArgument);
 }
 
 void Renderer::BuildBatchItems(const RenderScene::CullResult& cull, Vector<BatchItem>& outBatchItems)

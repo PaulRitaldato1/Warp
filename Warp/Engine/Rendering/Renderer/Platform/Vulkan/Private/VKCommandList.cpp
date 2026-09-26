@@ -728,6 +728,19 @@ void VKCommandList::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstInde
 	vkCmdDrawIndexed(m_cmdBuf, indexCount, instanceCount, firstIndex, static_cast<int32_t>(baseVertex), firstInstance);
 }
 
+void VKCommandList::DrawIndexedIndirect(Buffer* argsBuffer, u64 offset, u32 drawCount)
+{
+	DYNAMIC_ASSERT(argsBuffer, "VKCommandList::DrawIndexedIndirect: argsBuffer is null");
+	DYNAMIC_ASSERT(offset % 4 == 0, "VKCommandList::DrawIndexedIndirect: offset must be a multiple of 4");
+
+	static_assert(sizeof(VkDrawIndexedIndirectCommand) == sizeof(DrawIndexedArgs),
+				  "DrawIndexedArgs must match VkDrawIndexedIndirectCommand");
+
+	// drawCount above 1 needs the multiDrawIndirect device feature.
+	VKBuffer* vkArgs = static_cast<VKBuffer*>(argsBuffer);
+	vkCmdDrawIndexedIndirect(m_cmdBuf, vkArgs->GetNativeBuffer(), offset, drawCount, sizeof(DrawIndexedArgs));
+}
+
 void VKCommandList::Dispatch(u32 x, u32 y, u32 z)
 {
 	vkCmdDispatch(m_cmdBuf, x, y, z);

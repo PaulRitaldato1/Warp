@@ -44,7 +44,7 @@ struct InstanceData
 	Mat4 model;
 	Mat4 modelInvTranspose;
 	Vec3 boundsCenter;
-	u32 batchStart; // for Phase 6's cull shader
+	u32 batchStart;
 	Vec3 boundsExtents;
 	u32 batchInfo; // batch count low 16 bits, render flags high 16
 };

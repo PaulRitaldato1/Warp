@@ -23,7 +23,7 @@ public:
 	struct Batch
 	{
 		u64 key			   = 0; // (meshHandle << 32) | submeshIndex
-		u32 memberCount	   = 0; // live slots in this batch, Phase 6's region size
+		u32 memberCount	   = 0; // live slots in this batch
 		bool bDrawable	   = true;
 	};
 
