@@ -691,7 +691,7 @@ void Renderer::DrawDeferred()
 	{
 		// The CPU no longer knows which batches have survivors, so every batch with
 		// members is drawn. One with none becomes a zero instance draw.
-		m_drawList.batchItems		= BuildBatchItems(regions.drawableRegions);
+		m_drawList.batchItems		= BuildBatchItems(regions.occupiedRegions);
 		m_drawList.shadowBatchItems = hasDirectionalShadow ? m_drawList.batchItems : Vector<BatchItem>{};
 		m_cullStats					= {};
 	}
@@ -1242,10 +1242,6 @@ Vector<DrawIndexedArgs> Renderer::BuildDrawArgs() const
 	for (u32 batch = 0; batch < static_cast<u32>(args.size()); ++batch)
 	{
 		const RenderScene::Batch& info = m_scene.GetBatch(batch);
-		if (!info.bDrawable)
-		{
-			continue; // Never drawn, so its record stays zeroed.
-		}
 
 		const u32 meshHandle   = static_cast<u32>(info.key >> 32);
 		const u32 submeshIndex = static_cast<u32>(info.key & 0xFFFFFFFF);
@@ -1368,8 +1364,7 @@ Renderer::ReadbackStats Renderer::ReadArgsReadback()
 		const DrawIndexedArgs* args = static_cast<const DrawIndexedArgs*>(readback.buffer->Map());
 		for (u32 batch = 0; batch < readback.count; ++batch)
 		{
-			// Undrawn batches have zeroed records, though the GPU cull still counts
-			// into them.
+			// A zeroed record is a batch whose mesh resource was missing this frame.
 			if (args[batch].indexCount == 0)
 			{
 				continue;

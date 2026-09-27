@@ -20,11 +20,11 @@ public:
 
 	// One per (mesh, submesh). A mesh's batches are allocated consecutively, so
 	// a slot names all of its batches with batchStart and batchCount.
+	// Only submeshes with a material get one, so every batch is drawn.
 	struct Batch
 	{
-		u64 key			   = 0; // (meshHandle << 32) | submeshIndex
-		u32 memberCount	   = 0; // live slots in this batch
-		bool bDrawable	   = true;
+		u64 key			= 0; // (meshHandle << 32) | submeshIndex
+		u32 memberCount = 0; // live slots in this batch
 	};
 
 	// One contiguous run of slot indices per batch. From the CPU cull, count is
@@ -84,7 +84,7 @@ public:
 	struct CullRegions
 	{
 		Vector<u32> regionStarts;			  // indexed by batch
-		Vector<VisibleBatch> drawableRegions; // drawable batches with members, as full regions
+		Vector<VisibleBatch> occupiedRegions; // batches with members, as full regions
 		u32 visibleListSize = 0;			  // total length of the visible index list
 	};
 
@@ -120,7 +120,16 @@ private:
 	u32 AllocateSlot(Entity entity);
 	void FreeSlot(Entity entity);
 	void SetBatches(u32 slot, u32 batchStart, u32 batchCount);
-	u32 GetOrCreateBatches(u32 meshHandle, const MeshResource& resource);
+
+	// A mesh's batches, consecutive from start. count can be less than the
+	// submesh count, since submeshes without a material get none.
+	struct BatchRange
+	{
+		u32 start = 0;
+		u32 count = 0;
+	};
+
+	BatchRange GetOrCreateBatches(u32 meshHandle, const MeshResource& resource);
 	void QueueUpload(u32 slot);
 
 	u32& EntitySlotRef(Entity entity);
@@ -135,7 +144,7 @@ private:
 	Vector<u32> m_entityToSlot;
 
 	Vector<Batch> m_batches;
-	HashMap<u32, u32> m_meshToBatchStart;
+	HashMap<u32, BatchRange> m_meshToBatches;
 
 	Vector<Entity> m_pendingMeshes;
 	Vector<Entity> m_pendingRetry;

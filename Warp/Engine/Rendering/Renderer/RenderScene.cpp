@@ -21,7 +21,7 @@ void RenderScene::Reset()
 	m_freeHead = k_invalidSlot;
 	m_entityToSlot.clear();
 	m_batches.clear();
-	m_meshToBatchStart.clear();
+	m_meshToBatches.clear();
 	m_pendingMeshes.clear();
 	m_pendingRetry.clear();
 	m_pendingUploads.clear();
@@ -133,10 +133,7 @@ void RenderScene::Cull(const Array<Vec4, 6>& frustum, u32 requiredFlags, CullRes
 		// Tested once, emitted into every submesh's batch.
 		for (u32 batch = info.batchStart; batch < info.batchStart + info.batchCount; ++batch)
 		{
-			if (m_batches[batch].bDrawable)
-			{
-				out.perBatch[batch].push_back(slot);
-			}
+			out.perBatch[batch].push_back(slot);
 		}
 	}
 
@@ -163,9 +160,9 @@ RenderScene::CullRegions RenderScene::ComputeCullRegions() const
 		const Batch& info = m_batches[batch];
 		regions.regionStarts.push_back(regions.visibleListSize);
 
-		if (info.bDrawable && info.memberCount > 0)
+		if (info.memberCount > 0)
 		{
-			regions.drawableRegions.push_back({ batch, regions.visibleListSize, info.memberCount });
+			regions.occupiedRegions.push_back({ batch, regions.visibleListSize, info.memberCount });
 		}
 
 		regions.visibleListSize += info.memberCount;
@@ -215,8 +212,7 @@ void RenderScene::UpdateMesh(World& world, ResourceManager& resources, Entity en
 		return;
 	}
 
-	const u32 batchStart = GetOrCreateBatches(mesh.meshHandle, *resource);
-	const u32 batchCount = static_cast<u32>(resource->mesh->submeshes.size());
+	const BatchRange batches = GetOrCreateBatches(mesh.meshHandle, *resource);
 
 	u32 slot = SlotOf(entity);
 	if (slot == k_invalidSlot)
@@ -225,9 +221,9 @@ void RenderScene::UpdateMesh(World& world, ResourceManager& resources, Entity en
 	}
 
 	SlotInfo& info = m_slots[slot];
-	if (info.batchStart != batchStart || info.batchCount != batchCount)
+	if (info.batchStart != batches.start || info.batchCount != batches.count)
 	{
-		SetBatches(slot, batchStart, batchCount);
+		SetBatches(slot, batches.start, batches.count);
 	}
 	info.meshHandle	 = mesh.meshHandle;
 	info.renderFlags = mesh.renderFlags;
@@ -385,27 +381,35 @@ void RenderScene::SetBatches(u32 slot, u32 batchStart, u32 batchCount)
 	}
 }
 
-u32 RenderScene::GetOrCreateBatches(u32 meshHandle, const MeshResource& resource)
+RenderScene::BatchRange RenderScene::GetOrCreateBatches(u32 meshHandle, const MeshResource& resource)
 {
-	auto it = m_meshToBatchStart.find(meshHandle);
-	if (it != m_meshToBatchStart.end())
+	auto it = m_meshToBatches.find(meshHandle);
+	if (it != m_meshToBatches.end())
 	{
 		return it->second;
 	}
 
-	const u32 batchStart = static_cast<u32>(m_batches.size());
-	const Vector<Submesh>& submeshes = resource.mesh->submeshes;
+	BatchRange range;
+	range.start = static_cast<u32>(m_batches.size());
 
+	const Vector<Submesh>& submeshes = resource.mesh->submeshes;
 	for (u32 submeshIndex = 0; submeshIndex < static_cast<u32>(submeshes.size()); ++submeshIndex)
 	{
+		// Nothing to draw it with. The key keeps the real submesh index, so
+		// skipping one leaves no gap in the range.
+		if (submeshes[submeshIndex].materialIndex < 0)
+		{
+			continue;
+		}
+
 		Batch batch;
-		batch.key		= (static_cast<u64>(meshHandle) << 32) | submeshIndex;
-		batch.bDrawable = submeshes[submeshIndex].materialIndex >= 0;
+		batch.key = (static_cast<u64>(meshHandle) << 32) | submeshIndex;
 		m_batches.push_back(batch);
+		++range.count;
 	}
 
-	m_meshToBatchStart.emplace(meshHandle, batchStart);
-	return batchStart;
+	m_meshToBatches.emplace(meshHandle, range);
+	return range;
 }
 
 void RenderScene::QueueUpload(u32 slot)
