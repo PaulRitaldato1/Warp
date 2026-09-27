@@ -73,55 +73,15 @@ struct BatchItem
 	Array<Texture*, TextureSlotCount> textures = {};
 };
 
-// Per-submesh draw command — everything needed to issue a single DrawIndexed call
-// across any pass (geometry, shadow, unlit, etc.).
-struct DrawItem
-{
-	// Transform
-	Mat4 model;
-	Mat4 modelInvTranspose;
-
-	// GPU buffers (non-owning, valid for the current frame)
-	Buffer* positionBuffer	= nullptr;
-	Buffer* attributeBuffer = nullptr;
-	Buffer* indexBuffer		= nullptr;
-
-	// Submesh draw range
-	u32 indexCount	 = 0;
-	u32 indexOffset	 = 0;
-	u32 vertexOffset = 0;
-
-	// Material
-	Vec3 emissiveFactor						   = { 0.f, 0.f, 0.f };
-	Array<Texture*, TextureSlotCount> textures = {};
-
-	// Render flags from MeshComponent (visibility, shadow casting, unlit, etc.)
-	u32 renderFlags = 0;
-};
-
-// Built once per frame from the ECS in a single pass.
-// Sublists store indices into `items` to avoid duplicating DrawItem data.
+// The draws for one frame, one per batch per pass.
 struct DrawList
 {
 	Vector<BatchItem> batchItems;
 	Vector<BatchItem> shadowBatchItems;
 
-	// Sublists — indices into items, built during the same gather pass.
-	Vector<u32> litMeshes;
-	Vector<u32> unlitMeshes;
-
-	// Per-entity culling counts, not per-submesh. Correct culling and culling that
-	// rejects nothing look identical without these.
-	u32 meshesTested = 0;
-	u32 meshesCulled = 0;
-
 	void Clear()
 	{
 		batchItems.clear();
 		shadowBatchItems.clear();
-		litMeshes.clear();
-		unlitMeshes.clear();
-		meshesTested = 0;
-		meshesCulled = 0;
 	}
 };

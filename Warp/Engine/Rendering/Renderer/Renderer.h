@@ -207,10 +207,6 @@ protected:
 	void InitShadowPSO();
 	void InitShadowTextures();
 
-	// Throwaway Phase 2 check: a compute shader writes a known pattern into a UAV,
-	// the CPU reads it back and asserts. Runs once from Init.
-	void RunComputeSelfTest();
-
 	// Resolves each batch's buffers and textures. Per frame, since textures can
 	// finish loading after the batch was created.
 	Vector<BatchItem> BuildBatchItems(const Vector<RenderScene::VisibleBatch>& batches) const;

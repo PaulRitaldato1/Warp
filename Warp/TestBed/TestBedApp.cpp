@@ -3,7 +3,6 @@
 #include <Core/ECS/Components/CameraComponent.h>
 #include <Core/ECS/Components/MeshComponent.h>
 #include <Core/ECS/Components/OrbitComponent.h>
-#include <Core/ECS/Components/StaticTransformComponent.h>
 #include <Core/ECS/Components/TransformComponent.h>
 #include <Core/ECS/Systems/FreeCamSystem.h>
 #include <Core/ECS/Systems/OrbitSystem.h>
