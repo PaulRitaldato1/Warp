@@ -27,7 +27,8 @@ public:
 		bool bDrawable	   = true;
 	};
 
-	// One contiguous run of slot indices per batch that has survivors.
+	// One contiguous run of slot indices per batch. From the CPU cull, count is
+	// the survivors. From ComputeCullRegions, it is the whole region.
 	struct VisibleBatch
 	{
 		u32 batchIndex = 0;
@@ -71,6 +72,23 @@ public:
 	{
 		return m_batches[batchIndex];
 	}
+
+	u32 GetBatchCount() const
+	{
+		return static_cast<u32>(m_batches.size());
+	}
+
+	// Where the GPU cull writes: its visible index list split into one region per
+	// batch. Only offsets, computed on the CPU. Regions are sized by membership,
+	// since survivors can never outnumber members.
+	struct CullRegions
+	{
+		Vector<u32> regionStarts;			  // indexed by batch
+		Vector<VisibleBatch> drawableRegions; // drawable batches with members, as full regions
+		u32 visibleListSize = 0;			  // total length of the visible index list
+	};
+
+	CullRegions ComputeCullRegions() const;
 
 	// Slots written since the last ClearUploads, unsorted and unique.
 	Vector<u32>& GetPendingUploads()

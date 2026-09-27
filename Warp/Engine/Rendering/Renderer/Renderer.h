@@ -146,7 +146,11 @@ public:
 	{
 		u32 batches	  = 0;
 		u32 drawCalls = 0;
-		u32 numTris	  = 0;
+
+		// Read back from the draw args k_framesInFlight frames late, since with GPU
+		// culling only the GPU knows what survived. Counted per submesh instance.
+		u32 numTris			 = 0;
+		u32 visibleInstances = 0;
 
 		// Changes since last frame, and the slots re-uploaded because of them.
 		u32 dirtyTransforms = 0;
@@ -163,6 +167,17 @@ public:
 	DrawStats GetDrawStats() const
 	{
 		return m_drawStats;
+	}
+
+	// The CPU cull is kept as a reference to compare the GPU cull against.
+	void SetGPUCulling(bool bEnabled)
+	{
+		m_bGPUCulling = bEnabled;
+	}
+
+	bool IsGPUCulling() const
+	{
+		return m_bGPUCulling;
 	}
 
 protected:
@@ -196,23 +211,53 @@ protected:
 	// the CPU reads it back and asserts. Runs once from Init.
 	void RunComputeSelfTest();
 
-	// Resolves each visible batch's buffers and textures. Per frame, since
-	// textures can finish loading after the batch was created.
-	void BuildBatchItems(const RenderScene::CullResult& cull, Vector<BatchItem>& outBatchItems);
+	// Resolves each batch's buffers and textures. Per frame, since textures can
+	// finish loading after the batch was created.
+	Vector<BatchItem> BuildBatchItems(const Vector<RenderScene::VisibleBatch>& batches) const;
+
+	// One record per scene batch, indexed by batch, with instanceCount 0. The CPU
+	// cull fills the counts in; the GPU cull counts up from 0.
+	Vector<DrawIndexedArgs> BuildDrawArgs() const;
 
 	// Copies the scene's written slots into m_instanceBuffer, or all of them after a grow.
 	void UploadInstances(CommandList& cmd);
 
 	void UploadSlotIndices(CommandList& cmd, const Vector<u32>& indices, URef<Buffer>& buffer, u32& capacity,
-						   const char* name);
+						   const char* name, bool bUnorderedAccess = false);
 
-	// Writes one DrawIndexedArgs per batch and leaves the buffer in IndirectArgument.
-	void UploadDrawArgs(CommandList& cmd, const Vector<BatchItem>& batchItems, Vector<DrawIndexedArgs>& scratch,
-						URef<Buffer>& buffer, u32& capacity, const char* name);
+	// Leaves the buffer in finalState: IndirectArgument to draw directly, or
+	// UnorderedAccess for the cull to count into.
+	void UploadDrawArgs(CommandList& cmd, const Vector<DrawIndexedArgs>& args, URef<Buffer>& buffer, u32& capacity,
+						const char* name, ResourceState finalState);
+
+	void CreateCullPipeline();
+
+	// Culls every slot on the GPU into drawArgs' instance counts and visibleIndices.
+	// Leaves drawArgs in IndirectArgument and visibleIndices in ShaderResource.
+	void DispatchCull(CommandList& cmd, const Array<Vec4, 6>& frustum, u32 requiredFlags, Buffer* drawArgs,
+					  Buffer* visibleIndices);
+
+	// Copies a pass's draw args into this frame slot's readback buffer, read in
+	// BeginFrame once the slot's fence has passed.
+	enum class DrawPass : u8
+	{
+		Camera,
+		Shadow,
+		Count
+	};
+	void RecordArgsReadback(CommandList& cmd, DrawPass pass, Buffer* drawArgs, u32 count);
+
+	struct ReadbackStats
+	{
+		u32 visibleInstances = 0;
+		u32 numTris			 = 0;
+	};
+	ReadbackStats ReadArgsReadback();
 
 	// Reallocates if needed. Contents are not preserved, so callers that rely on
 	// them must rewrite after a true return.
-	bool EnsureBufferCapacity(URef<Buffer>& buffer, u32& capacity, u32 needed, u32 stride, const char* name);
+	bool EnsureBufferCapacity(URef<Buffer>& buffer, u32& capacity, u32 needed, u32 stride, const char* name,
+							  bool bUnorderedAccess = false);
 
 	// How many frames the CPU is allowed to run ahead of the GPU.
 	// Controls the number of command allocator slots, upload buffer slices,
@@ -285,19 +330,37 @@ protected:
 	URef<Buffer> m_instanceBuffer;
 	u32 m_instanceCapacity = 0;
 
-	// Visible slot indices per pass, rebuilt by the cull every frame.
+	// Visible slot indices per pass, rebuilt by the cull every frame. UAVs so the
+	// GPU cull can write them; the CPU cull uploads into the same buffers.
 	URef<Buffer> m_slotIndexBuffer;
 	URef<Buffer> m_shadowSlotIndexBuffer;
 	u32 m_slotIndexCapacity		  = 0;
 	u32 m_shadowSlotIndexCapacity = 0;
 
-	// Indirect draw records, one per batch in draw order.
+	// Indirect draw records, indexed by scene batch. UAVs so the GPU cull can
+	// count instances into them.
 	URef<Buffer> m_drawArgsBuffer;
 	URef<Buffer> m_shadowDrawArgsBuffer;
 	u32 m_drawArgsCapacity		 = 0;
 	u32 m_shadowDrawArgsCapacity = 0;
-	Vector<DrawIndexedArgs> m_drawArgs;
-	Vector<DrawIndexedArgs> m_shadowDrawArgs;
+
+	// Where each batch's region starts in the GPU visible index lists.
+	URef<Buffer> m_regionStartBuffer;
+	u32 m_regionStartCapacity = 0;
+
+	URef<Shader> m_cullCS;
+	URef<ComputePipelineState> m_cullPSO;
+	bool m_bGPUCulling = true;
+
+	// Per pass, per frame slot. Written at the end of a frame, read when that
+	// slot comes round again and its fence has passed.
+	struct ArgsReadback
+	{
+		URef<Buffer> buffer;
+		u32 count = 0;
+	};
+	Array<Array<ArgsReadback, k_framesInFlight>, static_cast<u32>(DrawPass::Count)> m_argsReadback;
+	ReadbackStats m_readbackStats;
 
 	// Buffers replaced by a grow, parked in the frame slot that was current when
 	// they were retired. BeginFrame waits on that slot's fence before clearing it,

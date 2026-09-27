@@ -39,22 +39,41 @@ void EditorUI::DrawRendererStats()
 	}
 
 	const Renderer::CullStats cullStats = m_renderer->GetCullStats();
-	const u32 visible					= cullStats.tested - cullStats.culled;
+	const Renderer::DrawStats drawStats = m_renderer->GetDrawStats();
 
 	ImGui::SeparatorText("Frustum Culling");
-	ImGui::Text("Tested:  %u", cullStats.tested);
-	ImGui::Text("Visible: %u", visible);
-	ImGui::Text("Culled:  %u", cullStats.culled);
 
-	// Counts entities, not submeshes, and culled includes shadow casters that were
-	// dropped from the camera pass but still drawn into the shadow map.
-	const f32 percent =
-		cullStats.tested > 0 ? (100.f * static_cast<f32>(cullStats.culled) / static_cast<f32>(cullStats.tested)) : 0.f;
-	ImGui::Text("Culled %%:  %.1f", percent);
+	bool bGPUCulling = m_renderer->IsGPUCulling();
+	if (ImGui::Checkbox("GPU culling", &bGPUCulling))
+	{
+		m_renderer->SetGPUCulling(bGPUCulling);
+	}
+
+	// Read back from the GPU in both modes, so the two can be compared directly.
+	// Counts submesh instances, a few frames late.
+	ImGui::Text("Visible instances: %u", drawStats.visibleInstances);
+
+	if (bGPUCulling)
+	{
+		ImGui::TextDisabled("Per entity counts need the CPU cull");
+	}
+	else
+	{
+		const u32 visible = cullStats.tested - cullStats.culled;
+		ImGui::Text("Tested:  %u", cullStats.tested);
+		ImGui::Text("Visible: %u", visible);
+		ImGui::Text("Culled:  %u", cullStats.culled);
+
+		// Counts entities, not submeshes, and culled includes shadow casters that were
+		// dropped from the camera pass but still drawn into the shadow map.
+		const f32 percent = cullStats.tested > 0
+								? (100.f * static_cast<f32>(cullStats.culled) / static_cast<f32>(cullStats.tested))
+								: 0.f;
+		ImGui::Text("Culled %%:  %.1f", percent);
+	}
 
 	ImGui::SeparatorText("Draw Stats");
 
-	const Renderer::DrawStats drawStats = m_renderer->GetDrawStats();
 	ImGui::Text("Draw Calls: %u", drawStats.drawCalls);
 	ImGui::Text("Batches: %u", drawStats.batches);
 	ImGui::Text("Triangles drawn: %u", drawStats.numTris);

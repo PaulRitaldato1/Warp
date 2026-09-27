@@ -153,6 +153,27 @@ void RenderScene::Cull(const Array<Vec4, 6>& frustum, u32 requiredFlags, CullRes
 	}
 }
 
+RenderScene::CullRegions RenderScene::ComputeCullRegions() const
+{
+	CullRegions regions;
+	regions.regionStarts.reserve(m_batches.size());
+
+	for (u32 batch = 0; batch < static_cast<u32>(m_batches.size()); ++batch)
+	{
+		const Batch& info = m_batches[batch];
+		regions.regionStarts.push_back(regions.visibleListSize);
+
+		if (info.bDrawable && info.memberCount > 0)
+		{
+			regions.drawableRegions.push_back({ batch, regions.visibleListSize, info.memberCount });
+		}
+
+		regions.visibleListSize += info.memberCount;
+	}
+
+	return regions;
+}
+
 void RenderScene::ClearUploads()
 {
 	for (u32 slot : m_pendingUploads)
@@ -329,8 +350,13 @@ void RenderScene::FreeSlot(Entity entity)
 	const u32 slot = ref;
 	SetBatches(slot, 0, 0);
 
-	// Keep the upload flag, since the slot may still be in the pending uploads
-	// list. Uploading a freed slot is harmless: nothing references it.
+	// The GPU cull reads flags from the instance itself, so a freed slot has to
+	// be cleared there too or it keeps drawing.
+	m_instances[slot].batchStart = 0;
+	m_instances[slot].batchInfo	 = 0;
+	QueueUpload(slot);
+
+	// Keep the upload flag, since the slot is now in the pending uploads list.
 	SlotInfo& info				= m_slots[slot];
 	const bool bQueuedForUpload = info.bQueuedForUpload;
 	info						= SlotInfo{};

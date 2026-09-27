@@ -51,6 +51,15 @@ struct ShadowDrawConstants
 	u32 padding[3];
 };
 
+// Matches CullConstants in InstanceCull.hlsl.
+struct CullConstants
+{
+	Vec4 planes[6];
+	u32 slotCount;
+	u32 requiredFlags;
+	u32 padding[2];
+};
+
 Renderer::~Renderer() = default;
 
 void Renderer::Init(IWindow* window, URef<Device> device)
@@ -312,6 +321,7 @@ void Renderer::BeginFrame()
 
 	// Safe now that this slot's fence has been waited on above.
 	m_retiredBuffers[m_frameIndex].clear();
+	m_readbackStats = ReadArgsReadback();
 
 	// Reset all CPU-side per-frame allocations.
 	m_frameArena.Reset();
@@ -373,7 +383,9 @@ void Renderer::SetWorld(World* world)
 
 void Renderer::Draw()
 {
-	m_drawStats = {};
+	m_drawStats					 = {};
+	m_drawStats.numTris			 = m_readbackStats.numTris;
+	m_drawStats.visibleInstances = m_readbackStats.visibleInstances;
 
 	switch (m_renderPath)
 	{
@@ -664,21 +676,52 @@ void Renderer::DrawDeferred()
 	m_drawStats.dirtyMeshes				   = syncStats.dirtyMeshes;
 	m_drawStats.removedMeshes			   = syncStats.removed;
 
-	m_scene.Cull(cameraFrustum, RenderFlags_Visible, m_cameraCull);
-
 	// Shadow casters are tested against the light instead, since geometry outside
 	// the view can still cast into it.
-	if (hasDirectionalShadow)
+	const u32 cameraFlags = RenderFlags_Visible;
+	const u32 shadowFlags = static_cast<u32>(RenderFlags_Visible | RenderFlags_CastShadow);
+
+	// Both culls end up in the same shape: args indexed by batch, and per batch
+	// an offset and count into a visible index list.
+	const RenderScene::CullRegions regions = m_scene.ComputeCullRegions();
+	Vector<DrawIndexedArgs> cameraArgs	  = BuildDrawArgs();
+	Vector<DrawIndexedArgs> shadowArgs	  = cameraArgs;
+
+	if (m_bGPUCulling)
 	{
-		m_scene.Cull(shadowFrustum, static_cast<u32>(RenderFlags_Visible | RenderFlags_CastShadow), m_shadowCull);
+		// The CPU no longer knows which batches have survivors, so every batch with
+		// members is drawn. One with none becomes a zero instance draw.
+		m_drawList.batchItems		= BuildBatchItems(regions.drawableRegions);
+		m_drawList.shadowBatchItems = hasDirectionalShadow ? m_drawList.batchItems : Vector<BatchItem>{};
+		m_cullStats					= {};
 	}
 	else
 	{
-		m_shadowCull.indices.clear();
-		m_shadowCull.batches.clear();
-	}
+		m_scene.Cull(cameraFrustum, cameraFlags, m_cameraCull);
 
-	m_cullStats = { m_cameraCull.tested, m_cameraCull.culled };
+		if (hasDirectionalShadow)
+		{
+			m_scene.Cull(shadowFrustum, shadowFlags, m_shadowCull);
+		}
+		else
+		{
+			m_shadowCull.indices.clear();
+			m_shadowCull.batches.clear();
+		}
+
+		m_cullStats					= { m_cameraCull.tested, m_cameraCull.culled };
+		m_drawList.batchItems		= BuildBatchItems(m_cameraCull.batches);
+		m_drawList.shadowBatchItems = BuildBatchItems(m_shadowCull.batches);
+
+		for (const RenderScene::VisibleBatch& visible : m_cameraCull.batches)
+		{
+			cameraArgs[visible.batchIndex].instanceCount = visible.count;
+		}
+		for (const RenderScene::VisibleBatch& visible : m_shadowCull.batches)
+		{
+			shadowArgs[visible.batchIndex].instanceCount = visible.count;
+		}
+	}
 
 	LightList lightList;
 	m_world->Each<const TransformComponent, const LightComponent>(
@@ -704,21 +747,45 @@ void Renderer::DrawDeferred()
 			}
 		});
 
-	BuildBatchItems(m_cameraCull, m_drawList.batchItems);
-	BuildBatchItems(m_shadowCull, m_drawList.shadowBatchItems);
-
 	m_drawStats.batches = static_cast<u32>(m_drawList.batchItems.size());
 
 	// Both passes read the same instance buffer, so it is written once up front.
 	UploadInstances(cmd);
-	UploadSlotIndices(cmd, m_cameraCull.indices, m_slotIndexBuffer, m_slotIndexCapacity, "SlotIndexBuffer");
-	UploadSlotIndices(cmd, m_shadowCull.indices, m_shadowSlotIndexBuffer, m_shadowSlotIndexCapacity,
-					  "ShadowSlotIndexBuffer");
 
-	// One args record per batch, in draw order, so batch i draws from byte i * 20.
-	UploadDrawArgs(cmd, m_drawList.batchItems, m_drawArgs, m_drawArgsBuffer, m_drawArgsCapacity, "DrawArgsBuffer");
-	UploadDrawArgs(cmd, m_drawList.shadowBatchItems, m_shadowDrawArgs, m_shadowDrawArgsBuffer,
-				   m_shadowDrawArgsCapacity, "ShadowDrawArgsBuffer");
+	// The GPU cull counts into the args, so they stay writable until it is done.
+	const ResourceState argsState = m_bGPUCulling ? ResourceState::UnorderedAccess : ResourceState::IndirectArgument;
+	UploadDrawArgs(cmd, cameraArgs, m_drawArgsBuffer, m_drawArgsCapacity, "DrawArgsBuffer", argsState);
+	UploadDrawArgs(cmd, shadowArgs, m_shadowDrawArgsBuffer, m_shadowDrawArgsCapacity, "ShadowDrawArgsBuffer",
+				   argsState);
+
+	if (m_bGPUCulling)
+	{
+		if (regions.visibleListSize > 0)
+		{
+			UploadSlotIndices(cmd, regions.regionStarts, m_regionStartBuffer, m_regionStartCapacity, "RegionStartBuffer");
+
+			// Sized for the worst case, every member visible. The cull fills a prefix
+			// of each batch's region and the rest is never read.
+			EnsureBufferCapacity(m_slotIndexBuffer, m_slotIndexCapacity, regions.visibleListSize, sizeof(u32),
+								 "SlotIndexBuffer", true);
+			EnsureBufferCapacity(m_shadowSlotIndexBuffer, m_shadowSlotIndexCapacity, regions.visibleListSize, sizeof(u32),
+								 "ShadowSlotIndexBuffer", true);
+
+			DispatchCull(cmd, cameraFrustum, cameraFlags, m_drawArgsBuffer.get(), m_slotIndexBuffer.get());
+
+			if (hasDirectionalShadow)
+			{
+				DispatchCull(cmd, shadowFrustum, shadowFlags, m_shadowDrawArgsBuffer.get(),
+							 m_shadowSlotIndexBuffer.get());
+			}
+		}
+	}
+	else
+	{
+		UploadSlotIndices(cmd, m_cameraCull.indices, m_slotIndexBuffer, m_slotIndexCapacity, "SlotIndexBuffer", true);
+		UploadSlotIndices(cmd, m_shadowCull.indices, m_shadowSlotIndexBuffer, m_shadowSlotIndexCapacity,
+						  "ShadowSlotIndexBuffer", true);
+	}
 
 	// ---------------------------------------------------------------------------
 	// Shadow pass — render depth from each shadow-casting directional light's POV
@@ -769,9 +836,8 @@ void Renderer::DrawDeferred()
 			cmd.SetIndexBuffer(shadowCasterBatch.indexBuffer);
 
 			++m_drawStats.drawCalls;
-			m_drawStats.numTris += (shadowCasterBatch.indexCount / 3) * shadowCasterBatch.instanceCount;
 
-			cmd.DrawIndexedIndirect(m_shadowDrawArgsBuffer.get(), batchIndex * sizeof(DrawIndexedArgs));
+			cmd.DrawIndexedIndirect(m_shadowDrawArgsBuffer.get(), shadowCasterBatch.batchIndex * sizeof(DrawIndexedArgs));
 		}
 	}
 	// Transition shadow map for later use in the lighting pass.
@@ -845,12 +911,17 @@ void Renderer::DrawDeferred()
 									item.textures[TextureSlot::Occlusion], item.textures[TextureSlot::Emissive] });
 
 		++m_drawStats.drawCalls;
-		m_drawStats.numTris += (item.indexCount / 3) * item.instanceCount;
 
-		cmd.DrawIndexedIndirect(m_drawArgsBuffer.get(), batchIndex * sizeof(DrawIndexedArgs));
+		cmd.DrawIndexedIndirect(m_drawArgsBuffer.get(), item.batchIndex * sizeof(DrawIndexedArgs));
 	}
 
 	Warp::Debugging::GPUMarker::EndEvent(&cmd);
+
+	// Only the GPU knows the final instance counts, so they come back for the stats.
+	const u32 batchCount = m_scene.GetBatchCount();
+	RecordArgsReadback(cmd, DrawPass::Camera, m_drawArgsBuffer.get(), batchCount);
+	RecordArgsReadback(cmd, DrawPass::Shadow, hasDirectionalShadow ? m_shadowDrawArgsBuffer.get() : nullptr,
+					   batchCount);
 
 	// GBuffer Lighting Pass
 	if (!m_deferredLightPSO)
@@ -1027,7 +1098,8 @@ void Renderer::CreateMeshPipeline()
 	LOG_DEBUG("Renderer: mesh PSO ready");
 }
 
-bool Renderer::EnsureBufferCapacity(URef<Buffer>& buffer, u32& capacity, u32 needed, u32 stride, const char* name)
+bool Renderer::EnsureBufferCapacity(URef<Buffer>& buffer, u32& capacity, u32 needed, u32 stride, const char* name,
+									bool bUnorderedAccess)
 {
 	if (buffer && needed <= capacity)
 	{
@@ -1052,6 +1124,7 @@ bool Renderer::EnsureBufferCapacity(URef<Buffer>& buffer, u32& capacity, u32 nee
 	desc.numElements = newCapacity;
 	desc.stride		 = stride;
 	desc.name		 = name;
+	desc.bUnorderedAccess = bUnorderedAccess;
 
 	buffer	 = m_device->CreateBuffer(desc);
 	capacity = newCapacity;
@@ -1123,7 +1196,7 @@ void Renderer::UploadInstances(CommandList& cmd)
 }
 
 void Renderer::UploadSlotIndices(CommandList& cmd, const Vector<u32>& indices, URef<Buffer>& buffer, u32& capacity,
-								 const char* name)
+								 const char* name, bool bUnorderedAccess)
 {
 	if (indices.empty())
 	{
@@ -1133,7 +1206,7 @@ void Renderer::UploadSlotIndices(CommandList& cmd, const Vector<u32>& indices, U
 	const u32 count = static_cast<u32>(indices.size());
 	const u64 bytes = static_cast<u64>(count) * sizeof(u32);
 
-	EnsureBufferCapacity(buffer, capacity, count, sizeof(u32), name);
+	EnsureBufferCapacity(buffer, capacity, count, sizeof(u32), name, bUnorderedAccess);
 	UploadResult staged = m_uploadBuffer->AllocAndCopy(indices.data(), bytes);
 
 	cmd.TransitionBuffer(buffer.get(), ResourceState::CopyDest);
@@ -1141,45 +1214,189 @@ void Renderer::UploadSlotIndices(CommandList& cmd, const Vector<u32>& indices, U
 	cmd.TransitionBuffer(buffer.get(), ResourceState::ShaderResource);
 }
 
-void Renderer::UploadDrawArgs(CommandList& cmd, const Vector<BatchItem>& batchItems, Vector<DrawIndexedArgs>& scratch,
-							  URef<Buffer>& buffer, u32& capacity, const char* name)
+void Renderer::UploadDrawArgs(CommandList& cmd, const Vector<DrawIndexedArgs>& args, URef<Buffer>& buffer,
+							  u32& capacity, const char* name, ResourceState finalState)
 {
-	if (batchItems.empty())
+	if (args.empty())
 	{
 		return;
 	}
 
-	// The same values DrawIndexed took.
-	scratch.clear();
-	for (const BatchItem& item : batchItems)
-	{
-		DrawIndexedArgs args;
-		args.indexCount	   = item.indexCount;
-		args.instanceCount = item.instanceCount;
-		args.firstIndex	   = item.indexOffset;
-		args.baseVertex	   = static_cast<int32>(item.vertexOffset);
-		args.firstInstance = 0;
-		scratch.push_back(args);
-	}
-
-	const u32 count = static_cast<u32>(scratch.size());
+	const u32 count = static_cast<u32>(args.size());
 	const u64 bytes = static_cast<u64>(count) * sizeof(DrawIndexedArgs);
 
-	EnsureBufferCapacity(buffer, capacity, count, sizeof(DrawIndexedArgs), name);
-	UploadResult staged = m_uploadBuffer->AllocAndCopy(scratch.data(), bytes);
+	// A UAV either way, so switching cull modes never needs a new buffer.
+	EnsureBufferCapacity(buffer, capacity, count, sizeof(DrawIndexedArgs), name, true);
+	UploadResult staged = m_uploadBuffer->AllocAndCopy(args.data(), bytes);
 
+	// Also resets last frame's GPU counts, since every record is rewritten.
 	cmd.TransitionBuffer(buffer.get(), ResourceState::CopyDest);
 	cmd.CopyBuffer(m_uploadBuffer->GetBackingBuffer(), buffer.get(), staged.offset, 0, bytes);
-	cmd.TransitionBuffer(buffer.get(), ResourceState::IndirectArgument);
+	cmd.TransitionBuffer(buffer.get(), finalState);
 }
 
-void Renderer::BuildBatchItems(const RenderScene::CullResult& cull, Vector<BatchItem>& outBatchItems)
+Vector<DrawIndexedArgs> Renderer::BuildDrawArgs() const
+{
+	Vector<DrawIndexedArgs> args(m_scene.GetBatchCount());
+
+	for (u32 batch = 0; batch < static_cast<u32>(args.size()); ++batch)
+	{
+		const RenderScene::Batch& info = m_scene.GetBatch(batch);
+		if (!info.bDrawable)
+		{
+			continue; // Never drawn, so its record stays zeroed.
+		}
+
+		const u32 meshHandle   = static_cast<u32>(info.key >> 32);
+		const u32 submeshIndex = static_cast<u32>(info.key & 0xFFFFFFFF);
+
+		const MeshResource* resource = m_resourceManager->GetMeshResourceByHandle(meshHandle);
+		if (!resource)
+		{
+			continue;
+		}
+
+		const Submesh& submesh	= resource->mesh->submeshes[submeshIndex];
+		args[batch].indexCount	= submesh.indexCount;
+		args[batch].firstIndex	= submesh.indexOffset;
+		args[batch].baseVertex	= static_cast<int32>(submesh.vertexOffset);
+	}
+
+	return args;
+}
+
+void Renderer::CreateCullPipeline()
+{
+	ShaderDesc csDesc;
+	csDesc.type		  = ShaderType::Compute;
+	csDesc.entryPoint = "CSMain";
+	csDesc.filePath	  = "Shaders/InstanceCull.hlsl";
+	m_cullCS		  = m_device->CreateShader(csDesc);
+
+	ComputePipelineDesc psoDesc;
+	psoDesc.computeShader = m_cullCS.get();
+	psoDesc.bindings	  = {
+		 { BindingType::ConstantBuffer, 0, 1 },		// rootIndex 0: b0 — frustum, slot count, flags
+		 { BindingType::StructuredBuffer, 0, 1 },	// rootIndex 1: t0 — instances
+		 { BindingType::StructuredBuffer, 1, 1 },	// rootIndex 2: t1 — region starts
+		 { BindingType::RWStructuredBuffer, 0, 1 }, // rootIndex 3: u0 — draw args
+		 { BindingType::RWStructuredBuffer, 1, 1 }, // rootIndex 4: u1 — visible indices
+	 };
+	m_cullPSO = m_device->CreateComputePipelineState(psoDesc);
+
+	LOG_DEBUG("Renderer: cull PSO ready");
+}
+
+void Renderer::DispatchCull(CommandList& cmd, const Array<Vec4, 6>& frustum, u32 requiredFlags, Buffer* drawArgs,
+							Buffer* visibleIndices)
+{
+	if (!m_cullPSO)
+	{
+		CreateCullPipeline();
+	}
+
+	const u32 slotCount = static_cast<u32>(m_scene.GetInstances().size());
+
+	CullConstants constants = {};
+	for (u32 plane = 0; plane < 6; ++plane)
+	{
+		constants.planes[plane] = frustum[plane];
+	}
+	constants.slotCount		= slotCount;
+	constants.requiredFlags = requiredFlags;
+
+	UploadResult upload = m_uploadBuffer->AllocAndCopy(&constants, sizeof(CullConstants), 256);
+
+	// The instances and region starts were left in ShaderResource by their uploads.
+	cmd.TransitionBuffer(drawArgs, ResourceState::UnorderedAccess);
+	cmd.TransitionBuffer(visibleIndices, ResourceState::UnorderedAccess);
+
+	cmd.SetComputePipelineState(m_cullPSO.get());
+	cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
+	cmd.SetShaderResourceBuffer(1, m_instanceBuffer.get(), 0);
+	cmd.SetShaderResourceBuffer(2, m_regionStartBuffer.get(), 0);
+	cmd.SetUnorderedAccessBuffer(3, drawArgs, 0);
+	cmd.SetUnorderedAccessBuffer(4, visibleIndices, 0);
+	cmd.Dispatch((slotCount + 63) / 64, 1, 1);
+
+	// The draw reads the args as indirect arguments, not as a UAV. Missing this
+	// transition is a device removal, not a visible bug.
+	cmd.TransitionBuffer(drawArgs, ResourceState::IndirectArgument);
+	cmd.TransitionBuffer(visibleIndices, ResourceState::ShaderResource);
+}
+
+void Renderer::RecordArgsReadback(CommandList& cmd, DrawPass pass, Buffer* drawArgs, u32 count)
+{
+	ArgsReadback& readback = m_argsReadback[static_cast<u32>(pass)][m_frameIndex];
+	readback.count		   = 0;
+
+	if (!drawArgs || count == 0)
+	{
+		return;
+	}
+
+	const u64 bytes = static_cast<u64>(count) * sizeof(DrawIndexedArgs);
+
+	// This slot's fence passed in BeginFrame, so the old buffer is free to replace.
+	if (!readback.buffer || readback.buffer->GetSize() < bytes)
+	{
+		BufferDesc desc;
+		desc.type		 = BufferType::Readback;
+		desc.numElements = count;
+		desc.stride		 = sizeof(DrawIndexedArgs);
+		desc.name		 = pass == DrawPass::Camera ? "CameraArgsReadback" : "ShadowArgsReadback";
+		readback.buffer	 = m_device->CreateBuffer(desc);
+	}
+
+	cmd.TransitionBuffer(drawArgs, ResourceState::CopySource);
+	cmd.CopyBuffer(drawArgs, readback.buffer.get(), 0, 0, bytes);
+	readback.count = count;
+}
+
+Renderer::ReadbackStats Renderer::ReadArgsReadback()
+{
+	ReadbackStats stats;
+
+	for (u32 pass = 0; pass < static_cast<u32>(DrawPass::Count); ++pass)
+	{
+		const ArgsReadback& readback = m_argsReadback[pass][m_frameIndex];
+		if (readback.count == 0)
+		{
+			continue;
+		}
+
+		const DrawIndexedArgs* args = static_cast<const DrawIndexedArgs*>(readback.buffer->Map());
+		for (u32 batch = 0; batch < readback.count; ++batch)
+		{
+			// Undrawn batches have zeroed records, though the GPU cull still counts
+			// into them.
+			if (args[batch].indexCount == 0)
+			{
+				continue;
+			}
+
+			stats.numTris += (args[batch].indexCount / 3) * args[batch].instanceCount;
+			if (pass == static_cast<u32>(DrawPass::Camera))
+			{
+				stats.visibleInstances += args[batch].instanceCount;
+			}
+		}
+		readback.buffer->Unmap();
+	}
+
+	return stats;
+}
+
+Vector<BatchItem> Renderer::BuildBatchItems(const Vector<RenderScene::VisibleBatch>& batches) const
 {
 	Texture* defaultTexture			= m_resourceManager->GetDefaultTexture();
 	Texture* defaultMaterialTexture = m_resourceManager->GetDefaultMaterialTexture();
 	Texture* defaultNormalTexture	= m_resourceManager->GetDefaultNormalTexture();
 
-	for (const RenderScene::VisibleBatch& visible : cull.batches)
+	Vector<BatchItem> batchItems;
+	batchItems.reserve(batches.size());
+
+	for (const RenderScene::VisibleBatch& visible : batches)
 	{
 		const u64 key = m_scene.GetBatch(visible.batchIndex).key;
 
@@ -1201,6 +1418,7 @@ void Renderer::BuildBatchItems(const RenderScene::CullResult& cull, Vector<Batch
 		item.indexOffset	 = submesh.indexOffset;
 		item.vertexOffset	 = submesh.vertexOffset;
 		item.emissiveFactor	 = material.emissiveFactor;
+		item.batchIndex		 = visible.batchIndex;
 		item.instanceCount	 = visible.count;
 		item.instanceOffset	 = visible.offset;
 
@@ -1230,8 +1448,10 @@ void Renderer::BuildBatchItems(const RenderScene::CullResult& cull, Vector<Batch
 			}
 		}
 
-		outBatchItems.push_back(item);
+		batchItems.push_back(item);
 	}
+
+	return batchItems;
 }
 
 void Renderer::CreateDeferredGeometryPipeline()

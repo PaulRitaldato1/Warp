@@ -60,7 +60,11 @@ struct BatchItem
 	u32 indexOffset	 = 0;
 	u32 vertexOffset = 0;
 
-	// Offset into DrawList::instances that this batch draws
+	// Scene batch index, which is also this batch's record in the draw args buffer.
+	u32 batchIndex = 0;
+
+	// Where this batch's run starts in the visible index list, and its length.
+	// With GPU culling the count is the region size, not the survivors.
 	u32 instanceOffset = 0;
 	u32 instanceCount  = 0;
 
