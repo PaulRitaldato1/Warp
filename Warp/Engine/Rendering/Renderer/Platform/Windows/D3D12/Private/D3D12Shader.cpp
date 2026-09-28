@@ -91,7 +91,9 @@ void D3D12Shader::Initialize(const ShaderDesc& desc)
 	std::memcpy(m_bytecode.data(), shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize());
 
 	String targetStr(targetW.begin(), targetW.end());
-	LOG_DEBUG("D3D12Shader compiled: {} ({}, {} bytes)", desc.entryPoint, targetStr, m_bytecode.size());
+	LOG_DEBUG("D3D12Shader: compiled {} shader {} from '{}' ({}, {} bytes DXIL)", ToString(desc.type),
+			  desc.entryPoint, desc.filePath.empty() ? "source string" : desc.filePath, targetStr,
+			  m_bytecode.size());
 }
 
 void D3D12Shader::Cleanup()

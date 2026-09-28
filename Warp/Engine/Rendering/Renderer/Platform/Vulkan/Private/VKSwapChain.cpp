@@ -4,11 +4,15 @@
 
 #include <Rendering/Renderer/Platform/Vulkan/VKSwapChain.h>
 #include <Rendering/Renderer/Platform/Vulkan/VKCommandList.h>
+#include <Rendering/Renderer/Platform/Vulkan/VKCommandQueue.h>
 #include <Rendering/Renderer/Platform/Vulkan/VKTranslate.h>
 #include <Rendering/Window/Window.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 #include <algorithm>
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 
 VKSwapChain::~VKSwapChain()
 {
@@ -16,17 +20,18 @@ VKSwapChain::~VKSwapChain()
 }
 
 void VKSwapChain::InitializeWithContext(VkInstance instance, VkPhysicalDevice physDevice, VkDevice device,
-										VkQueue presentQueue, u32 presentFamilyIndex)
+										VKCommandQueue* graphicsQueue, u32 presentFamilyIndex)
 {
 	DYNAMIC_ASSERT(instance, "VKSwapChain: instance is null");
 	DYNAMIC_ASSERT(physDevice, "VKSwapChain: physDevice is null");
 	DYNAMIC_ASSERT(device, "VKSwapChain: device is null");
-	DYNAMIC_ASSERT(presentQueue, "VKSwapChain: presentQueue is null");
+	DYNAMIC_ASSERT(graphicsQueue, "VKSwapChain: graphicsQueue is null");
 
 	m_instance		= instance;
 	m_physDevice	= physDevice;
 	m_device		= device;
-	m_presentQueue	= presentQueue;
+	m_graphicsQueue = graphicsQueue;
+	m_presentQueue	= graphicsQueue->GetNative();
 	m_presentFamily = presentFamilyIndex;
 }
 
@@ -40,27 +45,23 @@ void VKSwapChain::Initialize(const SwapChainDesc& desc)
 	m_height		= desc.Height;
 	m_format		= desc.Format;
 	m_vsync			= desc.bUseVsync;
+	m_bufferCount	= desc.BufferCount;
 	m_nativeWindow	= desc.Window->GetNativeHandle();
-	m_nativeDisplay = desc.Window->GetNativeDisplay();
 
-	// -------------------------------------------------------------------------
-	// Create platform surface
-	// -------------------------------------------------------------------------
+	// GLFW picks the platform surface (Win32, X11 or Wayland) for whatever it is
+	// running on, so there is no per-platform path here.
+	DYNAMIC_ASSERT(m_nativeWindow, "VKSwapChain: window handle is null");
+	VK_CHECK(glfwCreateWindowSurface(m_instance, static_cast<GLFWwindow*>(m_nativeWindow), nullptr, &m_surface),
+			 "VKSwapChain: glfwCreateWindowSurface failed");
 
-#ifdef WARP_LINUX
-	DYNAMIC_ASSERT(m_nativeDisplay, "VKSwapChain: X11 Display* is null");
-	DYNAMIC_ASSERT(m_nativeWindow, "VKSwapChain: X11 Window handle is null");
-
-	VkXlibSurfaceCreateInfoKHR surfaceInfo = {};
-	surfaceInfo.sType					   = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-	surfaceInfo.dpy						   = static_cast<Display*>(m_nativeDisplay);
-	surfaceInfo.window					   = static_cast<::Window>(reinterpret_cast<uintptr_t>(m_nativeWindow));
-
-	VK_CHECK(vkCreateXlibSurfaceKHR(m_instance, &surfaceInfo, nullptr, &m_surface),
-			 "VKSwapChain: vkCreateXlibSurfaceKHR failed");
-#else
-	FATAL_ASSERT(false, "VKSwapChain: surface creation not implemented on this platform");
-#endif
+	// One per frame in flight. A frame's acquire semaphore is reused two frames
+	// later, by which point the renderer has waited on that frame's fence, so its
+	// submit has consumed the wait. BufferCount matches k_framesInFlight.
+	m_imageAvailable.resize(m_bufferCount, VK_NULL_HANDLE);
+	for (VkSemaphore& semaphore : m_imageAvailable)
+	{
+		semaphore = CreateBinarySemaphore();
+	}
 
 	CreateSwapChain(desc);
 	CreateImageViews();
@@ -170,8 +171,16 @@ void VKSwapChain::CreateImageViews()
 	const u32 count = static_cast<u32>(m_images.size());
 
 	m_imageViews.resize(count, VK_NULL_HANDLE);
-	m_acquireFences.resize(count, VK_NULL_HANDLE);
 	m_imageLayouts.resize(count, VK_IMAGE_LAYOUT_UNDEFINED);
+
+	// Per image, not per frame. Present waits on it, and the only proof that a
+	// present has finished with its semaphore is getting the same image back from
+	// acquire. Keyed by frame slot, it could be signaled again while still in use.
+	m_renderFinished.resize(count, VK_NULL_HANDLE);
+	for (VkSemaphore& semaphore : m_renderFinished)
+	{
+		semaphore = CreateBinarySemaphore();
+	}
 
 	for (u32 i = 0; i < count; ++i)
 	{
@@ -188,12 +197,6 @@ void VKSwapChain::CreateImageViews()
 
 		VK_CHECK(vkCreateImageView(m_device, &viewInfo, nullptr, &m_imageViews[i]),
 				 "VKSwapChain: vkCreateImageView failed");
-
-		VkFenceCreateInfo fenceInfo = {};
-		fenceInfo.sType				= VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-
-		VK_CHECK(vkCreateFence(m_device, &fenceInfo, nullptr, &m_acquireFences[i]),
-				 "VKSwapChain: vkCreateFence failed");
 	}
 }
 
@@ -205,15 +208,16 @@ void VKSwapChain::DestroySwapChainResources()
 		{
 			vkDestroyImageView(m_device, m_imageViews[i], nullptr);
 		}
-		if (m_acquireFences[i] != VK_NULL_HANDLE)
-		{
-			vkDestroyFence(m_device, m_acquireFences[i], nullptr);
-		}
 	}
 	m_imageViews.clear();
-	m_acquireFences.clear();
 	m_imageLayouts.clear();
 	m_images.clear();
+
+	for (VkSemaphore semaphore : m_renderFinished)
+	{
+		vkDestroySemaphore(m_device, semaphore, nullptr);
+	}
+	m_renderFinished.clear();
 
 	if (m_swapchain != VK_NULL_HANDLE)
 	{
@@ -224,20 +228,44 @@ void VKSwapChain::DestroySwapChainResources()
 
 void VKSwapChain::Present()
 {
-	// Ensure all GPU work against this image is complete before presenting.
-	vkQueueWaitIdle(m_presentQueue);
+	// A frame that never reached the lighting pass acquired nothing to present.
+	if (!m_bImageAcquired)
+	{
+		return;
+	}
+	m_bImageAcquired = false;
 
-	VkPresentInfoKHR presentInfo = {};
-	presentInfo.sType			 = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	presentInfo.swapchainCount	 = 1;
-	presentInfo.pSwapchains		 = &m_swapchain;
-	presentInfo.pImageIndices	 = &m_currentIndex;
+	// The GPU waits for the frame's submit to signal this, so the CPU does not.
+	VkPresentInfoKHR presentInfo   = {};
+	presentInfo.sType			   = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pWaitSemaphores	   = &m_renderFinished[m_currentIndex];
+	presentInfo.swapchainCount	   = 1;
+	presentInfo.pSwapchains		   = &m_swapchain;
+	presentInfo.pImageIndices	   = &m_currentIndex;
 
 	VkResult result = vkQueuePresentKHR(m_presentQueue, &presentInfo);
-	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR && result != VK_ERROR_OUT_OF_DATE_KHR)
+	if (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR)
 	{
-		VK_CHECK(result, "VKSwapChain::Present: vkQueuePresentKHR failed");
+		// Rebuilt before the next acquire, rather than mid present.
+		if (!m_bNeedsRecreate)
+		{
+			LOG_WARNING("VKSwapChain::Present: swap chain {}, recreating",
+						result == VK_SUBOPTIMAL_KHR ? "suboptimal" : "out of date");
+		}
+		m_bNeedsRecreate = true;
+		return;
 	}
+
+	VK_CHECK(result, "VKSwapChain::Present: vkQueuePresentKHR failed");
+}
+
+void VKSwapChain::Recreate()
+{
+	// Same size as before. CreateSwapChain replaces it with the surface's current
+	// extent when the surface reports one.
+	Resize(m_width, m_height);
+	m_bNeedsRecreate = false;
 }
 
 void VKSwapChain::Resize(u32 width, u32 height)
@@ -252,7 +280,7 @@ void VKSwapChain::Resize(u32 width, u32 height)
 	SwapChainDesc desc;
 	desc.Width		 = width;
 	desc.Height		 = height;
-	desc.BufferCount = 2;
+	desc.BufferCount = m_bufferCount;
 	desc.Format		 = m_format;
 	desc.bUseVsync	 = m_vsync;
 	desc.Window		 = nullptr; // surface already created; window not needed for rebuild
@@ -266,6 +294,12 @@ void VKSwapChain::Resize(u32 width, u32 height)
 void VKSwapChain::Cleanup()
 {
 	DestroySwapChainResources();
+
+	for (VkSemaphore semaphore : m_imageAvailable)
+	{
+		vkDestroySemaphore(m_device, semaphore, nullptr);
+	}
+	m_imageAvailable.clear();
 
 	if (m_surface != VK_NULL_HANDLE)
 	{
@@ -283,31 +317,73 @@ DescriptorHandle VKSwapChain::GetCurrentRTV() const
 	return h;
 }
 
+VkSemaphore VKSwapChain::CreateBinarySemaphore() const
+{
+	VkSemaphoreCreateInfo info = {};
+	info.sType				   = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+	VkSemaphore semaphore = VK_NULL_HANDLE;
+	VK_CHECK(vkCreateSemaphore(m_device, &info, nullptr, &semaphore), "VKSwapChain: vkCreateSemaphore failed");
+	return semaphore;
+}
+
 void VKSwapChain::TransitionToRenderTarget(CommandList& cmd)
 {
-	// Acquire the next swapchain image (blocking via fence).
-	VkFence fence = m_acquireFences[m_currentIndex];
-	vkResetFences(m_device, 1, &fence);
-
-	VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, VK_NULL_HANDLE, fence, &m_currentIndex);
-
-	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+	if (m_bNeedsRecreate)
 	{
-		return;
+		Recreate();
 	}
 
-	VK_CHECK(vkWaitForFences(m_device, 1, &fence, VK_TRUE, UINT64_MAX),
-			 "VKSwapChain::TransitionToRenderTarget: fence wait failed");
+	// Acquire returns the image index straight away and signals the semaphore once
+	// the presentation engine has actually released the image. Only the GPU waits.
+	VkSemaphore imageAvailable = m_imageAvailable[m_acquireSlot];
+	VkResult result =
+		vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, imageAvailable, VK_NULL_HANDLE, &m_currentIndex);
+
+	// Nothing was acquired or signaled, so the same semaphore is safe to reuse.
+	if (result == VK_ERROR_OUT_OF_DATE_KHR)
+	{
+		LOG_WARNING("VKSwapChain::TransitionToRenderTarget: swap chain out of date, recreating");
+		Recreate();
+
+		result =
+			vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, imageAvailable, VK_NULL_HANDLE, &m_currentIndex);
+	}
+
+	// Suboptimal still acquired an image and will signal the semaphore, so this
+	// frame uses it. The rebuild waits for the next acquire.
+	if (result == VK_SUBOPTIMAL_KHR)
+	{
+		if (!m_bNeedsRecreate)
+		{
+			LOG_WARNING("VKSwapChain::TransitionToRenderTarget: swap chain suboptimal, recreating next frame");
+		}
+		m_bNeedsRecreate = true;
+	}
+	else
+	{
+		VK_CHECK(result, "VKSwapChain::TransitionToRenderTarget: vkAcquireNextImageKHR failed");
+	}
+
+	m_acquireSlot	 = (m_acquireSlot + 1) % static_cast<u32>(m_imageAvailable.size());
+	m_bImageAcquired = true;
+
+	// The frame's submit waits for the image only where it first writes it, so the
+	// shadow, G-buffer and cull work ahead of this runs before the image is free.
+	// It signals the image's render finished semaphore for Present to wait on.
+	m_graphicsQueue->AddBinaryWait(imageAvailable, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+	m_graphicsQueue->AddBinarySignal(m_renderFinished[m_currentIndex]);
 
 	// Transition the acquired image from UNDEFINED / PRESENT to COLOR_ATTACHMENT.
 	VKCommandList& vkCmd = static_cast<VKCommandList&>(cmd);
 
 	VkImageLayout oldLayout = m_imageLayouts[m_currentIndex];
 
+	// Source stage matches the semaphore's wait stage, so the layout change is
+	// ordered after the image is actually released.
 	VkImageMemoryBarrier2 barrier = {};
 	barrier.sType				  = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-	barrier.srcStageMask		  = (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) ? VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT
-																			 : VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+	barrier.srcStageMask		  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 	barrier.srcAccessMask		  = 0;
 	barrier.dstStageMask		  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 	barrier.dstAccessMask		  = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;

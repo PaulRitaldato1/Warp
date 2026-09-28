@@ -58,6 +58,9 @@ private:
 	VmaAllocator             m_allocator  = VK_NULL_HANDLE;
 
 	VkQueue   m_graphicsQueue  = VK_NULL_HANDLE;
+
+	// Non-owning, the renderer owns it. The swap chain needs it for its semaphores.
+	class VKCommandQueue* m_graphicsCommandQueue = nullptr;
 	VkQueue   m_computeQueue   = VK_NULL_HANDLE;
 	VkQueue   m_transferQueue  = VK_NULL_HANDLE;
 	VkSampler m_defaultSampler = VK_NULL_HANDLE;

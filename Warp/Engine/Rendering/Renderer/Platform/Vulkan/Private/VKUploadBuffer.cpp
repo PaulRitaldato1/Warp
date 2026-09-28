@@ -21,8 +21,11 @@ void VKUploadBuffer::Initialize(u64 size, u32 framesInFlight)
 	m_size = size;
 	m_ringBuffer.Create(framesInFlight, static_cast<u32>(size));
 
+	// Storage so structured buffers can be bound straight out of the ring, like
+	// the lighting pass's light list.
 	VkBufferUsageFlags extraFlags =
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
 		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
 	m_backingBuffer = VKBuffer::CreateStagingBuffer(m_allocator, m_device, size, extraFlags);

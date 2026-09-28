@@ -40,10 +40,17 @@ public:
 		return m_module;
 	}
 
+	// What the pipeline stage names. Vulkan looks it up in the module by name.
+	const String& GetEntryPoint() const
+	{
+		return m_entryPoint;
+	}
+
 private:
 	VkDevice m_device		= VK_NULL_HANDLE;
 	VkShaderModule m_module = VK_NULL_HANDLE;
 	Vector<u32> m_spirv;
+	String m_entryPoint;
 };
 
 #endif // WARP_BUILD_VK

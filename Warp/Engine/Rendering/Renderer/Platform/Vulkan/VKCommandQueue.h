@@ -30,6 +30,12 @@ public:
 	VkQueue GetNative()       const { return m_queue; }
 	u32     GetFamilyIndex()  const { return m_familyIndex; }
 
+	// Binary semaphores for the next Submit only. The swap chain uses them so the
+	// frame's submit waits for its acquired image and signals present, with no CPU
+	// wait on either side. D3D12 has no equivalent: DXGI does this internally.
+	void AddBinaryWait(VkSemaphore semaphore, VkPipelineStageFlags stage);
+	void AddBinarySignal(VkSemaphore semaphore);
+
 private:
 	VkDevice     m_device      = VK_NULL_HANDLE;
 	VkQueue      m_queue       = VK_NULL_HANDLE;
@@ -39,6 +45,11 @@ private:
 	// Pending cross-queue wait — accumulated by WaitForQueue(), consumed by Submit().
 	VkSemaphore  m_pendingWaitSemaphore = VK_NULL_HANDLE;
 	u64          m_pendingWaitValue     = 0;
+
+	// Consumed by the next Submit.
+	Vector<VkSemaphore>          m_binaryWaits;
+	Vector<VkPipelineStageFlags> m_binaryWaitStages;
+	Vector<VkSemaphore>          m_binarySignals;
 };
 
 #endif // WARP_BUILD_VK

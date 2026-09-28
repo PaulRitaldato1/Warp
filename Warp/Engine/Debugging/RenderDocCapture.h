@@ -3,6 +3,7 @@
 #ifndef WARP_RELEASE
 
 #include <Common/CommonTypes.h>
+#include <Core/Config/ConfigFile.h>
 #include <Debugging/renderdoc_app.h>
 #include <Debugging/Logging.h>
 
@@ -26,6 +27,17 @@ public:
 
 #ifdef WARP_WINDOWS
 		HMODULE mod = GetModuleHandleA("renderdoc.dll");
+
+		// Loading it ourselves puts RenderDoc's layer in every run, and it strips the
+		// validation layer unless its own API Validation option is on. r.RenderDoc = 0
+		// keeps it out. Launching from the RenderDoc UI injects it regardless.
+		const std::optional<String> loadSetting = ConfigFile::GetEngine().Get("r.RenderDoc");
+		if (!mod && loadSetting && *loadSetting == "0")
+		{
+			LOG_DEBUG("RenderDoc: not loaded, r.RenderDoc = 0");
+			return;
+		}
+
 		if (!mod)
 		{
 			mod = LoadLibraryA("renderdoc.dll");

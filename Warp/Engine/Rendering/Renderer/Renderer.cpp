@@ -129,12 +129,14 @@ void Renderer::Shutdown()
 }
 
 // ---------------------------------------------------------------------------
-// ImGui integration — delegates to the platform-specific ImGuiBackend.
+// ImGui integration — delegates to the API's ImGuiBackend.
 // ---------------------------------------------------------------------------
 
-void Renderer::InitImGui(IWindow* window)
+void Renderer::InitImGui(IWindow* window, URef<ImGuiBackend> backend)
 {
-	m_imguiBackend	   = CreateImGuiBackend();
+	DYNAMIC_ASSERT(backend, "Renderer::InitImGui: backend is null");
+
+	m_imguiBackend	   = std::move(backend);
 	m_imguiInitialized = m_imguiBackend->Init(window, m_device.get(), m_graphicsQueue.get(), k_framesInFlight);
 	if (m_imguiInitialized)
 	{
@@ -387,6 +389,10 @@ void Renderer::EndFrame()
 	// --- Texture uploads: copy each mip from staging buffer to the GPU texture.
 	for (PendingTextureUpload& upload : m_deferredTextureUploads)
 	{
+		// Vulkan images start UNDEFINED. D3D12 creates them in COPY_DEST, so this
+		// records nothing there.
+		m_copyList->TransitionTexture(upload.destination, ResourceState::CopyDest);
+
 		Buffer* stagingBuf = upload.stagingUploadBuffer->GetBackingBuffer();
 		for (const TextureMipUpload& mip : upload.mips)
 		{
@@ -785,6 +791,9 @@ void Renderer::DrawDeferred()
 	cmd.TransitionTexture(m_gbufferSimple.normal.get(), ResourceState::RenderTarget);
 	cmd.TransitionTexture(m_gbufferSimple.material.get(), ResourceState::RenderTarget);
 	cmd.TransitionTexture(m_gbufferSimple.emissive.get(), ResourceState::RenderTarget);
+
+	// The lighting pass left it as ShaderResource last frame.
+	cmd.TransitionTexture(m_depthTexture.get(), ResourceState::DepthWrite);
 
 	cmd.SetRenderTargets(4, GBuffer.data(), m_depthTexture.get());
 

@@ -16,16 +16,23 @@
 //   TextureTable       → N sampled image bindings
 //   StructuredBuffer   → 1 SSBO binding (t shift)
 //   RWStructuredBuffer → 1 SSBO binding (u shift)
-//   Samplers           → immutable, one binding each
+//   Samplers           → 1 sampler binding each, pushed when the pipeline is bound
 // ---------------------------------------------------------------------------
 
-static void BuildDescriptorSetLayout(VkDevice device, const Vector<BindingSlot>& bindings,
-									 const Vector<SamplerDesc>& samplers, VkShaderStageFlags stages,
-									 VkDescriptorSetLayout& outLayout, Vector<u32>& outRootToBinding,
-									 Vector<VkSampler>& outSamplers)
+struct DescriptorSetLayoutInfo
 {
+	VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+	Vector<u32> rootToBinding; // rootIndex -> first Vulkan binding
+	Vector<VKSamplerBinding> samplers;
+};
+
+static DescriptorSetLayoutInfo BuildDescriptorSetLayout(VkDevice device, const Vector<BindingSlot>& bindings,
+														const Vector<SamplerDesc>& samplers, VkShaderStageFlags stages)
+{
+	DescriptorSetLayoutInfo info;
+	info.rootToBinding.resize(bindings.size());
+
 	Vector<VkDescriptorSetLayoutBinding> vkBindings;
-	outRootToBinding.resize(bindings.size());
 	u32 vulkanBindingIndex = 0;
 
 	for (u32 rootIndex = 0; rootIndex < static_cast<u32>(bindings.size()); ++rootIndex)
@@ -76,11 +83,8 @@ static void BuildDescriptorSetLayout(VkDevice device, const Vector<BindingSlot>&
 			}
 		}
 
-		outRootToBinding[rootIndex] = vulkanBindingIndex;
+		info.rootToBinding[rootIndex] = vulkanBindingIndex;
 	}
-
-	// Reserved up front: each binding points into this vector.
-	outSamplers.reserve(samplers.size());
 
 	for (const SamplerDesc& samplerDesc : samplers)
 	{
@@ -148,14 +152,14 @@ static void BuildDescriptorSetLayout(VkDevice device, const Vector<BindingSlot>&
 		VK_CHECK(vkCreateSampler(device, &samplerCreateInfo, nullptr, &sampler),
 				 "BuildDescriptorSetLayout: vkCreateSampler failed");
 
-		outSamplers.push_back(sampler);
+		const u32 samplerBinding = samplerDesc.shaderRegister + Warp::Dxc::VkBindingShift::S;
+		info.samplers.push_back({ samplerBinding, sampler });
 
 		VkDescriptorSetLayoutBinding binding = {};
-		binding.binding						 = samplerDesc.shaderRegister + Warp::Dxc::VkBindingShift::S;
+		binding.binding						 = samplerBinding;
 		binding.descriptorType				 = VK_DESCRIPTOR_TYPE_SAMPLER;
 		binding.descriptorCount				 = 1;
 		binding.stageFlags					 = stages;
-		binding.pImmutableSamplers			 = &outSamplers.back();
 		vkBindings.push_back(binding);
 	}
 
@@ -165,8 +169,10 @@ static void BuildDescriptorSetLayout(VkDevice device, const Vector<BindingSlot>&
 	setLayoutInfo.bindingCount					  = static_cast<u32>(vkBindings.size());
 	setLayoutInfo.pBindings						  = vkBindings.data();
 
-	VK_CHECK(vkCreateDescriptorSetLayout(device, &setLayoutInfo, nullptr, &outLayout),
+	VK_CHECK(vkCreateDescriptorSetLayout(device, &setLayoutInfo, nullptr, &info.layout),
 			 "BuildDescriptorSetLayout: vkCreateDescriptorSetLayout failed");
+
+	return info;
 }
 
 // ---------------------------------------------------------------------------
@@ -187,26 +193,31 @@ void VKPipeline::InitializeWithDevice(VkDevice device)
 void VKPipeline::Initialize(const PipelineDesc& desc)
 {
 	DYNAMIC_ASSERT(desc.vertexShader, "VKPipeline: vertexShader is null");
-	DYNAMIC_ASSERT(desc.pixelShader, "VKPipeline: pixelShader is null");
-
-	VKShader* vs = static_cast<VKShader*>(desc.vertexShader);
-	VKShader* ps = static_cast<VKShader*>(desc.pixelShader);
 
 	// -------------------------------------------------------------------------
-	// Shader stages
+	// Shader stages. The pixel shader is optional: a depth-only pass like the
+	// shadow map has none, same as on D3D12.
 	// -------------------------------------------------------------------------
 
 	VkPipelineShaderStageCreateInfo stages[2] = {};
+	u32 stageCount							  = 0;
 
-	stages[0].sType	 = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	stages[0].stage	 = VK_SHADER_STAGE_VERTEX_BIT;
-	stages[0].module = vs->GetModule();
-	stages[0].pName	 = desc.vertexShader ? "VSMain" : "main";
+	const VKShader* vs		   = static_cast<const VKShader*>(desc.vertexShader);
+	stages[stageCount].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stages[stageCount].stage  = VK_SHADER_STAGE_VERTEX_BIT;
+	stages[stageCount].module = vs->GetModule();
+	stages[stageCount].pName  = vs->GetEntryPoint().c_str();
+	++stageCount;
 
-	stages[1].sType	 = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	stages[1].stage	 = VK_SHADER_STAGE_FRAGMENT_BIT;
-	stages[1].module = ps->GetModule();
-	stages[1].pName	 = desc.pixelShader ? "PSMain" : "main";
+	if (desc.pixelShader)
+	{
+		const VKShader* ps		   = static_cast<const VKShader*>(desc.pixelShader);
+		stages[stageCount].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		stages[stageCount].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+		stages[stageCount].module = ps->GetModule();
+		stages[stageCount].pName  = ps->GetEntryPoint().c_str();
+		++stageCount;
+	}
 
 	// -------------------------------------------------------------------------
 	// Vertex input — derived from desc.inputLayout; empty = SV_VertexID path
@@ -377,8 +388,11 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	dynamicState.dynamicStateCount				  = 2;
 	dynamicState.pDynamicStates					  = dynamicStates;
 
-	BuildDescriptorSetLayout(m_device, desc.bindings, desc.samplers, VK_SHADER_STAGE_ALL_GRAPHICS,
-							 m_descriptorSetLayout, m_rootToVulkanBinding, m_samplers);
+	DescriptorSetLayoutInfo setLayout =
+		BuildDescriptorSetLayout(m_device, desc.bindings, desc.samplers, VK_SHADER_STAGE_ALL_GRAPHICS);
+	m_descriptorSetLayout = setLayout.layout;
+	m_rootToVulkanBinding = std::move(setLayout.rootToBinding);
+	m_samplers			  = std::move(setLayout.samplers);
 
 	// -------------------------------------------------------------------------
 	// Pipeline layout
@@ -419,7 +433,7 @@ void VKPipeline::Initialize(const PipelineDesc& desc)
 	VkGraphicsPipelineCreateInfo pipelineInfo = {};
 	pipelineInfo.sType						  = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 	pipelineInfo.pNext						  = &renderingInfo;
-	pipelineInfo.stageCount					  = 2;
+	pipelineInfo.stageCount					  = stageCount;
 	pipelineInfo.pStages					  = stages;
 	pipelineInfo.pVertexInputState			  = &vertexInput;
 	pipelineInfo.pInputAssemblyState		  = &inputAssembly;
@@ -458,9 +472,9 @@ void VKPipeline::Cleanup()
 		m_descriptorSetLayout = VK_NULL_HANDLE;
 	}
 
-	for (const VkSampler& sampler : m_samplers)
+	for (const VKSamplerBinding& samplerBinding : m_samplers)
 	{
-		vkDestroySampler(m_device, sampler, nullptr);
+		vkDestroySampler(m_device, samplerBinding.sampler, nullptr);
 	}
 
 	m_samplers.clear();
@@ -485,9 +499,9 @@ void VKComputePipeline::Initialize(const ComputePipelineDesc& desc)
 	DYNAMIC_ASSERT(desc.computeShader, "VKComputePipeline: computeShader is null");
 	VKShader* cs = static_cast<VKShader*>(desc.computeShader);
 
-	Vector<VkSampler> noSamplers;
-	BuildDescriptorSetLayout(m_device, desc.bindings, {}, VK_SHADER_STAGE_COMPUTE_BIT, m_descriptorSetLayout,
-							 m_rootToVulkanBinding, noSamplers);
+	DescriptorSetLayoutInfo setLayout = BuildDescriptorSetLayout(m_device, desc.bindings, {}, VK_SHADER_STAGE_COMPUTE_BIT);
+	m_descriptorSetLayout = setLayout.layout;
+	m_rootToVulkanBinding = std::move(setLayout.rootToBinding);
 
 	VkPipelineLayoutCreateInfo layoutInfo = {};
 	layoutInfo.sType					  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -502,7 +516,7 @@ void VKComputePipeline::Initialize(const ComputePipelineDesc& desc)
 	pipelineInfo.stage.sType				 = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	pipelineInfo.stage.stage				 = VK_SHADER_STAGE_COMPUTE_BIT;
 	pipelineInfo.stage.module				 = cs->GetModule();
-	pipelineInfo.stage.pName				 = "CSMain";
+	pipelineInfo.stage.pName				 = cs->GetEntryPoint().c_str();
 
 	VK_CHECK(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline),
 			 "VKComputePipeline: vkCreateComputePipelines failed");

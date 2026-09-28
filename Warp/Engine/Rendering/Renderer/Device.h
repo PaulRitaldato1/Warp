@@ -33,8 +33,9 @@ struct DeviceDesc
 	u32 srvHeapCapacity = 196608;
 
 	// The SRV heap is partitioned into this many regions so a frame being recorded
-	// never overwrites descriptors an in-flight frame is still reading.
-	u32 framesInFlight = 3;
+	// never overwrites descriptors an in-flight frame is still reading. Set from
+	// Renderer::k_framesInFlight by RenderBackend.
+	u32 framesInFlight = 2;
 };
 
 struct PhysicalDeviceInfo

@@ -5,10 +5,18 @@
 #include <Rendering/Renderer/Pipeline.h>
 #include <Rendering/Renderer/Platform/Vulkan/VKCommon.h>
 
+// A sampler the pipeline owns, pushed into its descriptor set whenever the
+// pipeline is bound. Plain pushed samplers rather than immutable ones, since
+// immutable samplers inside a push descriptor set are rare enough that capture
+// tools like RenderDoc do not track them.
+struct VKSamplerBinding
+{
+	u32 binding		  = 0; // shift S + HLSL register
+	VkSampler sampler = VK_NULL_HANDLE;
+};
+
 // ---------------------------------------------------------------------------
 // VKPipeline — graphics PSO built with dynamic rendering (no render passes).
-// VkPipelineLayout holds push-constant ranges; descriptor-set layouts are
-// added as the engine matures.
 // ---------------------------------------------------------------------------
 
 class VKPipeline : public PipelineState
@@ -45,6 +53,12 @@ public:
 		return m_rootToVulkanBinding;
 	}
 
+	// Pushed by VKCommandList::SetPipelineState.
+	const Vector<VKSamplerBinding>& GetSamplerBindings() const
+	{
+		return m_samplers;
+	}
+
 private:
 	// Native handles
 	VkDevice m_device							= VK_NULL_HANDLE;
@@ -54,7 +68,7 @@ private:
 
 	// rootIndex -> first Vulkan binding index for that slot.
 	Vector<u32> m_rootToVulkanBinding;
-	Vector<VkSampler> m_samplers;
+	Vector<VKSamplerBinding> m_samplers;
 };
 
 // ---------------------------------------------------------------------------

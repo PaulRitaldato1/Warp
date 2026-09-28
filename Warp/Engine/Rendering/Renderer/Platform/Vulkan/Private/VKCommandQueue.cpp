@@ -33,48 +33,77 @@ u64 VKCommandQueue::Submit(const Vector<CommandList*>& lists)
 	}
 
 	// Grab the next signal value from the fence and embed it in this submit.
-	u64         signalValue = m_fence.GetNextSignalValue();
-	VkSemaphore semaphore   = m_fence.GetNative();
+	const u64 signalValue = m_fence.GetNextSignalValue();
 
-	// Build timeline semaphore info for both wait and signal.
-	VkSemaphore waitSemaphores[1]   = {};
-	u64         waitValues[1]       = {};
-	u32         waitCount           = 0;
-	VkPipelineStageFlags waitStages[1] = { VK_PIPELINE_STAGE_ALL_COMMANDS_BIT };
+	// Timeline and binary semaphores share one submit. Timeline entries carry a
+	// value; binary entries need a slot in the value arrays too, which is ignored.
+	Vector<VkSemaphore> waitSemaphores;
+	Vector<u64> waitValues;
+	Vector<VkPipelineStageFlags> waitStages;
 
 	if (m_pendingWaitSemaphore != VK_NULL_HANDLE)
 	{
-		waitSemaphores[0] = m_pendingWaitSemaphore;
-		waitValues[0]     = m_pendingWaitValue;
-		waitCount         = 1;
+		waitSemaphores.push_back(m_pendingWaitSemaphore);
+		waitValues.push_back(m_pendingWaitValue);
+		waitStages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+	}
+
+	for (size_t i = 0; i < m_binaryWaits.size(); ++i)
+	{
+		waitSemaphores.push_back(m_binaryWaits[i]);
+		waitValues.push_back(0);
+		waitStages.push_back(m_binaryWaitStages[i]);
+	}
+
+	Vector<VkSemaphore> signalSemaphores = { m_fence.GetNative() };
+	Vector<u64> signalValues			 = { signalValue };
+
+	for (VkSemaphore semaphore : m_binarySignals)
+	{
+		signalSemaphores.push_back(semaphore);
+		signalValues.push_back(0);
 	}
 
 	VkTimelineSemaphoreSubmitInfo tsInfo = {};
 	tsInfo.sType                     = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
-	tsInfo.waitSemaphoreValueCount   = waitCount;
-	tsInfo.pWaitSemaphoreValues      = waitValues;
-	tsInfo.signalSemaphoreValueCount = 1;
-	tsInfo.pSignalSemaphoreValues    = &signalValue;
+	tsInfo.waitSemaphoreValueCount   = static_cast<u32>(waitValues.size());
+	tsInfo.pWaitSemaphoreValues      = waitValues.data();
+	tsInfo.signalSemaphoreValueCount = static_cast<u32>(signalValues.size());
+	tsInfo.pSignalSemaphoreValues    = signalValues.data();
 
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submitInfo.pNext                = &tsInfo;
-	submitInfo.waitSemaphoreCount   = waitCount;
-	submitInfo.pWaitSemaphores      = waitSemaphores;
-	submitInfo.pWaitDstStageMask    = waitStages;
+	submitInfo.waitSemaphoreCount   = static_cast<u32>(waitSemaphores.size());
+	submitInfo.pWaitSemaphores      = waitSemaphores.data();
+	submitInfo.pWaitDstStageMask    = waitStages.data();
 	submitInfo.commandBufferCount   = static_cast<u32>(cmdBufs.size());
 	submitInfo.pCommandBuffers      = cmdBufs.data();
-	submitInfo.signalSemaphoreCount = 1;
-	submitInfo.pSignalSemaphores    = &semaphore;
+	submitInfo.signalSemaphoreCount = static_cast<u32>(signalSemaphores.size());
+	submitInfo.pSignalSemaphores    = signalSemaphores.data();
 
 	VK_CHECK(vkQueueSubmit(m_queue, 1, &submitInfo, VK_NULL_HANDLE),
 	         "VKCommandQueue::Submit: vkQueueSubmit failed");
 
-	// Clear pending wait — consumed by this submit.
+	// All consumed by this submit.
 	m_pendingWaitSemaphore = VK_NULL_HANDLE;
 	m_pendingWaitValue     = 0;
+	m_binaryWaits.clear();
+	m_binaryWaitStages.clear();
+	m_binarySignals.clear();
 
 	return signalValue;
+}
+
+void VKCommandQueue::AddBinaryWait(VkSemaphore semaphore, VkPipelineStageFlags stage)
+{
+	m_binaryWaits.push_back(semaphore);
+	m_binaryWaitStages.push_back(stage);
+}
+
+void VKCommandQueue::AddBinarySignal(VkSemaphore semaphore)
+{
+	m_binarySignals.push_back(semaphore);
 }
 
 void VKCommandQueue::WaitForValue(u64 value)

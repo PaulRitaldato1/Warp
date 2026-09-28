@@ -7,6 +7,7 @@
 #include <Rendering/RenderBackend.h>
 #include <Rendering/Resource/ResourceManager.h>
 #include <Rendering/Window/Window.h>
+#include <UI/ImGuiBackend.h>
 #include <Debugging/Profiler.h>
 #include <thread>
 
@@ -21,7 +22,7 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 	m_app	= std::unique_ptr<UserApplicationBase>(App);
 	m_world = std::make_unique<World>();
 
-	m_backend  = RenderBackend::Create();
+	m_backend  = std::make_unique<RenderBackend>(RenderBackend::GetStartupAPI());
 	m_window   = m_backend->MakeWindow(App->EngineInitDesc.Name, App->EngineInitDesc.WindowWidth,
 									   App->EngineInitDesc.WindowHeight);
 	m_renderer = m_backend->CreateRenderer(m_window.get());
@@ -36,7 +37,7 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 
 	if (m_renderer)
 	{
-		m_renderer->InitImGui(m_window.get());
+		m_renderer->InitImGui(m_window.get(), m_backend->CreateImGuiBackend());
 	}
 
 	m_editorUI.SetResourceManager(m_resourceManager.get());

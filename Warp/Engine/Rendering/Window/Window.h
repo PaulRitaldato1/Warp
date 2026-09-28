@@ -24,6 +24,8 @@ public:
         return r;
     }
 
+    // The GLFWwindow*. Backends derive what they need from it: an HWND for
+    // D3D12, a surface for Vulkan.
     virtual void* GetNativeHandle() const = 0;
 
     // Called by platform message handlers when the window client area changes.
@@ -44,11 +46,6 @@ public:
     virtual void ReleaseMouse() {}
     virtual void ToggleMouseCapture() {}
     virtual bool IsMouseCaptured() const { return false; }
-
-    // Returns the platform display/connection handle needed for Vulkan surface creation.
-    // D3D12 / non-Vulkan backends return nullptr.
-    // Linux X11: returns Display*   macOS: returns NSWindow* (future)
-    virtual void* GetNativeDisplay() const { return nullptr; }
 
 protected:
 

@@ -14,6 +14,9 @@
 #include <vector>
 #include <cstring>
 
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+
 // ---------------------------------------------------------------------------
 // Debug messenger callback
 // ---------------------------------------------------------------------------
@@ -89,12 +92,13 @@ void VKDevice::Initialize(const DeviceDesc& desc)
 	appInfo.engineVersion	   = VK_MAKE_VERSION(1, 0, 0);
 	appInfo.apiVersion		   = VK_API_VERSION_1_3;
 
-	std::vector<const char*> instExtensions = {
-		VK_KHR_SURFACE_EXTENSION_NAME,
-#ifdef WARP_LINUX
-		VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
-#endif
-	};
+	// VK_KHR_surface plus whichever platform surface extension GLFW needs: Win32,
+	// X11 or Wayland. The window is created first, so GLFW is initialized by now.
+	u32 glfwExtensionCount		 = 0;
+	const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+	FATAL_ASSERT(glfwExtensions, "VKDevice: GLFW found no Vulkan surface support");
+
+	std::vector<const char*> instExtensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
 	std::vector<const char*> layers;
 
@@ -137,6 +141,10 @@ void VKDevice::Initialize(const DeviceDesc& desc)
 		if (createFn)
 		{
 			createFn(m_instance, &messengerInfo, nullptr, &m_messenger);
+
+			// Silence from here is only meaningful if this line is present. A capture
+			// tool loaded into the process can still strip the layer.
+			LOG_DEBUG("VKDevice: validation enabled, messages appear as [Vulkan]");
 		}
 		else
 		{
@@ -378,6 +386,13 @@ URef<CommandQueue> VKDevice::CreateCommandQueue(CommandQueueType type)
 
 	URef<VKCommandQueue> vkQueue = std::make_unique<VKCommandQueue>();
 	vkQueue->InitializeWithDevice(m_device, queue, familyIndex);
+
+	// The swap chain adds its acquire and present semaphores to this queue's submits.
+	if (type == CommandQueueType::Graphics)
+	{
+		m_graphicsCommandQueue = vkQueue.get();
+	}
+
 	return vkQueue;
 }
 
@@ -412,8 +427,11 @@ URef<UploadBuffer> VKDevice::CreateUploadBuffer(u64 size, u32 framesInFlight)
 
 URef<SwapChain> VKDevice::CreateSwapChain(const SwapChainDesc& desc)
 {
+	FATAL_ASSERT(m_graphicsCommandQueue,
+				 "VKDevice::CreateSwapChain: create the graphics queue first, the swap chain submits through it");
+
 	URef<VKSwapChain> sc = std::make_unique<VKSwapChain>();
-	sc->InitializeWithContext(m_instance, m_physDevice, m_device, m_graphicsQueue, m_graphicsFamilyIndex);
+	sc->InitializeWithContext(m_instance, m_physDevice, m_device, m_graphicsCommandQueue, m_graphicsFamilyIndex);
 	sc->Initialize(desc);
 	return sc;
 }

@@ -4,15 +4,37 @@
 #include <Rendering/Window/Window.h>
 #include <Rendering/Renderer/Renderer.h>
 
+class ImGuiBackend;
+
+enum class GraphicsAPI : u8
+{
+	D3D12,
+	Vulkan,
+};
+
+// Builds everything that depends on the graphics API: the device, through the
+// renderer, and the ImGui renderer backend. The window is the same for both.
 class RenderBackend
 {
 public:
-	virtual ~RenderBackend() = default;
+	explicit RenderBackend(GraphicsAPI api);
 
-	// Defined in platform-specific .cpp files — only one is compiled per target.
-	// No #ifdef chains anywhere else in the engine.
-	static URef<RenderBackend> Create();
+	// r.GraphicsAPI from Config/Engine.ini, D3D12 or Vulkan. Without it, D3D12
+	// on Windows and Vulkan elsewhere.
+	static GraphicsAPI GetStartupAPI();
 
-	virtual URef<IWindow>  MakeWindow(const String& name, int width, int height) = 0;
-	virtual URef<Renderer> CreateRenderer(IWindow* window)                       = 0;
+	static bool IsSupported(GraphicsAPI api);
+	static const char* GetName(GraphicsAPI api);
+
+	GraphicsAPI GetAPI() const
+	{
+		return m_api;
+	}
+
+	URef<IWindow> MakeWindow(const String& name, int width, int height) const;
+	URef<Renderer> CreateRenderer(IWindow* window) const;
+	URef<ImGuiBackend> CreateImGuiBackend() const;
+
+private:
+	GraphicsAPI m_api;
 };

@@ -2,22 +2,8 @@
 
 #ifdef WARP_BUILD_VK
 
-// Enable the platform-specific Vulkan surface extension before including vulkan.h.
-#ifdef WARP_WINDOWS
-#   define VK_USE_PLATFORM_WIN32_KHR
-#endif
-#ifdef WARP_LINUX
-    // Xlib.h pollutes the global namespace with macros that conflict with our enums
-    // (None, True, False, Status, Bool) — undef them immediately after inclusion.
-#   include <X11/Xlib.h>
-#   define VK_USE_PLATFORM_XLIB_KHR
-#   undef None
-#   undef True
-#   undef False
-#   undef Bool
-#   undef Status
-#endif
-
+// No platform surface defines: GLFW creates the surface, so nothing here needs
+// Win32 or Xlib headers.
 #include <vulkan/vulkan.h>
 #include <Common/CommonTypes.h>
 #include <Debugging/Assert.h>

@@ -7,8 +7,9 @@ class Device;
 class CommandList;
 class CommandQueue;
 
-// Abstract interface for platform-specific ImGui rendering backends.
-// Implemented per-API (D3D12, Vulkan, etc.) in the platform directories.
+// Renderer-side ImGui backend, one per graphics API. Both share GLFW as the
+// platform backend, so input handling is identical under either API.
+// Created by RenderBackend::CreateImGuiBackend.
 class ImGuiBackend
 {
 public:
@@ -18,7 +19,9 @@ public:
 	virtual void Shutdown() = 0;
 	virtual void NewFrame() = 0;
 	virtual void Render(CommandList* commandList) = 0;
-};
 
-// Factory — returns the appropriate backend for the current platform/API.
-WARP_API URef<ImGuiBackend> CreateImGuiBackend();
+protected:
+	// The API-independent half: context, style, and a font sized for the
+	// window's DPI so text is sharp from the first frame.
+	static void CreateContext(IWindow* window);
+};

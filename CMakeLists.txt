@@ -86,7 +86,20 @@ FetchContent_Declare(
     SOURCE_SUBDIR  "_none"
 )
 
-FetchContent_MakeAvailable(DirectXMath fastgltf VulkanMemoryAllocator tinyddsloader stb imgui)
+# One window implementation for every platform and both graphics APIs.
+set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL        OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG        3.4
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(DirectXMath fastgltf VulkanMemoryAllocator tinyddsloader stb imgui glfw)
 
 # DirectXMath includes sal.h which is a Windows-only SAL annotation header.
 # Provide a no-op stub for non-Windows builds. configure_file runs on every
@@ -148,11 +161,12 @@ set(IMGUI_SRCS
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    # GLFW is the platform backend everywhere. Vulkan builds on every platform.
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
 )
-# Platform/renderer backends — added per-platform below
 if(WIN32)
     list(APPEND IMGUI_SRCS
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_dx12.cpp
     )
 endif()
@@ -179,6 +193,12 @@ option(WARP_PROFILING "Enable the scope profiler" ON)
 add_library(WarpEngine SHARED ${ENGINE_SRCS} ${ENGINE_HDRS} ${IMGUI_SRCS})
 target_compile_features(WarpEngine PRIVATE cxx_std_23)
 target_compile_definitions(WarpEngine PRIVATE "WARP_EXPORT")
+# Config is read straight from the repo, so editing it never needs a rebuild and
+# a build never overwrites local edits. Would move next to the exe for shipping.
+target_compile_definitions(WarpEngine PRIVATE WARP_CONFIG_DIR="${Warp_SOURCE_DIR}/Config")
+# Debug builds get the D3D12 debug layer, Vulkan validation and unoptimized shaders
+# with debug info. The build type alone does not define this.
+target_compile_definitions(WarpEngine PRIVATE $<$<CONFIG:Debug>:WARP_DEBUG>)
 if(NOT WARP_PROFILING)
     target_compile_definitions(WarpEngine PUBLIC "PROFILING_ENABLE=0")
 endif()
@@ -201,6 +221,7 @@ endif()
 #link libraries for each platform
 target_link_libraries(WarpEngine PUBLIC  DirectXMath)
 target_link_libraries(WarpEngine PRIVATE fastgltf::fastgltf)
+target_link_libraries(WarpEngine PRIVATE glfw)
 target_include_directories(WarpEngine SYSTEM PUBLIC  ${directxmath_SOURCE_DIR}/Inc)
 target_include_directories(WarpEngine SYSTEM PRIVATE ${tinyddsloader_SOURCE_DIR})
 target_include_directories(WarpEngine SYSTEM PRIVATE ${stb_SOURCE_DIR})
@@ -228,7 +249,7 @@ if(WIN32)
 elseif(UNIX AND NOT APPLE)
     find_package(Vulkan REQUIRED)
     # No D3D12 here, so DXC links directly. shaderc goes once VKShader is ported.
-    target_link_libraries(WarpEngine PRIVATE X11 Vulkan::Vulkan shaderc_shared dxcompiler)
+    target_link_libraries(WarpEngine PRIVATE Vulkan::Vulkan shaderc_shared dxcompiler)
     target_link_libraries(Warp PUBLIC WarpEngine)
 
 #Apple

@@ -113,8 +113,9 @@ public:
 
 private:
 	VkDevice               m_device        = VK_NULL_HANDLE;
-	Vector<VkCommandPool>  m_pools;          // one per frame slot
-	VkCommandBuffer        m_cmdBuf        = VK_NULL_HANDLE;
+	Vector<VkCommandPool>   m_pools;         // one per frame slot
+	Vector<VkCommandBuffer> m_cmdBufs;       // one per frame slot, owned by its pool
+	VkCommandBuffer        m_cmdBuf        = VK_NULL_HANDLE; // the slot being recorded
 	VkPipelineLayout       m_currentLayout     = VK_NULL_HANDLE; // cached from last SetPipelineState
 	const Vector<u32>*     m_currentBindingMap = nullptr;        // rootIndex -> Vulkan binding index
 	VkPipelineBindPoint    m_currentBindPoint  = VK_PIPELINE_BIND_POINT_GRAPHICS; // push descriptors target this

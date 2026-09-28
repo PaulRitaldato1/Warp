@@ -7,8 +7,11 @@
 #include <Rendering/Window/Window.h>
 
 #include <imgui.h>
-#include <imgui_impl_win32.h>
 #include <imgui_impl_dx12.h>
+#include <imgui_impl_glfw.h>
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
 
 bool D3D12ImGuiBackend::Init(IWindow* window, Device* device, CommandQueue* graphicsQueue, u32 framesInFlight)
 {
@@ -23,24 +26,10 @@ bool D3D12ImGuiBackend::Init(IWindow* window, Device* device, CommandQueue* grap
 	heapDesc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	ThrowIfFailed(nativeDevice->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_fontSrvHeap)));
 
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
+	CreateContext(window);
 
-	ImGuiIO& io = ImGui::GetIO();
-	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-
-	ImGui::StyleColorsDark();
-
-	HWND hwnd = static_cast<HWND>(window->GetNativeHandle());
-
-	// Build the font atlas at the monitor's DPI so text is sharp from the first frame.
-	// The default font is 13px — scale it to match the actual DPI.
-	float dpiScale = static_cast<float>(GetDpiForWindow(hwnd)) / 96.0f;
-	ImFontConfig fontConfig;
-	fontConfig.SizePixels = 13.0f * dpiScale;
-	io.Fonts->AddFontDefault(&fontConfig);
-
-	ImGui_ImplWin32_Init(hwnd);
+	// install_callbacks chains onto the window's own GLFW callbacks.
+	ImGui_ImplGlfw_InitForOther(static_cast<GLFWwindow*>(window->GetNativeHandle()), true);
 
 	ImGui_ImplDX12_InitInfo initInfo;
 	initInfo.Device            = nativeDevice;
@@ -58,7 +47,7 @@ bool D3D12ImGuiBackend::Init(IWindow* window, Device* device, CommandQueue* grap
 void D3D12ImGuiBackend::Shutdown()
 {
 	ImGui_ImplDX12_Shutdown();
-	ImGui_ImplWin32_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 	m_fontSrvHeap.Reset();
 }
@@ -66,7 +55,7 @@ void D3D12ImGuiBackend::Shutdown()
 void D3D12ImGuiBackend::NewFrame()
 {
 	ImGui_ImplDX12_NewFrame();
-	ImGui_ImplWin32_NewFrame();
+	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 }
 
@@ -82,12 +71,6 @@ void D3D12ImGuiBackend::Render(CommandList* commandList)
 	nativeCmd->SetDescriptorHeaps(1, heaps);
 
 	ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), nativeCmd);
-}
-
-// Factory implementation
-URef<ImGuiBackend> CreateImGuiBackend()
-{
-	return std::make_unique<D3D12ImGuiBackend>();
 }
 
 #endif

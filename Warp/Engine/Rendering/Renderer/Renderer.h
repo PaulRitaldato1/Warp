@@ -75,6 +75,16 @@ struct FrameSyncPoint
 class Renderer
 {
 public:
+	// How many frames the CPU is allowed to run ahead of the GPU. Controls the
+	// number of command allocator slots, upload buffer slices and FrameSyncPoints.
+	// Two gives CPU and GPU overlap without the extra latency of a third frame.
+	// Public so the device can size its per-frame descriptor regions to match.
+	static constexpr u32 k_framesInFlight = 2;
+
+	// Matches k_framesInFlight, so every frame in flight has an image to acquire
+	// and the CPU never stalls waiting for one.
+	static constexpr u32 k_backBufferCount = k_framesInFlight;
+
 	~Renderer();
 
 	// window is non-owning — WarpEngine retains ownership.
@@ -92,7 +102,8 @@ public:
 	void Draw();
 	void EndFrame();
 
-	void InitImGui(IWindow* window);
+	// The backend comes from RenderBackend, since it has to match the device's API.
+	void InitImGui(IWindow* window, URef<ImGuiBackend> backend);
 	void ShutdownImGui();
 	void RenderImGui();
 	void NewFrameImGui();
@@ -254,14 +265,6 @@ protected:
 	// them must rewrite after a true return.
 	bool EnsureBufferCapacity(URef<Buffer>& buffer, u32& capacity, u32 needed, u32 stride, const char* name,
 							  bool bUnorderedAccess = false);
-
-	// How many frames the CPU is allowed to run ahead of the GPU.
-	// Controls the number of command allocator slots, upload buffer slices,
-	// and FrameSyncPoints — NOT the swap chain back buffer count.
-	static constexpr u32 k_framesInFlight = 3;
-
-	// Swap chain back buffers — independent of k_framesInFlight.
-	static constexpr u32 k_backBufferCount = 2;
 
 	// Split k_framesInFlight ways. Instance data only passes through here when it
 	// changes, but a full upload after a grow is 16 MB at 100k instances.

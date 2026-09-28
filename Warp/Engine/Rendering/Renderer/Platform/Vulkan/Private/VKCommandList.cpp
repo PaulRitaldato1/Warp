@@ -37,27 +37,30 @@ void VKCommandList::InitializeWithDevice(VkDevice device, u32 familyIndex, u32 f
 		LOG_WARNING("VKCommandList: vkCmdPushDescriptorSetKHR not available — texture binding disabled");
 	}
 	m_pools.resize(framesInFlight, VK_NULL_HANDLE);
+	m_cmdBufs.resize(framesInFlight, VK_NULL_HANDLE);
 
+	// One pool and one command buffer per frame slot, allocated once. Begin resets
+	// the pool, which returns its buffer to the initial state for re-recording.
 	for (u32 i = 0; i < framesInFlight; ++i)
 	{
 		VkCommandPoolCreateInfo poolInfo = {};
 		poolInfo.sType					 = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 		poolInfo.queueFamilyIndex		 = familyIndex;
-		poolInfo.flags					 = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 		VK_CHECK(vkCreateCommandPool(device, &poolInfo, nullptr, &m_pools[i]),
 				 "VKCommandList: vkCreateCommandPool failed");
+
+		VkCommandBufferAllocateInfo allocInfo = {};
+		allocInfo.sType						  = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInfo.commandPool				  = m_pools[i];
+		allocInfo.level						  = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocInfo.commandBufferCount		  = 1;
+
+		VK_CHECK(vkAllocateCommandBuffers(device, &allocInfo, &m_cmdBufs[i]),
+				 "VKCommandList: vkAllocateCommandBuffers failed");
 	}
 
-	// Allocate the command buffer from pool[0] initially; it gets re-allocated
-	// if needed, or simply re-recorded from the same underlying buffer.
-	VkCommandBufferAllocateInfo allocInfo = {};
-	allocInfo.sType						  = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool				  = m_pools[0];
-	allocInfo.level						  = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandBufferCount		  = 1;
-
-	VK_CHECK(vkAllocateCommandBuffers(device, &allocInfo, &m_cmdBuf), "VKCommandList: vkAllocateCommandBuffers failed");
+	m_cmdBuf = m_cmdBufs[0];
 
 	LOG_DEBUG("VKCommandList initialized");
 }
@@ -70,18 +73,11 @@ void VKCommandList::Begin(u32 frameIndex)
 {
 	DYNAMIC_ASSERT(frameIndex < m_pools.size(), "VKCommandList::Begin: frameIndex out of range");
 
-	// Reset the pool for this frame slot (frees all allocations in it).
+	// Resetting the pool returns its buffer to the initial state; it does not free
+	// it. Allocating a fresh buffer here every frame grew the pool without bound.
+	// Safe because the caller waited on this slot's fence.
 	vkResetCommandPool(m_device, m_pools[frameIndex], 0);
-
-	// Re-allocate the command buffer from the newly reset pool.
-	VkCommandBufferAllocateInfo allocInfo = {};
-	allocInfo.sType						  = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool				  = m_pools[frameIndex];
-	allocInfo.level						  = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandBufferCount		  = 1;
-
-	VK_CHECK(vkAllocateCommandBuffers(m_device, &allocInfo, &m_cmdBuf),
-			 "VKCommandList::Begin: vkAllocateCommandBuffers failed");
+	m_cmdBuf = m_cmdBufs[frameIndex];
 
 	VkCommandBufferBeginInfo beginInfo = {};
 	beginInfo.sType					   = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -195,6 +191,34 @@ void VKCommandList::SetPipelineState(PipelineState* state)
 	m_currentBindingMap	   = &vkPipeline->GetRootToVulkanBindingMap();
 	m_currentBindPoint	   = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline->GetNativePipeline());
+
+	// Samplers belong to the pipeline, the Vulkan side of D3D12's static samplers,
+	// so they are pushed here once rather than by every draw.
+	const Vector<VKSamplerBinding>& samplers = vkPipeline->GetSamplerBindings();
+	if (samplers.empty() || !m_pushDescriptorFn)
+	{
+		return;
+	}
+
+	constexpr u32 k_maxSamplers = 8;
+	DYNAMIC_ASSERT(samplers.size() <= k_maxSamplers, "VKCommandList::SetPipelineState: too many samplers");
+
+	VkDescriptorImageInfo samplerInfos[k_maxSamplers] = {};
+	VkWriteDescriptorSet writes[k_maxSamplers]		  = {};
+	const u32 samplerCount							  = static_cast<u32>(samplers.size());
+
+	for (u32 i = 0; i < samplerCount; ++i)
+	{
+		samplerInfos[i].sampler = samplers[i].sampler;
+
+		writes[i].sType			  = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writes[i].dstBinding	  = samplers[i].binding;
+		writes[i].descriptorCount = 1;
+		writes[i].descriptorType  = VK_DESCRIPTOR_TYPE_SAMPLER;
+		writes[i].pImageInfo	  = &samplerInfos[i];
+	}
+
+	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, samplerCount, writes);
 }
 
 void VKCommandList::SetComputePipelineState(ComputePipelineState* state)
@@ -397,6 +421,9 @@ void VKCommandList::CopyBuffer(Buffer* src, Buffer* dst, u64 srcOffset, u64 dstO
 	VKBuffer* vkSrc = static_cast<VKBuffer*>(src);
 	VKBuffer* vkDst = static_cast<VKBuffer*>(dst);
 
+	// Transfers are not allowed inside dynamic rendering.
+	EndCurrentRenderPass();
+
 	VkBufferCopy region = {};
 	region.srcOffset	= srcOffset;
 	region.dstOffset	= dstOffset;
@@ -413,6 +440,9 @@ void VKCommandList::CopyBufferToTexture(Buffer* src, u64 srcOffset, u32 srcRowPi
 
 	VKBuffer* vkSrc	 = static_cast<VKBuffer*>(src);
 	VKTexture* vkDst = static_cast<VKTexture*>(dst);
+
+	// Transfers are not allowed inside dynamic rendering.
+	EndCurrentRenderPass();
 
 	const u32 fullWidth	 = vkDst->GetWidth();
 	const u32 fullHeight = vkDst->GetHeight();
@@ -471,6 +501,10 @@ void VKCommandList::TransitionTexture(Texture* texture, ResourceState newState)
 {
 	DYNAMIC_ASSERT(texture, "VKCommandList::TransitionTexture: texture is null");
 	VKTexture* vkTex = static_cast<VKTexture*>(texture);
+
+	// Layout transitions are not allowed inside dynamic rendering. D3D12 has no
+	// such rule, so callers transition mid pass. The next SetRenderTargets reopens it.
+	EndCurrentRenderPass();
 
 	VkResourceStateInfo srcInfo = ToVkResourceStateInfo(ResourceState::Undefined);
 	VkResourceStateInfo dstInfo = ToVkResourceStateInfo(newState);
@@ -536,6 +570,9 @@ void VKCommandList::TransitionBuffer(Buffer* buffer, ResourceState newState)
 	{
 		return;
 	}
+
+	// Same rule as TransitionTexture.
+	EndCurrentRenderPass();
 
 	VkBufferMemoryBarrier2 barrier = {};
 	barrier.sType				   = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
@@ -743,6 +780,8 @@ void VKCommandList::DrawIndexedIndirect(Buffer* argsBuffer, u64 offset, u32 draw
 
 void VKCommandList::Dispatch(u32 x, u32 y, u32 z)
 {
+	// Compute is not allowed inside dynamic rendering.
+	EndCurrentRenderPass();
 	vkCmdDispatch(m_cmdBuf, x, y, z);
 }
 

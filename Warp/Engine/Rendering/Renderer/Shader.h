@@ -12,6 +12,26 @@ enum class ShaderType : u8
 	Domain,
 };
 
+inline const char* ToString(ShaderType type)
+{
+	switch (type)
+	{
+		case ShaderType::Vertex:
+			return "vertex";
+		case ShaderType::Pixel:
+			return "pixel";
+		case ShaderType::Compute:
+			return "compute";
+		case ShaderType::Geometry:
+			return "geometry";
+		case ShaderType::Hull:
+			return "hull";
+		case ShaderType::Domain:
+			return "domain";
+	}
+	return "unknown";
+}
+
 struct ShaderDesc
 {
 	ShaderType type;

@@ -1,9 +1,9 @@
 #ifdef WARP_BUILD_VK
 
-#include <Rendering/Renderer/Platform/Vulkan/VKShader.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 #include <Renderer/DxcCommon.h>
+#include <Rendering/Renderer/Platform/Vulkan/VKShader.h>
 #include <cstring>
 
 // ---------------------------------------------------------------------------
@@ -139,7 +139,10 @@ void VKShader::Initialize(const ShaderDesc& desc)
 
 	VK_CHECK(vkCreateShaderModule(m_device, &moduleInfo, nullptr, &m_module), "VKShader: vkCreateShaderModule failed");
 
-	LOG_DEBUG("VKShader: compiled '{}' ({} bytes SPIR-V)", desc.filePath, m_spirv.size() * sizeof(u32));
+	m_entryPoint = desc.entryPoint;
+
+	LOG_DEBUG("VKShader: compiled {} shader {} frfm '{}' ({} bytes SPIR-V)", ToString(desc.type), desc.entryPoint,
+			  desc.filePath.empty() ? "source string" : desc.filePath, m_spirv.size() * sizeof(u32));
 }
 
 void VKShader::Cleanup()

@@ -6,6 +6,11 @@
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 
+#define GLFW_INCLUDE_NONE
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
+
 DXGI_FORMAT D3D12SwapChain::ToDXGIFormat(SwapChainFormat format)
 {
 	switch (format)
@@ -57,8 +62,8 @@ void D3D12SwapChain::InitializeWithFactory(ID3D12Device* device, IDXGIFactory4* 
 	m_engineFormat = desc.Format;
 	m_format	   = ToDXGIFormat(desc.Format);
 
-	HWND hwnd = static_cast<HWND>(desc.Window->GetNativeHandle());
-	DYNAMIC_ASSERT(hwnd, "D3D12SwapChain: window native handle is null");
+	HWND hwnd = glfwGetWin32Window(static_cast<GLFWwindow*>(desc.Window->GetNativeHandle()));
+	DYNAMIC_ASSERT(hwnd, "D3D12SwapChain: window has no HWND");
 
 	// Without ALLOW_TEARING, a flip-model swap chain still paces to the refresh rate
 	// even at syncInterval 0. CreateSwapChainForHwnd fails outright if the flag is
