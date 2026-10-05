@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
+#include <Events/DelegateDefs.h>
 #include <Memory/Arena.h>
 #include <Threading/ThreadPool.h>
 #include <Debugging/RenderDocCapture.h>
@@ -180,16 +181,9 @@ public:
 		return m_drawStats;
 	}
 
-	// The CPU cull is kept as a reference to compare the GPU cull against.
-	void SetGPUCulling(bool bEnabled)
-	{
-		m_bGPUCulling = bEnabled;
-	}
-
-	bool IsGPUCulling() const
-	{
-		return m_bGPUCulling;
-	}
+	// The r.GPUCulling cvar. The CPU cull is kept as a reference to compare against.
+	void SetGPUCulling(bool bEnabled);
+	bool IsGPUCulling() const;
 
 protected:
 	// Render path implementations — filled out as the engine matures.
@@ -349,7 +343,9 @@ protected:
 
 	URef<Shader> m_cullCS;
 	URef<ComputePipelineState> m_cullPSO;
-	bool m_bGPUCulling = true;
+	// Subscribed to r.GPUCulling for the renderer's lifetime.
+	void OnGPUCullingChanged(bool bEnabled);
+	URef<MemberFuncType<Renderer, bool>> m_gpuCullingChangedDelegate;
 
 	// Per pass, per frame slot. Written at the end of a frame, read when that
 	// slot comes round again and its fence has passed.

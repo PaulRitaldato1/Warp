@@ -7,6 +7,7 @@
 #include <Core/ECS/Components/SkyLightComponent.h>
 #include <Core/ECS/Components/TransformComponent.h>
 #include <Core/ECS/World.h>
+#include <Core/Console/ConsoleVariable.h>
 #include <Debugging/Assert.h>
 #include <Debugging/GPUMarker.h>
 #include <Debugging/Logging.h>
@@ -50,6 +51,11 @@ struct ShadowDrawConstants
 	uint instanceOffset;
 	u32 padding[3];
 };
+
+// Static: only this file reads it. Other code goes through Renderer::SetGPUCulling,
+// or through the registry by name, which is how the console will reach it.
+static Cvar<bool> CvarGPUCulling("r.GPUCulling", true,
+								 "Cull instances on the GPU. Off uses the CPU cull, kept as a reference");
 
 // Matches CullConstants in InstanceCull.hlsl.
 struct CullConstants
@@ -99,7 +105,29 @@ void Renderer::Init(IWindow* window, URef<Device> device)
 	// Worker thread pool
 	m_workerPool = std::make_unique<ThreadPool>(8);
 
+	// Owned here, unsubscribed in Shutdown: the cvar outlives the renderer.
+	m_gpuCullingChangedDelegate =
+		std::make_unique<MemberFuncType<Renderer, bool>>(this, &Renderer::OnGPUCullingChanged);
+	CvarGPUCulling.SubscribeToChanged(m_gpuCullingChangedDelegate.get());
+
 	LOG_DEBUG("Renderer initialized ({})", m_device->GetAPIName());
+}
+
+void Renderer::SetGPUCulling(bool bEnabled)
+{
+	CvarGPUCulling.Set(bEnabled);
+}
+
+bool Renderer::IsGPUCulling() const
+{
+	return CvarGPUCulling.Get();
+}
+
+void Renderer::OnGPUCullingChanged(bool bEnabled)
+{
+	// Nothing to rebuild: the next frame picks a path from the cvar. This is where
+	// a cvar that needs work on change, like vsync, would do it.
+	LOG_DEBUG("Renderer: r.GPUCulling = {}, culling on the {}", bEnabled, bEnabled ? "GPU" : "CPU");
 }
 
 void Renderer::WaitForGPUIdle()
@@ -117,6 +145,11 @@ void Renderer::WaitForGPUIdle()
 void Renderer::Shutdown()
 {
 	WaitForGPUIdle();
+
+	if (m_gpuCullingChangedDelegate)
+	{
+		CvarGPUCulling.UnsubscribeFromChanged(m_gpuCullingChangedDelegate.get());
+	}
 
 	ShutdownImGui();
 
@@ -620,7 +653,11 @@ void Renderer::DrawDeferred()
 	Vector<DrawIndexedArgs> cameraArgs	  = BuildDrawArgs();
 	Vector<DrawIndexedArgs> shadowArgs	  = cameraArgs;
 
-	if (m_bGPUCulling)
+	// Read once: the cull path, the args buffer state and the dispatch below must
+	// agree, even if the console changes the cvar partway through the frame.
+	const bool bGPUCulling = CvarGPUCulling.Get();
+
+	if (bGPUCulling)
 	{
 		// The CPU no longer knows which batches have survivors, so every batch with
 		// members is drawn. One with none becomes a zero instance draw.
@@ -686,12 +723,12 @@ void Renderer::DrawDeferred()
 	UploadInstances(cmd);
 
 	// The GPU cull counts into the args, so they stay writable until it is done.
-	const ResourceState argsState = m_bGPUCulling ? ResourceState::UnorderedAccess : ResourceState::IndirectArgument;
+	const ResourceState argsState = bGPUCulling ? ResourceState::UnorderedAccess : ResourceState::IndirectArgument;
 	UploadDrawArgs(cmd, cameraArgs, m_drawArgsBuffer, m_drawArgsCapacity, "DrawArgsBuffer", argsState);
 	UploadDrawArgs(cmd, shadowArgs, m_shadowDrawArgsBuffer, m_shadowDrawArgsCapacity, "ShadowDrawArgsBuffer",
 				   argsState);
 
-	if (m_bGPUCulling)
+	if (bGPUCulling)
 	{
 		if (regions.visibleListSize > 0)
 		{
