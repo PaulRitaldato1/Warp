@@ -11,8 +11,8 @@ void FreeCamSystem::Init(World& /*world*/)
 	m_keyDelegate       = std::make_unique<MemberFuncType<FreeCamSystem, WarpKeyCode, bool>>(this, &FreeCamSystem::OnKey);
 	m_mouseMoveDelegate = std::make_unique<MemberFuncType<FreeCamSystem, int32, int32>>(this, &FreeCamSystem::OnMouseMove);
 
-	g_InputEventManager.SubscribeToKeyEvents(m_keyDelegate.get());
-	g_InputEventManager.SubscribeToMouseMoveEvents(m_mouseMoveDelegate.get());
+	g_InputEventManager.OnKey().Subscribe(m_keyDelegate.get());
+	g_InputEventManager.OnMouseMove().Subscribe(m_mouseMoveDelegate.get());
 }
 
 void FreeCamSystem::Update(World& world, f32 deltaTime)
@@ -85,6 +85,9 @@ void FreeCamSystem::Update(World& world, f32 deltaTime)
 
 void FreeCamSystem::Shutdown()
 {
+	g_InputEventManager.OnKey().Unsubscribe(m_keyDelegate.get());
+	g_InputEventManager.OnMouseMove().Unsubscribe(m_mouseMoveDelegate.get());
+
 	m_keyDelegate.reset();
 	m_mouseMoveDelegate.reset();
 }

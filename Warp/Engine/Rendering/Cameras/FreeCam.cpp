@@ -13,8 +13,8 @@ void FreeCam::Initialize(f32 fovDegrees, f32 aspect, f32 nearZ, f32 farZ)
 	m_keyDelegate		= std::make_unique<MemberFuncType<FreeCam, WarpKeyCode, bool>>(this, &FreeCam::OnKey);
 	m_mouseMoveDelegate = std::make_unique<MemberFuncType<FreeCam, int32, int32>>(this, &FreeCam::OnMouseMove);
 
-	g_InputEventManager.SubscribeToKeyEvents(m_keyDelegate.get());
-	g_InputEventManager.SubscribeToMouseMoveEvents(m_mouseMoveDelegate.get());
+	g_InputEventManager.OnKey().Subscribe(m_keyDelegate.get());
+	g_InputEventManager.OnMouseMove().Subscribe(m_mouseMoveDelegate.get());
 
 	RebuildProjection();
 	RebuildView();

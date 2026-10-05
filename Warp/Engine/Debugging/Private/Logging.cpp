@@ -1,7 +1,15 @@
 #include <Debugging/Logging.h>
+#include <Core/Console/ConsoleVariable.h>
 #include <chrono>
 #include <cstdio>
 #include <ctime>
+
+static Cvar<bool> CvarLogVerbose("log.Verbose", false, "Print verbose logs, such as every input event");
+
+bool Logger::IsVerboseEnabled()
+{
+	return CvarLogVerbose.Get();
+}
 
 // ---------------------------------------------------------------------------
 // Singleton
@@ -91,6 +99,8 @@ void Logger::Log(LogLevel level, const char* file, int32 line, const String& mes
 		m_fileBuffer.AddItem(std::move(formatted));
 		m_writerWakeCV.notify_one();
 	}
+
+	m_onLog.Broadcast(level, message);
 }
 
 // ---------------------------------------------------------------------------

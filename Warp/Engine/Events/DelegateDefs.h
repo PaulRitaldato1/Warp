@@ -3,6 +3,7 @@
 #include <Common/CommonTypes.h>
 
 #include <algorithm>
+#include <functional>
 
 template <typename... Args>
 class DelegateBase
@@ -29,6 +30,22 @@ private:
 template <typename ClassType, typename... Args>
 using MemberFuncType = MemberFuncDelegate<ClassType, void (ClassType::*)(Args...), Args...>;
 
+// Free functions and lambdas, captures included. Costs a std::function call over
+// a member delegate's direct call, which only matters in a hot loop.
+//   FunctionDelegate<bool> onVSync([this](bool bEnabled) { RecreateSwapChain(); });
+template <typename... Args>
+class FunctionDelegate : public DelegateBase<Args...>
+{
+public:
+    explicit FunctionDelegate(std::function<void(Args...)> func)
+        : m_func(std::move(func)) {}
+
+    void Invoke(Args... args) override { m_func(args...); }
+
+private:
+    std::function<void(Args...)> m_func;
+};
+
 // Holds raw pointers: the subscriber owns the delegate and must unsubscribe it
 // before destroying it, or the next Broadcast calls into freed memory.
 template <typename... Args>
@@ -44,6 +61,11 @@ public:
     void Unsubscribe(DelegateBase<Args...>* delegate)
     {
       m_delegates.erase(std::remove(m_delegates.begin(), m_delegates.end(), delegate), m_delegates.end());
+    }
+
+    bool HasSubscribers() const
+    {
+      return !m_delegates.empty();
     }
 
     void Broadcast(Args... args)

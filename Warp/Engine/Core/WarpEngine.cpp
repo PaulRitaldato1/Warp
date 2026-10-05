@@ -1,5 +1,7 @@
 #include "WarpEngine.h"
 
+#include <Core/Config/ConfigFile.h>
+#include <Core/Console/ConsoleRegistry.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 #include <UserApplication.h>
@@ -18,6 +20,10 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 	m_timer = GameTimer();
 	Logger::Get().Init();
 	LOG_DEBUG("Engine Init Started");
+
+	// Before anything reads a startup cvar: the backend reads r.GraphicsAPI and
+	// the renderer loads RenderDoc before the device exists.
+	ConfigFile::LoadEngine().Apply();
 
 	m_app	= std::unique_ptr<UserApplicationBase>(App);
 	m_world = std::make_unique<World>();
@@ -42,6 +48,10 @@ WarpEngine::WarpEngine(UserApplicationBase* App)
 
 	m_editorUI.SetResourceManager(m_resourceManager.get());
 	m_editorUI.SetRenderer(m_renderer.get());
+	m_console.SetWindow(m_window.get());
+
+	// Startup cvars have all been read, so the console stops changing them.
+	ConsoleRegistry::Get().FinishStartup();
 
 	LOG_DEBUG("Render backend initialized ({})", m_renderer ? "renderer ready" : "no renderer");
 
@@ -134,6 +144,7 @@ bool WarpEngine::Run()
 					PROFILE_SCOPE("BuildUI");
 					m_renderer->NewFrameImGui();
 					m_editorUI.BuildUI(*m_world);
+					m_console.Draw();
 				}
 
 				{

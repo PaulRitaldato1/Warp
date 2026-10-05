@@ -1,53 +1,84 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
-#include <Core/Console/ConsoleRegistry.h>
+#include <Core/Console/ConsoleObject.h>
+#include <Debugging/Logging.h>
 #include <Events/DelegateDefs.h>
 
 #include <charconv>
+#include <format>
 #include <type_traits>
 
-// What the registry and the console see. Everything goes through strings, so
-// nothing here needs to know a variable's type.
-class ConsoleVariableBase
+enum class CvarFlags : u8
+{
+	None = 0,
+
+	// Only read at startup, like r.GraphicsAPI. Set it in Engine.ini; the console
+	// refuses changes once startup is finished.
+	Startup = 1 << 0,
+};
+
+inline bool HasFlag(CvarFlags flags, CvarFlags flag)
+{
+	return (static_cast<u8>(flags) & static_cast<u8>(flag)) != 0;
+}
+
+// Everything goes through strings here, so the console never needs to know a
+// variable's type.
+class ConsoleVariableBase : public ConsoleObject
 {
 public:
-	// Registers on construction and unregisters on destruction. Cvars are
-	// globals, so this runs before main and after it returns.
-	ConsoleVariableBase(const char* name, const char* help)
-		: m_name(name)
-		, m_help(help)
+	ConsoleVariableBase(const char* name, const char* help, CvarFlags flags)
+		: ConsoleObject(name, help)
+		, m_flags(flags)
 	{
-		ConsoleRegistry::Get().Register(this);
 	}
-
-	// Safe at exit: the registry is created by the first registration, so as a
-	// static it is destroyed after every variable constructed after it.
-	virtual ~ConsoleVariableBase()
-	{
-		ConsoleRegistry::Get().Unregister(this);
-	}
-
-	ConsoleVariableBase(const ConsoleVariableBase&)			   = delete;
-	ConsoleVariableBase& operator=(const ConsoleVariableBase&) = delete;
 
 	// False if text does not parse as this variable's type. The value is left as is.
 	virtual bool SetFromString(const String& text) = 0;
 	virtual String ToString() const				   = 0;
 
-	const String& GetName() const
+	// "r.GPUCulling" prints the value, "r.GPUCulling 0" sets it.
+	bool Execute(const ConsoleArgs& args) override
 	{
-		return m_name;
+		if (args.empty())
+		{
+			LOG_INFO("{} = {}", GetName(), ToString());
+			return true;
+		}
+
+		// Refused rather than set, so the value always matches what the engine is running with.
+		if (HasFlag(m_flags, CvarFlags::Startup) && ConsoleRegistry::Get().IsStartupFinished())
+		{
+			LOG_WARNING("{} is only read at startup. Set it in Engine.ini and restart", GetName());
+			return false;
+		}
+
+		// Joined back so a string value can be typed without quotes.
+		String text = args[0];
+		for (size_t i = 1; i < args.size(); ++i)
+		{
+			text += ' ';
+			text += args[i];
+		}
+
+		if (!SetFromString(text))
+		{
+			LOG_WARNING("'{}' is not a valid value for {}", text, GetName());
+			return false;
+		}
+
+		LOG_INFO("{} = {}", GetName(), ToString());
+		return true;
 	}
 
-	const String& GetHelp() const
+	CvarFlags GetFlags() const
 	{
-		return m_help;
+		return m_flags;
 	}
 
 private:
-	String m_name;
-	String m_help;
+	CvarFlags m_flags;
 };
 
 // What the code using it sees. Declared as a global next to that code:
@@ -56,16 +87,22 @@ private:
 template <typename T>
 class Cvar : public ConsoleVariableBase
 {
-	static_assert(std::is_same_v<T, bool> || std::is_same_v<T, int32>, "Cvar supports bool and int32 so far");
+	static_assert(std::is_same_v<T, bool> || std::is_same_v<T, int32> || std::is_same_v<T, f32> ||
+					  std::is_same_v<T, String>,
+				  "Cvar supports bool, int32, f32 and String");
+
+	// Numbers and bools come back by value, strings by reference so a read in a
+	// hot loop never copies one.
+	using GetType = std::conditional_t<std::is_arithmetic_v<T>, T, const T&>;
 
 public:
-	Cvar(const char* name, T defaultValue, const char* help)
-		: ConsoleVariableBase(name, help)
-		, m_value(defaultValue)
+	Cvar(const char* name, T defaultValue, const char* help, CvarFlags flags = CvarFlags::None)
+		: ConsoleVariableBase(name, help, flags)
+		, m_value(std::move(defaultValue))
 	{
 	}
 
-	T Get() const
+	GetType Get() const
 	{
 		return m_value;
 	}
@@ -79,7 +116,7 @@ public:
 			return;
 		}
 
-		m_value = value;
+		m_value = std::move(value);
 		m_onChanged.Broadcast(m_value);
 	}
 
@@ -113,10 +150,17 @@ public:
 			}
 			return false;
 		}
+		else if constexpr (std::is_same_v<T, String>)
+		{
+			// Any text is a valid string, spaces included.
+			Set(text);
+			return true;
+		}
 		else
 		{
-			// from_chars has no exceptions and no locale. Requiring it to consume
-			// the whole string rejects "12abc", which atoi would read as 12.
+			// int32 and f32. from_chars has no exceptions and no locale, so "0.5"
+			// parses the same on every machine, and requiring it to consume the
+			// whole string rejects "12abc", which atoi would read as 12.
 			T parsed			   = 0;
 			const char* end		   = text.data() + text.size();
 			const auto [ptr, error] = std::from_chars(text.data(), end, parsed);
@@ -135,9 +179,15 @@ public:
 		{
 			return m_value ? "true" : "false";
 		}
+		else if constexpr (std::is_same_v<T, String>)
+		{
+			return m_value;
+		}
 		else
 		{
-			return std::to_string(m_value);
+			// Shortest text that reads back as the same value: 0.5 rather than
+			// to_string's 0.500000.
+			return std::format("{}", m_value);
 		}
 	}
 

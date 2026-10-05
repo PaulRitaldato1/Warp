@@ -1,6 +1,6 @@
 #include <Rendering/RenderBackend.h>
 
-#include <Core/Config/ConfigFile.h>
+#include <Core/Console/ConsoleVariable.h>
 #include <Debugging/Assert.h>
 #include <Debugging/Logging.h>
 #include <Rendering/Window/GlfwWindow.h>
@@ -16,6 +16,17 @@
 #include <Rendering/Renderer/Platform/Vulkan/VKImGuiBackend.h>
 #endif
 
+#ifdef WARP_BUILD_DX12
+static constexpr const char* k_defaultAPI = "D3D12";
+#else
+static constexpr const char* k_defaultAPI = "Vulkan";
+#endif
+
+// Switching at runtime means tearing down and rebuilding the renderer, which is
+// in the backlog. Until then it is only read at startup.
+static Cvar<String> CvarGraphicsAPI("r.GraphicsAPI", k_defaultAPI, "D3D12 or Vulkan. D3D12 is Windows only",
+									CvarFlags::Startup);
+
 RenderBackend::RenderBackend(GraphicsAPI api)
 	: m_api(api)
 {
@@ -26,21 +37,16 @@ GraphicsAPI RenderBackend::GetStartupAPI()
 {
 	const GraphicsAPI fallback = IsSupported(GraphicsAPI::D3D12) ? GraphicsAPI::D3D12 : GraphicsAPI::Vulkan;
 
-	const std::optional<String> requested = ConfigFile::GetEngine().Get("r.GraphicsAPI");
-	if (!requested)
-	{
-		return fallback;
-	}
-
+	const String& requested = CvarGraphicsAPI.Get();
 	for (GraphicsAPI api : { GraphicsAPI::D3D12, GraphicsAPI::Vulkan })
 	{
-		if (*requested == GetName(api) && IsSupported(api))
+		if (requested == GetName(api) && IsSupported(api))
 		{
 			return api;
 		}
 	}
 
-	LOG_WARNING("RenderBackend: r.GraphicsAPI = {} is not available here, using {}", *requested, GetName(fallback));
+	LOG_WARNING("RenderBackend: r.GraphicsAPI = {} is not available here, using {}", requested, GetName(fallback));
 	return fallback;
 }
 

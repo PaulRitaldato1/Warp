@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
+#include <Events/DelegateDefs.h>
 #include <Threading/BufferedContainer.h>
 #include <atomic>
 #include <condition_variable>
@@ -12,15 +13,19 @@
 #define LOG_WARN_ENABLED 1
 #define LOG_INFO_ENABLED 1
 #define LOG_DEBUG_ENABLED 1
+#define LOG_VERBOSE_ENABLED 1
 
 #ifdef WARP_RELEASE
 #undef LOG_DEBUG_ENABLED
 #define LOG_DEBUG_ENABLED 0
+#undef LOG_VERBOSE_ENABLED
+#define LOG_VERBOSE_ENABLED 0
 #endif
 
 enum class LogLevel : u8
 {
-	Debug = 0,
+	Verbose = 0,
+	Debug,
 	Info,
 	Warning,
 	Error,
@@ -60,6 +65,19 @@ public:
 		m_consoleEnabled = enabled;
 	}
 
+	// Verbose is for per event or per frame logs, off unless log.Verbose is set.
+	// Checked before formatting so a disabled verbose log costs one bool read.
+	static bool IsVerboseEnabled();
+
+	// Every message after it passes the level gates, without the timestamp and
+	// file prefix. Broadcast on the logging thread, which can be any thread, so a
+	// listener must lock its own data. Subscribe before worker threads start and
+	// unsubscribe after they stop, and never log from a listener.
+	EventManager<LogLevel, const String&>& OnLog()
+	{
+		return m_onLog;
+	}
+
 private:
 	Logger() = default;
 	~Logger();
@@ -83,8 +101,10 @@ private:
 	std::atomic<bool> m_shutdownWriter{ false };
 	std::ofstream m_logFile;
 
-	static constexpr const char* k_levelStrings[] = { "DEBUG", "INFO", "WARNING", "ERROR" };
-	static constexpr const char* k_levelColors[]  = { "\033[0m", "\033[35m", "\033[33m", "\033[31m" };
+	EventManager<LogLevel, const String&> m_onLog;
+
+	static constexpr const char* k_levelStrings[] = { "VERBOSE", "DEBUG", "INFO", "WARNING", "ERROR" };
+	static constexpr const char* k_levelColors[]  = { "\033[90m", "\033[0m", "\033[35m", "\033[33m", "\033[31m" };
 };
 
 // ---------------------------------------------------------------------------
@@ -115,6 +135,22 @@ private:
 #define LOG_DEBUG(fmt, ...) Logger::Get().Log(LogLevel::Debug, __FILE__, __LINE__, fmt __VA_OPT__(, ) __VA_ARGS__)
 #else
 #define LOG_DEBUG(fmt, ...)                                                                                            \
+	do                                                                                                                 \
+	{                                                                                                                  \
+	} while (0)
+#endif
+
+#if LOG_VERBOSE_ENABLED
+#define LOG_VERBOSE(fmt, ...)                                                                                          \
+	do                                                                                                                 \
+	{                                                                                                                  \
+		if (Logger::IsVerboseEnabled())                                                                                \
+		{                                                                                                              \
+			Logger::Get().Log(LogLevel::Verbose, __FILE__, __LINE__, fmt __VA_OPT__(, ) __VA_ARGS__);                  \
+		}                                                                                                              \
+	} while (0)
+#else
+#define LOG_VERBOSE(fmt, ...)                                                                                          \
 	do                                                                                                                 \
 	{                                                                                                                  \
 	} while (0)

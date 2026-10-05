@@ -3,101 +3,62 @@
 
 WARP_API InputEventManager g_InputEventManager;
 
-InputEventManager::InputEventManager()
+static const char* GetKeyName(WarpKeyCode code)
 {
-	m_mouseDelegate = std::make_unique<MouseDelegate>(this, &InputEventManager::MouseButtonCallback);
-	MouseButtonEventManager.Subscribe(m_mouseDelegate.get());
-
-	m_mouseMoveDelegate = std::make_unique<MouseMoveDelegate>(this, &InputEventManager::MouseMoveCallback);
-	MouseMoveEventManager.Subscribe(m_mouseMoveDelegate.get());
-
-	m_keyDelegate = std::make_unique<KeyDelegate>(this, &InputEventManager::KeyCallback);
-	KeyPressedEventManager.Subscribe(m_keyDelegate.get());
-
-	m_subbedMouseMoveFunc = nullptr;
+	const auto it = WarpWarpKeyCodeToStringMap.find(code);
+	return it != WarpWarpKeyCodeToStringMap.end() ? it->second.c_str() : "Unknown";
 }
 
-void InputEventManager::MouseButtonCallback(MouseCode mb, bool bPressed)
+static const char* GetMouseButtonName(MouseCode code)
 {
-	LOG_DEBUG("Mouse Button and bPressed {}", bPressed);
+	switch (code)
+	{
+		case BUTTON_LEFT:
+			return "Left";
+		case BUTTON_RIGHT:
+			return "Right";
+		case BUTTON_MIDDLE:
+			return "Middle";
+		default:
+			return "Unknown";
+	}
+}
+
+void InputEventManager::BroadcastKey(WarpKeyCode code, bool bPressed)
+{
+	LOG_VERBOSE("Key {} {}", GetKeyName(code), bPressed ? "down" : "up");
+
+	m_onKey.Broadcast(code, bPressed);
 
 	if (bPressed)
 	{
-		if (m_subbedButtonsDOWN.contains(mb))
-		{
-			for (auto& Callback : m_subbedButtonsDOWN[mb])
-			{
-				Callback();
-			}
-		}
+		m_onKeyDown[code].Broadcast();
 	}
 	else
 	{
-		if (m_subbedButtonsUP.contains(mb))
-		{
-			for (auto& Callback : m_subbedButtonsUP[mb])
-			{
-				Callback();
-			}
-		}
+		m_onKeyUp[code].Broadcast();
 	}
 }
 
-void InputEventManager::KeyCallback(WarpKeyCode WarpKeyCode, bool bPressed)
+void InputEventManager::BroadcastMouseButton(MouseCode code, bool bPressed)
 {
-	LOG_DEBUG("Key {}, bPressed {}", WarpWarpKeyCodeToStringMap[WarpKeyCode], bPressed);
+	LOG_VERBOSE("Mouse {} {}", GetMouseButtonName(code), bPressed ? "down" : "up");
+
+	m_onMouseButton.Broadcast(code, bPressed);
 
 	if (bPressed)
 	{
-		if (m_subbedKeysDOWN.contains(WarpKeyCode))
-		{
-			for (auto& CallBack : m_subbedKeysDOWN[WarpKeyCode])
-			{
-				CallBack();
-			}
-		}
+		m_onMouseDown[code].Broadcast();
 	}
 	else
 	{
-		if (m_subbedKeysUP.contains(WarpKeyCode))
-		{
-			for (auto& CallBack : m_subbedKeysUP[WarpKeyCode])
-			{
-				CallBack();
-			}
-		}
+		m_onMouseUp[code].Broadcast();
 	}
 }
 
-void InputEventManager::MouseMoveCallback(int32 x, int32 y)
+void InputEventManager::BroadcastMouseMove(int32 dx, int32 dy)
 {
-	if (m_subbedMouseMoveFunc != nullptr)
-	{
-		m_subbedMouseMoveFunc(x, y);
-	}
-}
+	LOG_VERBOSE("Mouse move {}, {}", dx, dy);
 
-void InputEventManager::SubscribeToKeyUp(WarpKeyCode Code, void (*Func)(void))
-{
-	m_subbedKeysUP[Code].push_back(Func);
-}
-
-void InputEventManager::SubscribeToKeyDown(WarpKeyCode Code, void (*Func)(void))
-{
-	m_subbedKeysDOWN[Code].push_back(Func);
-}
-
-void InputEventManager::SubscribeToMouseUp(MouseCode Code, void (*Func)(void))
-{
-	m_subbedButtonsUP[Code].push_back(Func);
-}
-
-void InputEventManager::SubscribeToMouseDown(MouseCode Code, void (*Func)(void))
-{
-	m_subbedButtonsDOWN[Code].push_back(Func);
-}
-
-void InputEventManager::SubscribeToMouseMove(void (*Func)(int32, int32))
-{
-	m_subbedMouseMoveFunc = Func;
+	m_onMouseMove.Broadcast(dx, dy);
 }

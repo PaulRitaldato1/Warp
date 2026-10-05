@@ -105,6 +105,12 @@ static bool ImGuiWantsMouse()
 	return ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureMouse;
 }
 
+// A text box is active, like the console input.
+static bool ImGuiWantsTextInput()
+{
+	return ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput;
+}
+
 static GlfwWindow* FromGlfw(GLFWwindow* window)
 {
 	return static_cast<GlfwWindow*>(glfwGetWindowUserPointer(window));
@@ -119,8 +125,9 @@ void GlfwWindow::KeyCallback(GLFWwindow* window, int key, int /*scancode*/, int 
 
 	GlfwWindow* self = FromGlfw(window);
 
-	// Engine keys work regardless of ImGui, same as the old Win32 window.
-	if (action == GLFW_RELEASE)
+	// Engine keys work regardless of ImGui, except while typing, where Tab
+	// completes and Esc clears the text instead.
+	if (action == GLFW_RELEASE && !ImGuiWantsTextInput())
 	{
 		if (key == GLFW_KEY_ESCAPE)
 		{

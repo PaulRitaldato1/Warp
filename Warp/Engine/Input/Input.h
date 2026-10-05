@@ -260,73 +260,73 @@ enum MouseCode : u32
 //     KEYS_MAX_KEYS
 // };
 
+// Input as events. Subscribe any delegate (member, free function or lambda) and
+// unsubscribe it before destroying it:
+//   m_jumpDelegate = std::make_unique<FunctionDelegate<>>([this] { Jump(); });
+//   g_InputEventManager.OnKeyDown(KEY_SPACE).Subscribe(m_jumpDelegate.get());
+//
+// Use the per key events when you care about specific keys, and OnKey when you
+// handle many keys in one place, like a fly camera or text input.
 class WARP_API InputEventManager
 {
 public:
-	InputEventManager();
-	InputEventManager(const InputEventManager&)            = delete;
+	InputEventManager()										   = default;
+	InputEventManager(const InputEventManager&)			   = delete;
 	InputEventManager& operator=(const InputEventManager&) = delete;
 
-	void SubscribeToKeyUp(WarpKeyCode Code, void (*Func)(void));
-	void SubscribeToKeyDown(WarpKeyCode Code, void (*Func)(void));
-
-	void SubscribeToMouseUp(MouseCode Code, void (*Func)(void));
-	void SubscribeToMouseDown(MouseCode Code, void (*Func)(void));
-
-	void SubscribeToMouseMove(void (*Func)(int32, int32));
-
-	// Subscribe a member-function delegate to ALL key events (WarpKeyCode, bool bPressed).
-	// The delegate pointer must remain valid for the lifetime of the subscription.
-	template<typename T>
-	void SubscribeToKeyEvents(MemberFuncType<T, WarpKeyCode, bool>* delegate)
+	// Every key, with whether it was pressed or released.
+	EventManager<WarpKeyCode, bool>& OnKey()
 	{
-		KeyPressedEventManager.Subscribe(delegate);
+		return m_onKey;
 	}
 
-	// Subscribe a member-function delegate to mouse move events (x, y in screen pixels).
-	// The delegate pointer must remain valid for the lifetime of the subscription.
-	template<typename T>
-	void SubscribeToMouseMoveEvents(MemberFuncType<T, int32, int32>* delegate)
+	EventManager<>& OnKeyDown(WarpKeyCode code)
 	{
-		MouseMoveEventManager.Subscribe(delegate);
+		return m_onKeyDown[code];
 	}
 
-	inline void BroadcastMouseButton(MouseCode Code, bool bPressed)
+	EventManager<>& OnKeyUp(WarpKeyCode code)
 	{
-		MouseButtonEventManager.Broadcast(Code, bPressed);
+		return m_onKeyUp[code];
 	}
 
-	inline void BroadcastMouseMove(int32 X, int32 Y)
+	// Every mouse button, with whether it was pressed or released.
+	EventManager<MouseCode, bool>& OnMouseButton()
 	{
-		MouseMoveEventManager.Broadcast(X, Y);
+		return m_onMouseButton;
 	}
 
-	inline void BroadcastKey(WarpKeyCode Code, bool bPressed)
+	EventManager<>& OnMouseDown(MouseCode code)
 	{
-		KeyPressedEventManager.Broadcast(Code, bPressed);
+		return m_onMouseDown[code];
 	}
+
+	EventManager<>& OnMouseUp(MouseCode code)
+	{
+		return m_onMouseUp[code];
+	}
+
+	// Movement in pixels since the last event. Only sent while the mouse is captured.
+	EventManager<int32, int32>& OnMouseMove()
+	{
+		return m_onMouseMove;
+	}
+
+	// Called by the window.
+	void BroadcastKey(WarpKeyCode code, bool bPressed);
+	void BroadcastMouseButton(MouseCode code, bool bPressed);
+	void BroadcastMouseMove(int32 dx, int32 dy);
 
 private:
-	EventManager<MouseCode, bool> MouseButtonEventManager;
-	EventManager<int32, int32> MouseMoveEventManager;
-	EventManager<WarpKeyCode, bool> KeyPressedEventManager;
+	EventManager<WarpKeyCode, bool> m_onKey;
+	Array<EventManager<>, KEYS_MAX_KEYS> m_onKeyDown;
+	Array<EventManager<>, KEYS_MAX_KEYS> m_onKeyUp;
 
-	using MouseDelegate = MemberFuncType<InputEventManager, MouseCode, bool>;
-	URef<MouseDelegate> m_mouseDelegate;
-	void MouseButtonCallback(MouseCode mb, bool bPressed);
-	HashMap<MouseCode, Vector<void (*)(void)>> m_subbedButtonsDOWN;
-	HashMap<MouseCode, Vector<void (*)(void)>> m_subbedButtonsUP;
+	EventManager<MouseCode, bool> m_onMouseButton;
+	Array<EventManager<>, MAX_BUTTONS> m_onMouseDown;
+	Array<EventManager<>, MAX_BUTTONS> m_onMouseUp;
 
-	using MouseMoveDelegate = MemberFuncType<InputEventManager, int32, int32>;
-	URef<MouseMoveDelegate> m_mouseMoveDelegate;
-	void MouseMoveCallback(int32 x, int32 y);
-	void (*m_subbedMouseMoveFunc)(int32, int32);
-
-	using KeyDelegate = MemberFuncType<InputEventManager, WarpKeyCode, bool>;
-	URef<KeyDelegate> m_keyDelegate;
-	void KeyCallback(WarpKeyCode WarpKeyCode, bool bPressed);
-	HashMap<WarpKeyCode, Vector<void (*)(void)>> m_subbedKeysUP;
-	HashMap<WarpKeyCode, Vector<void (*)(void)>> m_subbedKeysDOWN;
+	EventManager<int32, int32> m_onMouseMove;
 };
 
 extern WARP_API InputEventManager g_InputEventManager;

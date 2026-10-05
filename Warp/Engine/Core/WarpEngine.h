@@ -4,6 +4,7 @@
 #include <Core/GameTimer.h>
 #include <Core/ECS/World.h>
 #include <Input/Input.h>
+#include <UI/ConsoleWindow.h>
 #include <UI/EditorUI.h>
 
 class IWindow;
@@ -41,6 +42,10 @@ private:
 
 	f64 m_lastTime;
 	GameTimer m_timer;
+
+	// Before the renderer so it subscribes to the log before worker threads
+	// start and unsubscribes after they are gone. Members are destroyed in reverse.
+	ConsoleWindow m_console;
 
 	URef<RenderBackend> m_backend;
 	URef<IWindow> m_window;

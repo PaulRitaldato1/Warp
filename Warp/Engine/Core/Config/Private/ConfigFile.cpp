@@ -1,5 +1,6 @@
 #include <Core/Config/ConfigFile.h>
 
+#include <Core/Console/ConsoleRegistry.h>
 #include <Debugging/Logging.h>
 
 #include <fstream>
@@ -18,6 +19,7 @@ static String Trim(const String& text)
 ConfigFile ConfigFile::Load(const String& path)
 {
 	ConfigFile config;
+	config.m_path = path;
 
 	std::ifstream file(path);
 	if (!file)
@@ -59,26 +61,27 @@ ConfigFile ConfigFile::Load(const String& path)
 			continue;
 		}
 
-		config.m_values[key] = Trim(line.substr(equals + 1));
+		config.m_entries.push_back({ key, Trim(line.substr(equals + 1)), lineNumber });
 	}
 
-	LOG_DEBUG("ConfigFile: loaded {} ({} values)", path, config.m_values.size());
+	LOG_DEBUG("ConfigFile: loaded {} ({} values)", path, config.m_entries.size());
 	return config;
 }
 
-const ConfigFile& ConfigFile::GetEngine()
+ConfigFile ConfigFile::LoadEngine()
 {
 	// Baked in by CMake so the file is read from the repo, not the build folder.
-	static const ConfigFile engine = Load(String(WARP_CONFIG_DIR) + "/Engine.ini");
-	return engine;
+	return Load(String(WARP_CONFIG_DIR) + "/Engine.ini");
 }
 
-std::optional<String> ConfigFile::Get(const String& key) const
+void ConfigFile::Apply() const
 {
-	auto it = m_values.find(key);
-	if (it == m_values.end())
+	for (const Entry& entry : m_entries)
 	{
-		return std::nullopt;
+		// The registry has already logged why, this adds where.
+		if (!ConsoleRegistry::Get().Execute(entry.key + " " + entry.value))
+		{
+			LOG_WARNING("ConfigFile: {}:{} was not applied", m_path, entry.lineNumber);
+		}
 	}
-	return it->second;
 }

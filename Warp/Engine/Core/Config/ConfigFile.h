@@ -2,22 +2,29 @@
 
 #include <Common/CommonTypes.h>
 
-#include <optional>
-
-// A key = value file. # starts a comment, blank lines are ignored, and
-// whitespace around keys and values is trimmed.
+// A key = value file of console variables. # starts a comment, blank lines are
+// ignored, and whitespace around keys and values is trimmed.
 class WARP_API ConfigFile
 {
 public:
-	// Missing or unreadable files give an empty config, so every key falls back
-	// to its default.
+	// A missing or unreadable file gives an empty config, so every cvar keeps its default.
 	static ConfigFile Load(const String& path);
 
 	// The engine's Config/Engine.ini, from the repo.
-	static const ConfigFile& GetEngine();
+	static ConfigFile LoadEngine();
 
-	std::optional<String> Get(const String& key) const;
+	// Sets each value through the console registry, in file order, exactly as if
+	// typed into the console. Unknown names and bad values warn with the line.
+	void Apply() const;
 
 private:
-	HashMap<String, String> m_values;
+	struct Entry
+	{
+		String key;
+		String value;
+		u32 lineNumber;
+	};
+
+	String m_path;
+	Vector<Entry> m_entries;
 };
