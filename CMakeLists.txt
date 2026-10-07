@@ -1,7 +1,5 @@
-
-#most up to date version as of project creation
+# 3.16 for target_precompile_headers
 cmake_minimum_required(VERSION 3.16)
-#project name
 project(Warp)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -20,7 +18,7 @@ else()
         -msse2
         -Wno-unused-parameter  # suppress until engine is complete
     )
-    message("Adding Unix -c, -Wall, -msse2")
+    message("Adding -Wall and -msse2")
 endif()
 
 if( CMAKE_BUILD_TYPE STREQUAL "" )
@@ -136,18 +134,6 @@ file(GLOB_RECURSE TESTBED_HDRS CONFIGURE_DEPENDS
     ${Warp_SOURCE_DIR}/Warp/TestBed/*.hpp
 )
 
-#EntryPoint Sources
-# file(GLOB_RECURSE ENTRY_SRCS
-#     ${Warp_SOURCE_DIR}/Warp/EntryPoint/*.cpp
-#     ${Warp_SOURCE_DIR}/Warp/EntryPoint/*.c
-# )
-
-# #EntryPoint headers
-# file(GLOB_RECURSE ENTRY_HDRS
-#     ${Warp_SOURCE_DIR}/Warp/EntryPoint/*.h
-#     ${Warp_SOURCE_DIR}/Warp/EntryPoint/*.hpp
-# )
-
 include_directories(
     ${Warp_SOURCE_DIR}/Warp
     ${Warp_SOURCE_DIR}/Warp/Engine/Rendering
@@ -174,6 +160,7 @@ endif()
 #TODO
 #we also have 'WARP_ASSERTIONS_ENABLED', 'LOG_WARN_ENABLED', 'LOG_DEBUG_ENABLED', 'LOG_INFO_ENABLED', and 'WARP_RELEASE'
 #that we need to add depending on the build type
+
 # MUST default ON.  This is not only a build-speed setting: the PCH header is
 # Warp/Engine/Common/CommonTypes.h, which defines WARP_BUILD_DX12 / WARP_BUILD_VK,
 # and CMake force-includes it into every translation unit (/FI).  The platform
@@ -208,15 +195,11 @@ endif()
 
 add_executable(Warp "Warp/EntryPoint/EntryPoint.h" ${TESTBED_SRCS} ${TESTBED_HDRS})
 target_compile_features(Warp PRIVATE cxx_std_23)
-target_compile_definitions(Warp PUBLIC)
 if(WARP_USE_PCH)
     target_precompile_headers(Warp PRIVATE "Warp/Engine/Common/CommonTypes.h")
 endif()
 
 #TODO: Make a separate application so I can hot reload the user code and the engine code
-# add_executable(Application ${ENTRY_SRCS} ${ENTRY_HDRS})
-# target_compile_features(Application PRIVATE cxx_std_20)
-# target_precompile_headers(Application PRIVATE "Warp/Engine/Common/CommonTypes.h")
 
 #link libraries for each platform
 target_link_libraries(WarpEngine PUBLIC  DirectXMath)
@@ -248,11 +231,11 @@ if(WIN32)
 #Linux
 elseif(UNIX AND NOT APPLE)
     find_package(Vulkan REQUIRED)
-    # No D3D12 here, so DXC links directly. shaderc goes once VKShader is ported.
-    target_link_libraries(WarpEngine PRIVATE Vulkan::Vulkan shaderc_shared dxcompiler)
+    # No D3D12 here, so the Vulkan SDK's DXC links directly.
+    target_link_libraries(WarpEngine PRIVATE Vulkan::Vulkan dxcompiler)
     target_link_libraries(Warp PUBLIC WarpEngine)
 
-#Apple
+#Apple, no Metal backend yet
 else()
 
 endif()
@@ -293,27 +276,13 @@ set_source_files_properties(${WARP_SHADER_FILES} PROPERTIES HEADER_FILE_ONLY TRU
 
 if(MSVC_IDE)
     #create virtual folders for VS because they still do this for some reason
-    foreach(source IN LISTS TESTBED_SRCS TESTBED_HDRS)
+    foreach(source IN LISTS TESTBED_SRCS TESTBED_HDRS ENGINE_SRCS ENGINE_HDRS)
         get_filename_component(source_path "${source}" PATH)
         string(REPLACE "${Warp_SOURCE_DIR}" "" relative_source_path "${source_path}")
         string(REPLACE "/" "\\" source_path_msvc "${relative_source_path}")
         source_group("${source_path_msvc}" FILES "${source}")
-    endforeach(source IN LISTS TESTBEd_SRCS TESTBED_HDRS)
+    endforeach()
 
-     foreach(source IN LISTS ENGINE_SRCS ENGINE_HDRS)
-        get_filename_component(source_path "${source}" PATH)
-        string(REPLACE "${Warp_SOURCE_DIR}" "" relative_source_path "${source_path}")
-        string(REPLACE "/" "\\" source_path_msvc "${relative_source_path}")
-        source_group("${source_path_msvc}" FILES "${source}")
-    endforeach(source IN LISTS ENGINE_SRCS ENGINE_HDRS)
-
-    foreach(source IN LISTS ENTRY_SRCS ENTRY_HDRS)
-        get_filename_component(source_path "${source}" PATH)
-        string(REPLACE "${Warp_SOURCE_DIR}" "" relative_source_path "${source_path}")
-        string(REPLACE "/" "\\" source_path_msvc "${relative_source_path}")
-        source_group("${source_path_msvc}" FILES "${source}")
-    endforeach(source IN LISTS ENGINE_SRCS ENGINE_HDRS)
-
-    #set Warp as the startup project
-    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT WarpEngine)
+    #set Warp as the startup project, WarpEngine is a dll and can't be launched
+    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Warp)
 endif()
