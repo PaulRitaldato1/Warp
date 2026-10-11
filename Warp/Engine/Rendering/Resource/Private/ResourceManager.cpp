@@ -14,6 +14,46 @@
 #include <cstring>
 #include <thread>
 
+// Per entry of mesh.texturePaths. Images are stored sRGB encoded when they hold
+// colors (base color, emissive) and as raw numbers when they hold data (normal,
+// metallic roughness, occlusion). Decoding data through the sRGB curve bends
+// normals and shifts roughness, so only colors get the sRGB format.
+static Vector<TextureColorSpace> GetTextureColorSpaces(const Mesh& mesh, const String& meshPath)
+{
+	Vector<TextureColorSpace> colorSpaces(mesh.texturePaths.size(), TextureColorSpace::Linear);
+
+	auto IsValidIndex = [&](int32 index) { return index >= 0 && index < static_cast<int32>(colorSpaces.size()); };
+
+	for (const Material& material : mesh.materials)
+	{
+		for (TextureSlot slot : { TextureSlot::BaseColor, TextureSlot::Emissive })
+		{
+			const int32 index = material.TextureIndices[slot];
+			if (IsValidIndex(index))
+			{
+				colorSpaces[index] = TextureColorSpace::sRGB;
+			}
+		}
+	}
+
+	// glTF allows one image in both roles. One GPU texture cannot be both, so the
+	// color use wins and the data use reads slightly wrong values.
+	for (const Material& material : mesh.materials)
+	{
+		for (TextureSlot slot : { TextureSlot::Normal, TextureSlot::MetallicRoughness, TextureSlot::Occlusion })
+		{
+			const int32 index = material.TextureIndices[slot];
+			if (IsValidIndex(index) && colorSpaces[index] == TextureColorSpace::sRGB)
+			{
+				LOG_WARNING("ResourceManager: '{}' in '{}' is used as both color and data, loading it as color",
+							mesh.texturePaths[index], meshPath);
+			}
+		}
+	}
+
+	return colorSpaces;
+}
+
 void ResourceManager::Initialize(Device* device, ThreadPool* threadPool)
 {
 	FATAL_ASSERT(device, "ResourceManager::Initialize: device is null");
@@ -247,14 +287,14 @@ DetachedTask ResourceManager::LoadMeshTask(u32 pathId)
 	m_inFlightLoads.fetch_sub(1, std::memory_order_acq_rel);
 }
 
-DetachedTask ResourceManager::LoadTextureTask(u32 pathId)
+DetachedTask ResourceManager::LoadTextureTask(u32 pathId, TextureColorSpace colorSpace)
 {
 	m_inFlightLoads.fetch_add(1, std::memory_order_acq_rel);
 
 	const String path = GetPathRegistry().Resolve(pathId);
 
 	co_await ResumeOn{ *m_poolExecutor };
-	TextureLoadResult result = TextureLoader::Load(path);
+	TextureLoadResult result = TextureLoader::Load(path, colorSpace);
 
 	co_await ResumeOn{ m_gpuExecutor };
 
@@ -432,7 +472,7 @@ MeshResource* ResourceManager::GetMeshResource(u32 pathId)
 	return nullptr;
 }
 
-TextureResource* ResourceManager::GetTextureResource(u32 pathId)
+TextureResource* ResourceManager::GetTextureResource(u32 pathId, TextureColorSpace colorSpace)
 {
 	auto it = m_textureCache.find(pathId);
 	if (it != m_textureCache.end())
@@ -444,7 +484,7 @@ TextureResource* ResourceManager::GetTextureResource(u32 pathId)
 		return nullptr;
 	}
 
-	BeginTextureLoad(pathId);
+	BeginTextureLoad(pathId, colorSpace);
 	return nullptr;
 }
 
@@ -506,22 +546,30 @@ TextureResource* ResourceManager::GetTextureResourceByHandle(u32 handle)
 	return resource;
 }
 
-u32 ResourceManager::BeginTextureLoad(u32 pathId)
+u32 ResourceManager::BeginTextureLoad(u32 pathId, TextureColorSpace colorSpace)
 {
 	auto it = m_textureCache.find(pathId);
 	if (it != m_textureCache.end())
 	{
+		// One GPU texture per file, so one color space wins. Supporting both would
+		// need a second view of the same image with the other format.
+		if (it->second->colorSpace != colorSpace)
+		{
+			LOG_WARNING("ResourceManager: '{}' is used as both color and data, keeping the first",
+						GetPathRegistry().Resolve(pathId));
+		}
 		return it->second->handle;
 	}
 
 	URef<TextureResource> resource = std::make_unique<TextureResource>();
 	resource->state				   = AssetState::Loading;
+	resource->colorSpace		   = colorSpace;
 	resource->handle			   = static_cast<u32>(m_textureByHandle.size());
 	u32 handle					   = resource->handle;
 	m_textureByHandle.push_back(resource.get());
 	m_textureCache[pathId]		   = std::move(resource);
 
-	LoadTextureTask(pathId);
+	LoadTextureTask(pathId, colorSpace);
 	return handle;
 }
 
@@ -597,11 +645,13 @@ bool ResourceManager::FinalizeMeshUpload(u32 pathId, MeshResource& resource)
 		dir.clear();
 	}
 
+	const Vector<TextureColorSpace> colorSpaces = GetTextureColorSpaces(mesh, path);
+
 	resource.textureHandles.resize(mesh.texturePaths.size(), ~0u);
 	for (u32 i = 0; i < static_cast<u32>(mesh.texturePaths.size()); ++i)
 	{
 		const String fullPath      = dir + mesh.texturePaths[i];
-		resource.textureHandles[i] = BeginTextureLoad(GetPathRegistry().Intern(fullPath));
+		resource.textureHandles[i] = BeginTextureLoad(GetPathRegistry().Intern(fullPath), colorSpaces[i]);
 	}
 
 	resource.state = AssetState::Uploading;

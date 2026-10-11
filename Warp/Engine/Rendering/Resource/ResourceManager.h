@@ -70,8 +70,9 @@ public:
 	MeshResource* GetMeshResourceByHandle(u32 handle);
 
 	// Returns a TextureResource if ready, nullptr if still loading/uploading.
-	// Automatically kicks off loading on first request.
-	TextureResource* GetTextureResource(u32 pathId);
+	// Automatically kicks off loading on first request. Colors (base color, emissive)
+	// are sRGB, data (normal, metallic roughness, occlusion) is Linear.
+	TextureResource* GetTextureResource(u32 pathId, TextureColorSpace colorSpace = TextureColorSpace::sRGB);
 
 	// O(1) handle-based lookup. Returns nullptr if the handle is invalid.
 	TextureResource* GetTextureResourceByHandle(u32 handle);
@@ -93,12 +94,12 @@ private:
 	void CreateDefaultMaterialTexture();
 	void CreateDefaultNormalTexture();
 	void BeginMeshLoad(u32 pathId);
-	u32  BeginTextureLoad(u32 pathId);
+	u32  BeginTextureLoad(u32 pathId, TextureColorSpace colorSpace);
 
 	// The whole load pipeline for one asset, start to Ready. Each co_await moves
 	// execution to the thread that step needs.
 	DetachedTask LoadMeshTask(u32 pathId);
-	DetachedTask LoadTextureTask(u32 pathId);
+	DetachedTask LoadTextureTask(u32 pathId, TextureColorSpace colorSpace);
 
 	// Marks a resource Ready once its already-queued upload has had time to land.
 	// Used by the procedural and builtin paths, which skip the load step.

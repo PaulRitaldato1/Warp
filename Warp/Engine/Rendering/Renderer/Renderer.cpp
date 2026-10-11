@@ -1,13 +1,13 @@
 #include "DirectXMath.h"
 #include "Math/Frustum.h"
 #include "Math/Math.h"
+#include <Core/Console/ConsoleVariable.h>
 #include <Core/ECS/Components/CameraComponent.h>
 #include <Core/ECS/Components/LightComponent.h>
 #include <Core/ECS/Components/MeshComponent.h>
 #include <Core/ECS/Components/SkyLightComponent.h>
 #include <Core/ECS/Components/TransformComponent.h>
 #include <Core/ECS/World.h>
-#include <Core/Console/ConsoleVariable.h>
 #include <Debugging/Assert.h>
 #include <Debugging/GPUMarker.h>
 #include <Debugging/Logging.h>
@@ -51,6 +51,19 @@ struct ShadowDrawConstants
 	uint instanceOffset;
 	u32 padding[3];
 };
+
+struct TonemapConstants
+{
+	float exposureEV;
+	float whitePoint;
+	int32 tonemapper;
+	u32 padding;
+};
+
+static Cvar<float> CvarExposureEV("r.Tonemap.ExposureEV", 0.0f, "Adjusts the exposure that the tonemapper uses");
+static Cvar<int> CvarTonemapperMethod("r.Tonemap.Method", 1, "0 clamp, 1 Reinhard, 2 ACES Narkowicz");
+static Cvar<f32> CvarWhitePoint("r.Tonemap.WhitePoint", 4.0f,
+								"Extended Reinhard: brightness after exposure that maps to white");
 
 // Static: only this file reads it. Other code goes through Renderer::SetGPUCulling,
 // or through the registry by name, which is how the console will reach it.
@@ -232,6 +245,7 @@ void Renderer::OnResize(u32 width, u32 height)
 	m_gbufferSimple.normal.reset();
 	m_gbufferSimple.material.reset();
 	m_gbufferSimple.emissive.reset();
+	m_hdrTarget.reset();
 
 	LOG_DEBUG("Renderer resized: {}x{}", width, height);
 }
@@ -650,8 +664,8 @@ void Renderer::DrawDeferred()
 	// Both culls end up in the same shape: args indexed by batch, and per batch
 	// an offset and count into a visible index list.
 	const RenderScene::CullRegions regions = m_scene.ComputeCullRegions();
-	Vector<DrawIndexedArgs> cameraArgs	  = BuildDrawArgs();
-	Vector<DrawIndexedArgs> shadowArgs	  = cameraArgs;
+	Vector<DrawIndexedArgs> cameraArgs	   = BuildDrawArgs();
+	Vector<DrawIndexedArgs> shadowArgs	   = cameraArgs;
 
 	// Read once: the cull path, the args buffer state and the dispatch below must
 	// agree, even if the console changes the cvar partway through the frame.
@@ -732,14 +746,15 @@ void Renderer::DrawDeferred()
 	{
 		if (regions.visibleListSize > 0)
 		{
-			UploadSlotIndices(cmd, regions.regionStarts, m_regionStartBuffer, m_regionStartCapacity, "RegionStartBuffer");
+			UploadSlotIndices(cmd, regions.regionStarts, m_regionStartBuffer, m_regionStartCapacity,
+							  "RegionStartBuffer");
 
 			// Sized for the worst case, every member visible. The cull fills a prefix
 			// of each batch's region and the rest is never read.
 			EnsureBufferCapacity(m_slotIndexBuffer, m_slotIndexCapacity, regions.visibleListSize, sizeof(u32),
 								 "SlotIndexBuffer", true);
-			EnsureBufferCapacity(m_shadowSlotIndexBuffer, m_shadowSlotIndexCapacity, regions.visibleListSize, sizeof(u32),
-								 "ShadowSlotIndexBuffer", true);
+			EnsureBufferCapacity(m_shadowSlotIndexBuffer, m_shadowSlotIndexCapacity, regions.visibleListSize,
+								 sizeof(u32), "ShadowSlotIndexBuffer", true);
 
 			DispatchCull(cmd, cameraFrustum, cameraFlags, m_drawArgsBuffer.get(), m_slotIndexBuffer.get());
 
@@ -807,7 +822,8 @@ void Renderer::DrawDeferred()
 
 			++m_drawStats.drawCalls;
 
-			cmd.DrawIndexedIndirect(m_shadowDrawArgsBuffer.get(), shadowCasterBatch.batchIndex * sizeof(DrawIndexedArgs));
+			cmd.DrawIndexedIndirect(m_shadowDrawArgsBuffer.get(),
+									shadowCasterBatch.batchIndex * sizeof(DrawIndexedArgs));
 		}
 	}
 	// Transition shadow map for later use in the lighting pass.
@@ -913,9 +929,9 @@ void Renderer::DrawDeferred()
 	cmd.SetPipelineState(m_deferredLightPSO.get());
 	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
-	m_swapChain->TransitionToRenderTarget(cmd);
-	DescriptorHandle backBufferRTV = m_swapChain->GetCurrentRTV();
-	cmd.SetRenderTargets(1, &backBufferRTV, nullptr);
+	cmd.TransitionTexture(m_hdrTarget.get(), ResourceState::RenderTarget);
+	DescriptorHandle hdrRTV = m_hdrTarget->GetRTV();
+	cmd.SetRenderTargets(1, &hdrRTV, nullptr);
 
 	LightPassConstants lightConstants;
 	{
@@ -974,6 +990,38 @@ void Renderer::DrawDeferred()
 	}
 
 	cmd.SetShaderResources(3, { m_shadowTextures.directionalShadowMap.get() });
+
+	++m_drawStats.drawCalls;
+	cmd.Draw(3);
+
+	Warp::Debugging::GPUMarker::EndEvent(&cmd);
+
+	// tonemap pass
+	if (!m_tonemapPSO)
+	{
+		CreateTonemapPipeline();
+	}
+
+	Warp::Debugging::GPUMarker::BeginEvent(&cmd, "Tonemap Pass");
+
+	cmd.SetPipelineState(m_tonemapPSO.get());
+	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
+
+	cmd.TransitionTexture(m_hdrTarget.get(), ResourceState::ShaderResource);
+	m_swapChain->TransitionToRenderTarget(cmd);
+	DescriptorHandle backBufferRTV = m_swapChain->GetCurrentRTV();
+	cmd.SetRenderTargets(1, &backBufferRTV, nullptr);
+
+	TonemapConstants tonemapConstants;
+	tonemapConstants.exposureEV = CvarExposureEV.Get();
+	tonemapConstants.tonemapper = CvarTonemapperMethod.Get();
+	tonemapConstants.whitePoint = CvarWhitePoint.Get();
+
+	UploadResult tonemapConstantsUpload =
+		m_uploadBuffer->AllocAndCopy(&tonemapConstants, sizeof(TonemapConstants), 256);
+	cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), tonemapConstantsUpload.offset,
+							  tonemapConstantsUpload.size);
+	cmd.SetShaderResources(1, { m_hdrTarget.get() });
 
 	++m_drawStats.drawCalls;
 	cmd.Draw(3);
@@ -1093,10 +1141,10 @@ bool Renderer::EnsureBufferCapacity(URef<Buffer>& buffer, u32& capacity, u32 nee
 	}
 
 	BufferDesc desc;
-	desc.type		 = BufferType::Structured;
-	desc.numElements = newCapacity;
-	desc.stride		 = stride;
-	desc.name		 = name;
+	desc.type			  = BufferType::Structured;
+	desc.numElements	  = newCapacity;
+	desc.stride			  = stride;
+	desc.name			  = name;
 	desc.bUnorderedAccess = bUnorderedAccess;
 
 	buffer	 = m_device->CreateBuffer(desc);
@@ -1225,10 +1273,10 @@ Vector<DrawIndexedArgs> Renderer::BuildDrawArgs() const
 			continue;
 		}
 
-		const Submesh& submesh	= resource->mesh->submeshes[submeshIndex];
-		args[batch].indexCount	= submesh.indexCount;
-		args[batch].firstIndex	= submesh.indexOffset;
-		args[batch].baseVertex	= static_cast<int32>(submesh.vertexOffset);
+		const Submesh& submesh = resource->mesh->submeshes[submeshIndex];
+		args[batch].indexCount = submesh.indexCount;
+		args[batch].firstIndex = submesh.indexOffset;
+		args[batch].baseVertex = static_cast<int32>(submesh.vertexOffset);
 	}
 
 	return args;
@@ -1245,12 +1293,12 @@ void Renderer::CreateCullPipeline()
 	ComputePipelineDesc psoDesc;
 	psoDesc.computeShader = m_cullCS.get();
 	psoDesc.bindings	  = {
-		 { BindingType::ConstantBuffer, 0, 1 },		// rootIndex 0: b0 — frustum, slot count, flags
-		 { BindingType::StructuredBuffer, 0, 1 },	// rootIndex 1: t0 — instances
-		 { BindingType::StructuredBuffer, 1, 1 },	// rootIndex 2: t1 — region starts
-		 { BindingType::RWStructuredBuffer, 0, 1 }, // rootIndex 3: u0 — draw args
-		 { BindingType::RWStructuredBuffer, 1, 1 }, // rootIndex 4: u1 — visible indices
-	 };
+		{ BindingType::ConstantBuffer, 0, 1 },	   // rootIndex 0: b0 — frustum, slot count, flags
+		{ BindingType::StructuredBuffer, 0, 1 },   // rootIndex 1: t0 — instances
+		{ BindingType::StructuredBuffer, 1, 1 },   // rootIndex 2: t1 — region starts
+		{ BindingType::RWStructuredBuffer, 0, 1 }, // rootIndex 3: u0 — draw args
+		{ BindingType::RWStructuredBuffer, 1, 1 }, // rootIndex 4: u1 — visible indices
+	};
 	m_cullPSO = m_device->CreateComputePipelineState(psoDesc);
 
 	LOG_DEBUG("Renderer: cull PSO ready");
@@ -1492,7 +1540,7 @@ void Renderer::CreateDeferredLightingPipeline()
 	desc.vertexShader		  = m_deferredLightVS.get();
 	desc.pixelShader		  = m_deferredLightPS.get();
 	desc.inputLayout		  = {};
-	desc.renderTargetFormats  = { TextureFormat::BGRA8 };
+	desc.renderTargetFormats  = { TextureFormat::RGBA16F };
 	desc.depthFormat		  = TextureFormat::Unknown; // No depth
 	desc.topology			  = PrimitiveTopology::TriangleList;
 	desc.enableDepthTest	  = false;
@@ -1583,6 +1631,15 @@ void Renderer::InitGBufferTextures()
 	m_gbufferSimple.material = m_device->CreateTexture(materialDesc);
 	m_gbufferSimple.emissive = m_device->CreateTexture(emissiveDesc);
 
+	// Lighting writes here and tonemap reads it. Swap chain sized like the GBuffer,
+	// so it is created and reset alongside it.
+	TextureDesc hdrDesc;
+	hdrDesc.width  = w;
+	hdrDesc.height = h;
+	hdrDesc.format = TextureFormat::RGBA16F;
+	hdrDesc.usage  = TextureUsage::RenderTarget;
+	m_hdrTarget	   = m_device->CreateTexture(hdrDesc);
+
 	LOG_DEBUG("Renderer: G-buffer textures ready");
 }
 
@@ -1660,4 +1717,43 @@ void Renderer::InitShadowTextures()
 
 	m_shadowTextures.directionalShadowMap = m_device->CreateTexture(directionalShadowDesc);
 	m_shadowTextures.spotShadowMap		  = m_device->CreateTexture(spotShadowMap);
+}
+
+// Size independent, so created once and kept across resizes. The HDR target it
+// reads is created with the GBuffer, since it shares the GBuffer's lifetime.
+void Renderer::CreateTonemapPipeline()
+{
+	ShaderDesc vsDesc;
+	vsDesc.entryPoint = "VSMain";
+	vsDesc.filePath	  = "Shaders/Tonemap.hlsl";
+	vsDesc.type		  = ShaderType::Vertex;
+	m_tonemapVS		  = m_device->CreateShader(vsDesc);
+
+	ShaderDesc psDesc;
+	psDesc.entryPoint = "PSMain";
+	psDesc.filePath	  = "Shaders/Tonemap.hlsl";
+	psDesc.type		  = ShaderType::Pixel;
+	m_tonemapPS		  = m_device->CreateShader(psDesc);
+
+	PipelineDesc pipelineDesc;
+	pipelineDesc.vertexShader		  = m_tonemapVS.get();
+	pipelineDesc.pixelShader		  = m_tonemapPS.get();
+	pipelineDesc.inputLayout		  = {};
+	pipelineDesc.depthFormat		  = TextureFormat::Unknown;
+	pipelineDesc.renderTargetFormats  = { TextureFormat::BGRA8 }; // the swap chain
+	pipelineDesc.topology			  = PrimitiveTopology::TriangleList;
+	pipelineDesc.enableDepthTest	  = false;
+	pipelineDesc.enableDepthWrite	  = false;
+	pipelineDesc.enableStencilTest	  = false;
+	pipelineDesc.enableBlending		  = false;
+	pipelineDesc.rasterState.cullMode = RasterizerState::CullMode::None;
+	pipelineDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
+	pipelineDesc.bindings			  = {
+		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — exposureEV, tonemapper, padding
+		{ BindingType::TextureTable, 0, 1 },   // rootIndex 1: t0 - HDR target
+	};
+
+	m_tonemapPSO = m_device->CreatePipelineState(pipelineDesc);
+
+	LOG_DEBUG("Renderer: Tonemap PSO ready");
 }

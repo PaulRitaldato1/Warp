@@ -11,6 +11,10 @@ struct TextureResource
 	u32        handle = ~0u;
 	AssetState state  = AssetState::Loading;
 
+	// What it was loaded as. The cache is keyed by path, so a second request for
+	// the same file as the other color space gets this one and warns.
+	TextureColorSpace colorSpace = TextureColorSpace::sRGB;
+
 	// CPU-side data — retained for mip layout info.
 	URef<TextureData> textureData;
 

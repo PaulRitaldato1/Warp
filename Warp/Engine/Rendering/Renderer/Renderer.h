@@ -1,24 +1,24 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
+#include <Debugging/RenderDocCapture.h>
 #include <Events/DelegateDefs.h>
 #include <Memory/Arena.h>
 #include <Threading/ThreadPool.h>
-#include <Debugging/RenderDocCapture.h>
 
+#include <Renderer/DrawList.h>
 #include <Rendering/Renderer/Buffer.h>
 #include <Rendering/Renderer/CommandList.h>
 #include <Rendering/Renderer/CommandQueue.h>
-#include <Rendering/Renderer/Device.h>
-#include <Rendering/Renderer/SwapChain.h>
-#include <Rendering/Renderer/UploadBuffer.h>
-#include <Rendering/Renderer/Texture.h>
 #include <Rendering/Renderer/DescriptorHandle.h>
-#include <Rendering/Renderer/Shader.h>
+#include <Rendering/Renderer/Device.h>
 #include <Rendering/Renderer/Pipeline.h>
-#include <Rendering/Renderer/TextureUpload.h>
-#include <Renderer/DrawList.h>
 #include <Rendering/Renderer/RenderScene.h>
+#include <Rendering/Renderer/Shader.h>
+#include <Rendering/Renderer/SwapChain.h>
+#include <Rendering/Renderer/Texture.h>
+#include <Rendering/Renderer/TextureUpload.h>
+#include <Rendering/Renderer/UploadBuffer.h>
 
 class IWindow;
 class World;
@@ -212,6 +212,8 @@ protected:
 	void InitShadowPSO();
 	void InitShadowTextures();
 
+	void CreateTonemapPipeline();
+
 	// Resolves each batch's buffers and textures. Per frame, since textures can
 	// finish loading after the batch was created.
 	Vector<BatchItem> BuildBatchItems(const Vector<RenderScene::VisibleBatch>& batches) const;
@@ -263,7 +265,7 @@ protected:
 	// Split k_framesInFlight ways. Instance data only passes through here when it
 	// changes, but a full upload after a grow is 16 MB at 100k instances.
 	static constexpr u64 k_uploadHeapSize = 128 * 1024 * 1024; // 128 MB
-	static constexpr u64 k_frameArenaSize = 4 * 1024 * 1024;  //  4 MB
+	static constexpr u64 k_frameArenaSize = 4 * 1024 * 1024;   //  4 MB
 
 	URef<Device> m_device;
 	URef<CommandQueue> m_graphicsQueue;
@@ -274,7 +276,6 @@ protected:
 	// Depth buffer shared across all render paths.
 	// Created by CreateDepthBuffer(); used directly in DrawXxx() via Texture*.
 	URef<Texture> m_depthTexture;
-
 	// Test triangle — filled by CreateTestTriangle(), drawn in DrawDeferred().
 	// Replace with a proper scene submission system once the pipeline is proven.
 	URef<Shader> m_testTriVS;
@@ -296,6 +297,11 @@ protected:
 
 	URef<Shader> m_directionalShadowVS;
 	URef<PipelineState> m_directionalShadowPSO;
+
+	URef<Shader> m_tonemapVS;
+	URef<Shader> m_tonemapPS;
+	URef<PipelineState> m_tonemapPSO;
+	URef<Texture> m_hdrTarget;
 
 	World* m_world					   = nullptr; // non-owning — set by WarpEngine
 	ResourceManager* m_resourceManager = nullptr; // non-owning — set by WarpEngine

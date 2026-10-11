@@ -169,11 +169,8 @@ float4 PSMain(VSOutput input) : SV_Target
         float sunGlow       = pow(saturate(sunDot), 128.0);
         skyColor += sunColor * sunGlow * 0.3;
 
-        // Exposure-style brightness: pow curve keeps the falloff perceptually smooth.
-        skyColor *= pow(saturate(skyBrightness), 2.2);
+        skyColor *= skyBrightness;
 
-        // Gamma correction.
-        skyColor = pow(max(skyColor, 0.0), 1.0 / 2.2);
         return float4(skyColor, 1.0);
     }
 
@@ -290,9 +287,6 @@ float4 PSMain(VSOutput input) : SV_Target
     float3 ambient  = float3(0.03, 0.03, 0.03) * albedo;
     float3 emissive = GBufferEmissive.Sample(PointSampler, input.uv).rgb;
     float3 color    = ambient + totalRadiance + emissive;
-
-    // Gamma correction (linear -> sRGB).
-    color = pow(max(color, 0.0), 1.0 / 2.2);
 
     return float4(color, 1.0);
 }
