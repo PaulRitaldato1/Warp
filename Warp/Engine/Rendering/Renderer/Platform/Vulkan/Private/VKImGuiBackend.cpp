@@ -80,7 +80,7 @@ void VKImGuiBackend::Render(CommandList* commandList)
 {
 	ImGui::Render();
 
-	// Recorded inside the lighting pass's dynamic rendering, onto the back buffer.
+	// Recorded inside the dynamic rendering the ImGui pass began on the back buffer.
 	VKCommandList* vkCmd = static_cast<VKCommandList*>(commandList);
 	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), vkCmd->GetNative());
 }

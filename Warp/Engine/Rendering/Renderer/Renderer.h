@@ -15,6 +15,7 @@
 #include <Rendering/Renderer/Device.h>
 #include <Rendering/Renderer/Pipeline.h>
 #include <Rendering/Renderer/PipelineLibrary.h>
+#include <Rendering/Renderer/RenderGraph.h>
 #include <Rendering/Renderer/RenderScene.h>
 #include <Rendering/Renderer/Shader.h>
 #include <Rendering/Renderer/SwapChain.h>
@@ -183,6 +184,11 @@ public:
 		return m_drawStats;
 	}
 
+	const RenderGraph& GetRenderGraph() const
+	{
+		return m_renderGraph;
+	}
+
 	// The r.GPUCulling cvar. The CPU cull is kept as a reference to compare against.
 	void SetGPUCulling(bool bEnabled);
 	bool IsGPUCulling() const;
@@ -280,6 +286,10 @@ protected:
 	void OnReloadShaders(const ConsoleArgs& args);
 	URef<MemberFuncType<Renderer, const ConsoleArgs&>> m_reloadShadersDelegate;
 	bool m_bReloadShadersRequested = false;
+
+	// Filled and executed by DrawDeferred every frame. A member only so the pass
+	// list keeps its capacity and the window can read last frame's passes.
+	RenderGraph m_renderGraph;
 
 	URef<Texture> m_hdrTarget;
 

@@ -13,6 +13,7 @@ void EditorUI::BuildUI(World& world)
 	DrawEntityList(world);
 	DrawEntityInspector(world);
 	DrawRendererStats();
+	DrawRenderGraph();
 
 	if (m_showEntityCreator)
 	{
@@ -101,6 +102,58 @@ void EditorUI::DrawRendererStats()
 	{
 		ImGui::Text("%-16s %7.3f ms  x%u", entry.name, entry.totalMillis, entry.callCount);
 	}
+
+	ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+// Render Graph: last frame's passes, in the order they were recorded.
+// ---------------------------------------------------------------------------
+void EditorUI::DrawRenderGraph()
+{
+	if (!ImGui::Begin("Render Graph"))
+	{
+		ImGui::End();
+		return;
+	}
+
+	if (!m_renderer)
+	{
+		ImGui::TextDisabled("No renderer.");
+		ImGui::End();
+		return;
+	}
+
+	// Last frame's, since this frame's passes are added after the UI is built.
+	const Vector<RenderGraph::PassStats>& passes = m_renderer->GetRenderGraph().GetLastFrameStats();
+
+	// Time to record the commands on the CPU. The GPU runs them later.
+	f64 totalMillis = 0.0;
+	if (ImGui::BeginTable("Passes", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV))
+	{
+		ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed);
+		ImGui::TableSetupColumn("Pass");
+		ImGui::TableSetupColumn("CPU ms", ImGuiTableColumnFlags_WidthFixed);
+		ImGui::TableHeadersRow();
+
+		for (u32 index = 0; index < static_cast<u32>(passes.size()); ++index)
+		{
+			const RenderGraph::PassStats& pass = passes[index];
+			totalMillis += pass.recordMillis;
+
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::Text("%u", index);
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted(pass.name);
+			ImGui::TableNextColumn();
+			ImGui::Text("%.3f", pass.recordMillis);
+		}
+
+		ImGui::EndTable();
+	}
+
+	ImGui::Text("%u passes, %.3f ms recording", static_cast<u32>(passes.size()), totalMillis);
 
 	ImGui::End();
 }

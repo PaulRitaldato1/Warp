@@ -559,8 +559,6 @@ void Renderer::DrawDeferred()
 		return;
 	}
 
-	CommandList& cmd = *m_graphicsLists[0];
-
 	// Find the active camera from the ECS.
 	Mat4 viewProj		= {};
 	Vec3 cameraPosition = {};
@@ -760,293 +758,327 @@ void Renderer::DrawDeferred()
 
 	m_drawStats.batches = static_cast<u32>(m_drawList.batchItems.size());
 
-	// Both passes read the same instance buffer, so it is written once up front.
-	UploadInstances(cmd);
+	// ---------------------------------------------------------------------------
+	// Passes, recorded in this order by m_renderGraph.Execute at the end. The
+	// lambdas capture this frame's locals by reference, which is safe because
+	// Execute runs before DrawDeferred returns. Buffers can be regrown by an
+	// earlier pass, so passes read the m_ members when they run, never before.
+	// ---------------------------------------------------------------------------
 
-	// The GPU cull counts into the args, so they stay writable until it is done.
-	const ResourceState argsState = bGPUCulling ? ResourceState::UnorderedAccess : ResourceState::IndirectArgument;
-	UploadDrawArgs(cmd, cameraArgs, m_drawArgsBuffer, m_drawArgsCapacity, "DrawArgsBuffer", argsState);
-	UploadDrawArgs(cmd, shadowArgs, m_shadowDrawArgsBuffer, m_shadowDrawArgsCapacity, "ShadowDrawArgsBuffer",
-				   argsState);
+	m_renderGraph.AddPass("Scene Upload")
+		.Execute(
+			[&](CommandList& cmd)
+			{
+				// Both draw passes read the same instance buffer, so it is written once up front.
+				UploadInstances(cmd);
 
-	if (bGPUCulling)
+				// The GPU cull counts into the args, so they stay writable until it is done.
+				const ResourceState argsState =
+					bGPUCulling ? ResourceState::UnorderedAccess : ResourceState::IndirectArgument;
+				UploadDrawArgs(cmd, cameraArgs, m_drawArgsBuffer, m_drawArgsCapacity, "DrawArgsBuffer", argsState);
+				UploadDrawArgs(cmd, shadowArgs, m_shadowDrawArgsBuffer, m_shadowDrawArgsCapacity,
+							   "ShadowDrawArgsBuffer", argsState);
+
+				// The CPU cull already knows the visible indices. The GPU cull writes them itself.
+				if (!bGPUCulling)
+				{
+					UploadSlotIndices(cmd, m_cameraCull.indices, m_slotIndexBuffer, m_slotIndexCapacity,
+									  "SlotIndexBuffer", true);
+					UploadSlotIndices(cmd, m_shadowCull.indices, m_shadowSlotIndexBuffer, m_shadowSlotIndexCapacity,
+									  "ShadowSlotIndexBuffer", true);
+				}
+			});
+
+	if (bGPUCulling && regions.visibleListSize > 0)
 	{
-		if (regions.visibleListSize > 0)
+		m_renderGraph.AddPass("GPU Cull")
+			.Execute(
+				[&](CommandList& cmd)
+				{
+					UploadSlotIndices(cmd, regions.regionStarts, m_regionStartBuffer, m_regionStartCapacity,
+									  "RegionStartBuffer");
+
+					// Sized for the worst case, every member visible. The cull fills a prefix
+					// of each batch's region and the rest is never read.
+					EnsureBufferCapacity(m_slotIndexBuffer, m_slotIndexCapacity, regions.visibleListSize, sizeof(u32),
+										 "SlotIndexBuffer", true);
+					EnsureBufferCapacity(m_shadowSlotIndexBuffer, m_shadowSlotIndexCapacity, regions.visibleListSize,
+										 sizeof(u32), "ShadowSlotIndexBuffer", true);
+
+					DispatchCull(cmd, cameraFrustum, cameraFlags, m_drawArgsBuffer.get(), m_slotIndexBuffer.get());
+
+					if (hasDirectionalShadow)
+					{
+						DispatchCull(cmd, shadowFrustum, shadowFlags, m_shadowDrawArgsBuffer.get(),
+									 m_shadowSlotIndexBuffer.get());
+					}
+				});
+	}
+
+	// Runs even without a directional light, so the lighting pass samples a cleared map.
+	m_renderGraph.AddPass("Shadow").Execute(
+		[&](CommandList& cmd)
 		{
-			UploadSlotIndices(cmd, regions.regionStarts, m_regionStartBuffer, m_regionStartCapacity,
-							  "RegionStartBuffer");
+			cmd.TransitionTexture(m_shadowTextures.directionalShadowMap.get(), ResourceState::DepthWrite);
+			cmd.SetRenderTargets(0, nullptr, m_shadowTextures.directionalShadowMap.get());
+			cmd.ClearDepthStencil(m_shadowTextures.directionalShadowMap.get(), 1.f, 0);
 
-			// Sized for the worst case, every member visible. The cull fills a prefix
-			// of each batch's region and the rest is never read.
-			EnsureBufferCapacity(m_slotIndexBuffer, m_slotIndexCapacity, regions.visibleListSize, sizeof(u32),
-								 "SlotIndexBuffer", true);
-			EnsureBufferCapacity(m_shadowSlotIndexBuffer, m_shadowSlotIndexCapacity, regions.visibleListSize,
-								 sizeof(u32), "ShadowSlotIndexBuffer", true);
+			cmd.SetViewport(0.f, 0.f, static_cast<f32>(m_shadowResolution), static_cast<f32>(m_shadowResolution));
+			cmd.SetScissorRect(0, 0, m_shadowResolution, m_shadowResolution);
 
-			DispatchCull(cmd, cameraFrustum, cameraFlags, m_drawArgsBuffer.get(), m_slotIndexBuffer.get());
+			cmd.SetPipelineState(m_pipelines->Get(m_directionalShadowPipeline));
+			cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
+			// One directional light drives the shadow map. Its matrix and frustum were built
+			// before the gather so casters could be culled against it there.
 			if (hasDirectionalShadow)
 			{
-				DispatchCull(cmd, shadowFrustum, shadowFlags, m_shadowDrawArgsBuffer.get(),
-							 m_shadowSlotIndexBuffer.get());
+				ShadowViewConstants shadowView;
+				shadowView.lightViewProj = directionalLightViewProj;
+
+				UploadResult viewUpload = m_uploadBuffer->AllocAndCopy(&shadowView, sizeof(ShadowViewConstants), 256);
+				cmd.SetConstantBufferView(2, m_uploadBuffer->GetBackingBuffer(), viewUpload.offset, viewUpload.size);
+
+				if (!m_drawList.shadowBatchItems.empty())
+				{
+					cmd.SetShaderResourceBuffer(0, m_instanceBuffer.get(), 0);
+					cmd.SetShaderResourceBuffer(3, m_shadowSlotIndexBuffer.get(), 0);
+				}
+
+				for (u32 batchIndex = 0; batchIndex < static_cast<u32>(m_drawList.shadowBatchItems.size());
+					 ++batchIndex)
+				{
+					const BatchItem& shadowCasterBatch = m_drawList.shadowBatchItems[batchIndex];
+
+					ShadowDrawConstants shadowBatchConstants;
+					shadowBatchConstants.instanceOffset = shadowCasterBatch.instanceOffset;
+
+					UploadResult shadowBatchConstantsUpload =
+						m_uploadBuffer->AllocAndCopy(&shadowBatchConstants, sizeof(ShadowDrawConstants), 256);
+					cmd.SetConstantBufferView(1, m_uploadBuffer->GetBackingBuffer(), shadowBatchConstantsUpload.offset,
+											  shadowBatchConstantsUpload.size);
+
+					// Depth only: position is the sole stream this pass reads.
+					cmd.SetVertexBuffer(shadowCasterBatch.positionBuffer);
+					cmd.SetIndexBuffer(shadowCasterBatch.indexBuffer);
+
+					++m_drawStats.drawCalls;
+
+					cmd.DrawIndexedIndirect(m_shadowDrawArgsBuffer.get(),
+											shadowCasterBatch.batchIndex * sizeof(DrawIndexedArgs));
+				}
 			}
-		}
-	}
-	else
-	{
-		UploadSlotIndices(cmd, m_cameraCull.indices, m_slotIndexBuffer, m_slotIndexCapacity, "SlotIndexBuffer", true);
-		UploadSlotIndices(cmd, m_shadowCull.indices, m_shadowSlotIndexBuffer, m_shadowSlotIndexCapacity,
-						  "ShadowSlotIndexBuffer", true);
-	}
+			// Transition shadow map for later use in the lighting pass.
+			cmd.TransitionTexture(m_shadowTextures.directionalShadowMap.get(), ResourceState::ShaderResource);
+		});
 
-	// ---------------------------------------------------------------------------
-	// Shadow pass — render depth from each shadow-casting directional light's POV
-	// ---------------------------------------------------------------------------
-
-	Warp::Debugging::GPUMarker::BeginEvent(&cmd, "Shadow Pass");
-
-	cmd.TransitionTexture(m_shadowTextures.directionalShadowMap.get(), ResourceState::DepthWrite);
-	cmd.SetRenderTargets(0, nullptr, m_shadowTextures.directionalShadowMap.get());
-	cmd.ClearDepthStencil(m_shadowTextures.directionalShadowMap.get(), 1.f, 0);
-
-	cmd.SetViewport(0.f, 0.f, static_cast<f32>(m_shadowResolution), static_cast<f32>(m_shadowResolution));
-	cmd.SetScissorRect(0, 0, m_shadowResolution, m_shadowResolution);
-
-	cmd.SetPipelineState(m_pipelines->Get(m_directionalShadowPipeline));
-	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
-
-	// One directional light drives the shadow map. Its matrix and frustum were built
-	// before the gather so casters could be culled against it there.
-	if (hasDirectionalShadow)
-	{
-		ShadowViewConstants shadowView;
-		shadowView.lightViewProj = directionalLightViewProj;
-
-		UploadResult viewUpload = m_uploadBuffer->AllocAndCopy(&shadowView, sizeof(ShadowViewConstants), 256);
-		cmd.SetConstantBufferView(2, m_uploadBuffer->GetBackingBuffer(), viewUpload.offset, viewUpload.size);
-
-		if (!m_drawList.shadowBatchItems.empty())
+	m_renderGraph.AddPass("GBuffer").Execute(
+		[&](CommandList& cmd)
 		{
-			cmd.SetShaderResourceBuffer(0, m_instanceBuffer.get(), 0);
-			cmd.SetShaderResourceBuffer(3, m_shadowSlotIndexBuffer.get(), 0);
-		}
+			Array<DescriptorHandle, 4> GBuffer{ m_gbufferSimple.albedo->GetRTV(), m_gbufferSimple.normal->GetRTV(),
+												m_gbufferSimple.material->GetRTV(),
+												m_gbufferSimple.emissive->GetRTV() };
 
-		for (u32 batchIndex = 0; batchIndex < static_cast<u32>(m_drawList.shadowBatchItems.size()); ++batchIndex)
-		{
-			const BatchItem& shadowCasterBatch = m_drawList.shadowBatchItems[batchIndex];
+			cmd.TransitionTexture(m_gbufferSimple.albedo.get(), ResourceState::RenderTarget);
+			cmd.TransitionTexture(m_gbufferSimple.normal.get(), ResourceState::RenderTarget);
+			cmd.TransitionTexture(m_gbufferSimple.material.get(), ResourceState::RenderTarget);
+			cmd.TransitionTexture(m_gbufferSimple.emissive.get(), ResourceState::RenderTarget);
 
-			ShadowDrawConstants shadowBatchConstants;
-			shadowBatchConstants.instanceOffset = shadowCasterBatch.instanceOffset;
+			// The lighting pass left it as ShaderResource last frame.
+			cmd.TransitionTexture(m_depthTexture.get(), ResourceState::DepthWrite);
 
-			UploadResult shadowBatchConstantsUpload =
-				m_uploadBuffer->AllocAndCopy(&shadowBatchConstants, sizeof(ShadowDrawConstants), 256);
-			cmd.SetConstantBufferView(1, m_uploadBuffer->GetBackingBuffer(), shadowBatchConstantsUpload.offset,
-									  shadowBatchConstantsUpload.size);
+			cmd.SetRenderTargets(4, GBuffer.data(), m_depthTexture.get());
 
-			// Depth only: position is the sole stream this pass reads.
-			cmd.SetVertexBuffer(shadowCasterBatch.positionBuffer);
-			cmd.SetIndexBuffer(shadowCasterBatch.indexBuffer);
+			cmd.ClearRenderTarget(GBuffer[0], 0.0f, 0.0f, 0.0f, 0.0f);
+			cmd.ClearRenderTarget(GBuffer[1], 0.0f, 0.0f, 0.0f, 0.0f);
+			cmd.ClearRenderTarget(GBuffer[2], 0.0f, 0.0f, 0.0f, 0.0f);
+			cmd.ClearRenderTarget(GBuffer[3], 0.0f, 0.0f, 0.0f, 0.0f);
 
-			++m_drawStats.drawCalls;
+			if (m_depthTexture)
+			{
+				cmd.ClearDepthStencil(m_depthTexture.get(), 1.f, 0);
+			}
 
-			cmd.DrawIndexedIndirect(m_shadowDrawArgsBuffer.get(),
-									shadowCasterBatch.batchIndex * sizeof(DrawIndexedArgs));
-		}
-	}
-	// Transition shadow map for later use in the lighting pass.
-	cmd.TransitionTexture(m_shadowTextures.directionalShadowMap.get(), ResourceState::ShaderResource);
+			const f32 swapChainWidth  = static_cast<f32>(m_swapChain->GetWidth());
+			const f32 swapChainHeight = static_cast<f32>(m_swapChain->GetHeight());
+			cmd.SetViewport(0.f, 0.f, swapChainWidth, swapChainHeight);
+			cmd.SetScissorRect(0, 0, m_swapChain->GetWidth(), m_swapChain->GetHeight());
 
-	Warp::Debugging::GPUMarker::EndEvent(&cmd);
+			cmd.SetPipelineState(m_pipelines->Get(m_deferredGeomPipeline));
+			cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
-	// ---------------------------------------------------------------------------
-	// GBuffer geometry pass
-	// ---------------------------------------------------------------------------
+			// Bound once for the whole pass rather than re-uploaded per submesh.
+			PerViewConstants perView;
+			perView.viewProj = viewProj;
 
-	Warp::Debugging::GPUMarker::BeginEvent(&cmd, "GBuffer Geometry");
+			UploadResult perViewUpload = m_uploadBuffer->AllocAndCopy(&perView, sizeof(PerViewConstants), 256);
+			cmd.SetConstantBufferView(2, m_uploadBuffer->GetBackingBuffer(), perViewUpload.offset, perViewUpload.size);
 
-	Array<DescriptorHandle, 4> GBuffer{ m_gbufferSimple.albedo->GetRTV(), m_gbufferSimple.normal->GetRTV(),
-										m_gbufferSimple.material->GetRTV(), m_gbufferSimple.emissive->GetRTV() };
+			if (!m_drawList.batchItems.empty())
+			{
+				cmd.SetShaderResourceBuffer(3, m_instanceBuffer.get(), 0);
+				cmd.SetShaderResourceBuffer(4, m_slotIndexBuffer.get(), 0);
+			}
 
-	cmd.TransitionTexture(m_gbufferSimple.albedo.get(), ResourceState::RenderTarget);
-	cmd.TransitionTexture(m_gbufferSimple.normal.get(), ResourceState::RenderTarget);
-	cmd.TransitionTexture(m_gbufferSimple.material.get(), ResourceState::RenderTarget);
-	cmd.TransitionTexture(m_gbufferSimple.emissive.get(), ResourceState::RenderTarget);
+			for (u32 batchIndex = 0; batchIndex < static_cast<u32>(m_drawList.batchItems.size()); ++batchIndex)
+			{
+				const BatchItem& item = m_drawList.batchItems[batchIndex];
 
-	// The lighting pass left it as ShaderResource last frame.
-	cmd.TransitionTexture(m_depthTexture.get(), ResourceState::DepthWrite);
+				PerBatchConstants batchConstants;
+				batchConstants.emissiveFactor = item.emissiveFactor;
+				batchConstants.instanceOffset = item.instanceOffset;
 
-	cmd.SetRenderTargets(4, GBuffer.data(), m_depthTexture.get());
+				UploadResult upload = m_uploadBuffer->AllocAndCopy(&batchConstants, sizeof(PerBatchConstants), 256);
+				cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
 
-	cmd.ClearRenderTarget(GBuffer[0], 0.0f, 0.0f, 0.0f, 0.0f);
-	cmd.ClearRenderTarget(GBuffer[1], 0.0f, 0.0f, 0.0f, 0.0f);
-	cmd.ClearRenderTarget(GBuffer[2], 0.0f, 0.0f, 0.0f, 0.0f);
-	cmd.ClearRenderTarget(GBuffer[3], 0.0f, 0.0f, 0.0f, 0.0f);
+				Buffer* streams[] = { item.positionBuffer, item.attributeBuffer };
+				cmd.SetVertexBuffers(streams, 2);
+				cmd.SetIndexBuffer(item.indexBuffer);
+				cmd.SetShaderResources(1,
+									   { item.textures[TextureSlot::BaseColor], item.textures[TextureSlot::Normal],
+										 item.textures[TextureSlot::MetallicRoughness],
+										 item.textures[TextureSlot::Occlusion], item.textures[TextureSlot::Emissive] });
 
-	if (m_depthTexture)
-	{
-		cmd.ClearDepthStencil(m_depthTexture.get(), 1.f, 0);
-	}
+				++m_drawStats.drawCalls;
 
-	const f32 swapChainWidth  = static_cast<f32>(m_swapChain->GetWidth());
-	const f32 swapChainHeight = static_cast<f32>(m_swapChain->GetHeight());
-	cmd.SetViewport(0.f, 0.f, swapChainWidth, swapChainHeight);
-	cmd.SetScissorRect(0, 0, m_swapChain->GetWidth(), m_swapChain->GetHeight());
-
-	cmd.SetPipelineState(m_pipelines->Get(m_deferredGeomPipeline));
-	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
-
-	// Bound once for the whole pass rather than re-uploaded per submesh.
-	PerViewConstants perView;
-	perView.viewProj = viewProj;
-
-	UploadResult perViewUpload = m_uploadBuffer->AllocAndCopy(&perView, sizeof(PerViewConstants), 256);
-	cmd.SetConstantBufferView(2, m_uploadBuffer->GetBackingBuffer(), perViewUpload.offset, perViewUpload.size);
-
-	if (!m_drawList.batchItems.empty())
-	{
-		cmd.SetShaderResourceBuffer(3, m_instanceBuffer.get(), 0);
-		cmd.SetShaderResourceBuffer(4, m_slotIndexBuffer.get(), 0);
-	}
-
-	for (u32 batchIndex = 0; batchIndex < static_cast<u32>(m_drawList.batchItems.size()); ++batchIndex)
-	{
-		const BatchItem& item = m_drawList.batchItems[batchIndex];
-
-		PerBatchConstants batchConstants;
-		batchConstants.emissiveFactor = item.emissiveFactor;
-		batchConstants.instanceOffset = item.instanceOffset;
-
-		UploadResult upload = m_uploadBuffer->AllocAndCopy(&batchConstants, sizeof(PerBatchConstants), 256);
-		cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
-
-		Buffer* streams[] = { item.positionBuffer, item.attributeBuffer };
-		cmd.SetVertexBuffers(streams, 2);
-		cmd.SetIndexBuffer(item.indexBuffer);
-		cmd.SetShaderResources(1, { item.textures[TextureSlot::BaseColor], item.textures[TextureSlot::Normal],
-									item.textures[TextureSlot::MetallicRoughness],
-									item.textures[TextureSlot::Occlusion], item.textures[TextureSlot::Emissive] });
-
-		++m_drawStats.drawCalls;
-
-		cmd.DrawIndexedIndirect(m_drawArgsBuffer.get(), item.batchIndex * sizeof(DrawIndexedArgs));
-	}
-
-	Warp::Debugging::GPUMarker::EndEvent(&cmd);
+				cmd.DrawIndexedIndirect(m_drawArgsBuffer.get(), item.batchIndex * sizeof(DrawIndexedArgs));
+			}
+		});
 
 	// Only the GPU knows the final instance counts, so they come back for the stats.
-	const u32 batchCount = m_scene.GetBatchCount();
-	RecordArgsReadback(cmd, DrawPass::Camera, m_drawArgsBuffer.get(), batchCount);
-	RecordArgsReadback(cmd, DrawPass::Shadow, hasDirectionalShadow ? m_shadowDrawArgsBuffer.get() : nullptr,
-					   batchCount);
+	m_renderGraph.AddPass("Args Readback")
+		.Execute(
+			[&](CommandList& cmd)
+			{
+				const u32 batchCount = m_scene.GetBatchCount();
+				RecordArgsReadback(cmd, DrawPass::Camera, m_drawArgsBuffer.get(), batchCount);
+				RecordArgsReadback(cmd, DrawPass::Shadow, hasDirectionalShadow ? m_shadowDrawArgsBuffer.get() : nullptr,
+								   batchCount);
+			});
 
-	// GBuffer Lighting Pass
-	Warp::Debugging::GPUMarker::BeginEvent(&cmd, "Deferred Lighting");
+	m_renderGraph.AddPass("Lighting")
+		.Execute(
+			[&](CommandList& cmd)
+			{
+				cmd.TransitionTexture(m_gbufferSimple.albedo.get(), ResourceState::ShaderResource);
+				cmd.TransitionTexture(m_gbufferSimple.normal.get(), ResourceState::ShaderResource);
+				cmd.TransitionTexture(m_gbufferSimple.material.get(), ResourceState::ShaderResource);
+				cmd.TransitionTexture(m_gbufferSimple.emissive.get(), ResourceState::ShaderResource);
+				cmd.TransitionTexture(m_depthTexture.get(), ResourceState::ShaderResource);
 
-	cmd.TransitionTexture(m_gbufferSimple.albedo.get(), ResourceState::ShaderResource);
-	cmd.TransitionTexture(m_gbufferSimple.normal.get(), ResourceState::ShaderResource);
-	cmd.TransitionTexture(m_gbufferSimple.material.get(), ResourceState::ShaderResource);
-	cmd.TransitionTexture(m_gbufferSimple.emissive.get(), ResourceState::ShaderResource);
-	cmd.TransitionTexture(m_depthTexture.get(), ResourceState::ShaderResource);
+				cmd.SetPipelineState(m_pipelines->Get(m_deferredLightPipeline));
+				cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
-	cmd.SetPipelineState(m_pipelines->Get(m_deferredLightPipeline));
-	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
+				cmd.TransitionTexture(m_hdrTarget.get(), ResourceState::RenderTarget);
+				DescriptorHandle hdrRTV = m_hdrTarget->GetRTV();
+				cmd.SetRenderTargets(1, &hdrRTV, nullptr);
 
-	cmd.TransitionTexture(m_hdrTarget.get(), ResourceState::RenderTarget);
-	DescriptorHandle hdrRTV = m_hdrTarget->GetRTV();
-	cmd.SetRenderTargets(1, &hdrRTV, nullptr);
+				LightPassConstants lightConstants;
+				{
+					using namespace DirectX;
+					SimdMat simdViewProj	= XMLoadFloat4x4(&viewProj);
+					SimdMat simdInvViewProj = XMMatrixInverse(nullptr, simdViewProj);
+					XMStoreFloat4x4(&lightConstants.invViewProj, simdInvViewProj);
+				}
+				lightConstants.cameraPosition = cameraPosition;
 
-	LightPassConstants lightConstants;
-	{
-		using namespace DirectX;
-		SimdMat simdViewProj	= XMLoadFloat4x4(&viewProj);
-		SimdMat simdInvViewProj = XMMatrixInverse(nullptr, simdViewProj);
-		XMStoreFloat4x4(&lightConstants.invViewProj, simdInvViewProj);
-	}
-	lightConstants.cameraPosition = cameraPosition;
+				// Convert gathered LightList to GPU-ready LightInfo array.
+				Vector<LightInfo> lightInfos;
+				lightInfos.reserve(lightList.items.size() + 1); // +1 for potential sky directional light
 
-	// Convert gathered LightList to GPU-ready LightInfo array.
-	Vector<LightInfo> lightInfos;
-	lightInfos.reserve(lightList.items.size() + 1); // +1 for potential sky directional light
+				for (const LightItem& light : lightList.items)
+				{
+					LightInfo info;
+					info.position		= light.position;
+					info.range			= light.range;
+					info.color			= light.color;
+					info.intensity		= light.intensity;
+					info.direction		= light.direction;
+					info.type			= static_cast<int32>(light.type);
+					info.innerConeAngle = light.innerConeAngle;
+					info.outerConeAngle = light.outerConeAngle;
+					lightInfos.push_back(info);
+				}
 
-	for (const LightItem& light : lightList.items)
-	{
-		LightInfo info;
-		info.position		= light.position;
-		info.range			= light.range;
-		info.color			= light.color;
-		info.intensity		= light.intensity;
-		info.direction		= light.direction;
-		info.type			= static_cast<int32>(light.type);
-		info.innerConeAngle = light.innerConeAngle;
-		info.outerConeAngle = light.outerConeAngle;
-		lightInfos.push_back(info);
-	}
+				// Sky light — still gathered from ECS here since it's a unique component
+				// that drives both the procedural sky and a directional light.
+				lightConstants.sky = skyParameters;
+				if (!skyLightInfos.empty())
+				{
+					for (const LightInfo& sunLight : skyLightInfos)
+					{
+						lightInfos.push_back(sunLight);
+					}
+				}
 
-	// Sky light — still gathered from ECS here since it's a unique component
-	// that drives both the procedural sky and a directional light.
-	lightConstants.sky = skyParameters;
-	if (!skyLightInfos.empty())
-	{
-		for (const LightInfo& sunLight : skyLightInfos)
+				lightConstants.lightViewProj = directionalLightViewProj;
+				lightConstants.shadowBias	 = 0.005f;
+
+				lightConstants.lightCount = static_cast<int32>(lightInfos.size());
+				UploadResult lightConstantsUpload =
+					m_uploadBuffer->AllocAndCopy(&lightConstants, sizeof(LightPassConstants), 256);
+				cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), lightConstantsUpload.offset,
+										  lightConstantsUpload.size);
+
+				cmd.SetShaderResources(1, { m_gbufferSimple.albedo.get(), m_gbufferSimple.normal.get(),
+											m_gbufferSimple.material.get(), m_depthTexture.get(),
+											m_gbufferSimple.emissive.get() });
+
+				if (!lightInfos.empty())
+				{
+					UploadResult lightUpload =
+						m_uploadBuffer->AllocAndCopy(lightInfos.data(), lightInfos.size() * sizeof(LightInfo));
+					cmd.SetShaderResourceBuffer(2, m_uploadBuffer->GetBackingBuffer(), lightUpload.offset);
+				}
+
+				cmd.SetShaderResources(3, { m_shadowTextures.directionalShadowMap.get() });
+
+				++m_drawStats.drawCalls;
+				cmd.Draw(3);
+			});
+
+	m_renderGraph.AddPass("Tonemap").Execute(
+		[&](CommandList& cmd)
 		{
-			lightInfos.push_back(sunLight);
-		}
-	}
+			cmd.SetPipelineState(m_pipelines->Get(m_tonemapPipeline));
+			cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
-	lightConstants.lightViewProj = directionalLightViewProj;
-	lightConstants.shadowBias	 = 0.005f;
+			cmd.TransitionTexture(m_hdrTarget.get(), ResourceState::ShaderResource);
+			m_swapChain->TransitionToRenderTarget(cmd);
+			DescriptorHandle backBufferRTV = m_swapChain->GetCurrentRTV();
+			cmd.SetRenderTargets(1, &backBufferRTV, nullptr);
 
-	lightConstants.lightCount		  = static_cast<int32>(lightInfos.size());
-	UploadResult lightConstantsUpload = m_uploadBuffer->AllocAndCopy(&lightConstants, sizeof(LightPassConstants), 256);
-	cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), lightConstantsUpload.offset,
-							  lightConstantsUpload.size);
+			TonemapConstants tonemapConstants;
+			tonemapConstants.exposureEV = CvarExposureEV.Get();
+			tonemapConstants.tonemapper = CvarTonemapperMethod.Get();
+			tonemapConstants.whitePoint = CvarWhitePoint.Get();
 
-	cmd.SetShaderResources(1, { m_gbufferSimple.albedo.get(), m_gbufferSimple.normal.get(),
-								m_gbufferSimple.material.get(), m_depthTexture.get(), m_gbufferSimple.emissive.get() });
+			UploadResult tonemapConstantsUpload =
+				m_uploadBuffer->AllocAndCopy(&tonemapConstants, sizeof(TonemapConstants), 256);
+			cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), tonemapConstantsUpload.offset,
+									  tonemapConstantsUpload.size);
+			cmd.SetShaderResources(1, { m_hdrTarget.get() });
 
-	if (!lightInfos.empty())
+			++m_drawStats.drawCalls;
+			cmd.Draw(3);
+		});
+
+	if (IsImGuiInitialized())
 	{
-		UploadResult lightUpload =
-			m_uploadBuffer->AllocAndCopy(lightInfos.data(), lightInfos.size() * sizeof(LightInfo));
-		cmd.SetShaderResourceBuffer(2, m_uploadBuffer->GetBackingBuffer(), lightUpload.offset);
+		m_renderGraph.AddPass("ImGui").Execute(
+			[&](CommandList& cmd)
+			{
+				// Drawn over the tonemapped image. Binds the back buffer itself rather than
+				// relying on tonemap leaving it bound. Vulkan loads the attachment, so the
+				// image survives the rebind.
+				DescriptorHandle backBufferRTV = m_swapChain->GetCurrentRTV();
+				cmd.SetRenderTargets(1, &backBufferRTV, nullptr);
+				RenderImGui();
+			});
 	}
 
-	cmd.SetShaderResources(3, { m_shadowTextures.directionalShadowMap.get() });
-
-	++m_drawStats.drawCalls;
-	cmd.Draw(3);
-
-	Warp::Debugging::GPUMarker::EndEvent(&cmd);
-
-	// tonemap pass
-	Warp::Debugging::GPUMarker::BeginEvent(&cmd, "Tonemap Pass");
-
-	cmd.SetPipelineState(m_pipelines->Get(m_tonemapPipeline));
-	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
-
-	cmd.TransitionTexture(m_hdrTarget.get(), ResourceState::ShaderResource);
-	m_swapChain->TransitionToRenderTarget(cmd);
-	DescriptorHandle backBufferRTV = m_swapChain->GetCurrentRTV();
-	cmd.SetRenderTargets(1, &backBufferRTV, nullptr);
-
-	TonemapConstants tonemapConstants;
-	tonemapConstants.exposureEV = CvarExposureEV.Get();
-	tonemapConstants.tonemapper = CvarTonemapperMethod.Get();
-	tonemapConstants.whitePoint = CvarWhitePoint.Get();
-
-	UploadResult tonemapConstantsUpload =
-		m_uploadBuffer->AllocAndCopy(&tonemapConstants, sizeof(TonemapConstants), 256);
-	cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), tonemapConstantsUpload.offset,
-							  tonemapConstantsUpload.size);
-	cmd.SetShaderResources(1, { m_hdrTarget.get() });
-
-	++m_drawStats.drawCalls;
-	cmd.Draw(3);
-
-	Warp::Debugging::GPUMarker::EndEvent(&cmd);
-
-	// Render ImGui on top of the scene, before presenting.
-	RenderImGui();
+	CommandList& cmd = *m_graphicsLists[0];
+	m_renderGraph.Execute(cmd);
 
 	m_swapChain->TransitionToPresent(cmd);
 }
@@ -1263,8 +1295,8 @@ void Renderer::CreatePipelines()
 void Renderer::CreateCullPipeline()
 {
 	ComputePipelineInfo info;
-	info.name		   = "Instance Cull";
-	info.computeShader = ShaderDesc::FromFile(ShaderType::Compute, "Shaders/InstanceCull.hlsl", "CSMain");
+	info.name			= "Instance Cull";
+	info.computeShader	= ShaderDesc::FromFile(ShaderType::Compute, "Shaders/InstanceCull.hlsl", "CSMain");
 	info.state.bindings = {
 		{ BindingType::ConstantBuffer, 0, 1 },	   // rootIndex 0: b0 — frustum, slot count, flags
 		{ BindingType::StructuredBuffer, 0, 1 },   // rootIndex 1: t0 — instances

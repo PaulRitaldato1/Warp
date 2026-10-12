@@ -21,6 +21,7 @@ private:
 	void DrawEntityCreator(World& world);
 	void DrawMeshBrowser(World& world);
 	void DrawRendererStats();
+	void DrawRenderGraph();
 
 	// Scans the Resources directory for mesh files and caches the result.
 	void RefreshMeshFileList();
