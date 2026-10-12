@@ -8,7 +8,7 @@ class D3D12Shader : public Shader
 {
 public:
 	// Shader interface
-	void Initialize(const ShaderDesc& desc) override;
+	bool Initialize(const ShaderDesc& desc) override;
 	void Cleanup() override;
 
 	const void* GetBytecode()     const override { return m_bytecode.data(); }

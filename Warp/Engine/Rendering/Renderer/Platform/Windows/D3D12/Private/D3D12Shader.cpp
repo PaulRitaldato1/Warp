@@ -7,7 +7,7 @@
 
 #include <cstring>
 
-void D3D12Shader::Initialize(const ShaderDesc& desc)
+bool D3D12Shader::Initialize(const ShaderDesc& desc)
 {
 	DYNAMIC_ASSERT(!desc.entryPoint.empty(), "D3D12Shader::Initialize: entryPoint must not be empty");
 	DYNAMIC_ASSERT(!desc.filePath.empty() || !desc.sourceCode.empty(),
@@ -54,7 +54,11 @@ void D3D12Shader::Initialize(const ShaderDesc& desc)
 	if (!desc.filePath.empty())
 	{
 		WString wpath(desc.filePath.begin(), desc.filePath.end());
-		ThrowIfFailed(utils->LoadFile(wpath.c_str(), nullptr, &sourceBlob));
+		if (FAILED(utils->LoadFile(wpath.c_str(), nullptr, &sourceBlob)))
+		{
+			LOG_ERROR("D3D12Shader: could not load '{}'", desc.filePath);
+			return false;
+		}
 		sourceBuffer.Ptr	  = sourceBlob->GetBufferPointer();
 		sourceBuffer.Size	  = sourceBlob->GetBufferSize();
 		sourceBuffer.Encoding = DXC_CP_ACP;
@@ -70,22 +74,28 @@ void D3D12Shader::Initialize(const ShaderDesc& desc)
 	ThrowIfFailed(compiler->Compile(&sourceBuffer, args.data(), static_cast<UINT32>(args.size()), includeHandler.Get(),
 									IID_PPV_ARGS(&result)));
 
-	// Log any error/warning text from the compiler
 	DxcRef<IDxcBlobUtf8> errors;
 	result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr);
-	if (errors && errors->GetStringLength() > 0)
-	{
-		LOG_WARNING("D3D12Shader compile output: {}", errors->GetStringPointer());
-	}
+	const char* compilerOutput = (errors && errors->GetStringLength() > 0) ? errors->GetStringPointer() : "";
 
 	HRESULT hr;
 	result->GetStatus(&hr);
-	DYNAMIC_ASSERT(SUCCEEDED(hr), "D3D12Shader::Initialize: shader compilation failed");
 
-	// Extract the DXIL bytecode blob
 	DxcRef<IDxcBlob> shaderBlob;
 	result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr);
-	DYNAMIC_ASSERT(shaderBlob && shaderBlob->GetBufferSize() > 0, "D3D12Shader::Initialize: no DXIL output produced");
+
+	if (FAILED(hr) || !shaderBlob || shaderBlob->GetBufferSize() == 0)
+	{
+		LOG_ERROR("D3D12Shader: {} shader {} in '{}' failed to compile:\n{}", ToString(desc.type), desc.entryPoint,
+				  desc.filePath.empty() ? "source string" : desc.filePath, compilerOutput);
+		return false;
+	}
+
+	// Warnings only, since it compiled.
+	if (compilerOutput[0] != '\0')
+	{
+		LOG_WARNING("D3D12Shader compile output: {}", compilerOutput);
+	}
 
 	m_bytecode.resize(shaderBlob->GetBufferSize());
 	std::memcpy(m_bytecode.data(), shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize());
@@ -94,6 +104,7 @@ void D3D12Shader::Initialize(const ShaderDesc& desc)
 	LOG_DEBUG("D3D12Shader: compiled {} shader {} from '{}' ({}, {} bytes DXIL)", ToString(desc.type),
 			  desc.entryPoint, desc.filePath.empty() ? "source string" : desc.filePath, targetStr,
 			  m_bytecode.size());
+	return true;
 }
 
 void D3D12Shader::Cleanup()

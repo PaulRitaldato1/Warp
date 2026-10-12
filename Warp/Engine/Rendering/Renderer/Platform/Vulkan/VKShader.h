@@ -16,7 +16,7 @@ public:
 
 	void InitializeWithDevice(VkDevice device);
 
-	void Initialize(const ShaderDesc& desc) override;
+	bool Initialize(const ShaderDesc& desc) override;
 
 	const void* GetBytecode() const override
 	{

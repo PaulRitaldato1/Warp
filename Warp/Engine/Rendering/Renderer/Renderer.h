@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
+#include <Core/Console/ConsoleObject.h>
 #include <Debugging/RenderDocCapture.h>
 #include <Events/DelegateDefs.h>
 #include <Memory/Arena.h>
@@ -13,6 +14,7 @@
 #include <Rendering/Renderer/DescriptorHandle.h>
 #include <Rendering/Renderer/Device.h>
 #include <Rendering/Renderer/Pipeline.h>
+#include <Rendering/Renderer/PipelineLibrary.h>
 #include <Rendering/Renderer/RenderScene.h>
 #include <Rendering/Renderer/Shader.h>
 #include <Rendering/Renderer/SwapChain.h>
@@ -191,28 +193,17 @@ protected:
 	void DrawDeferred();
 	void DrawForwardPlus();
 
-	void DrawMeshesUnlit(CommandList& cmd);
-	// Creates the test triangle shaders + PSO from the shared HLSL source below.
-	// Called from platform Init() after the device and swap chain are ready.
-	// Uses only abstract Device / Shader / PipelineState types — no platform casts.
-	void CreateTestTriangle();
-
-	// Creates the mesh PSO used to draw ECS entities with a MeshComponent.
-	// Vertex layout matches the Vertex struct in Mesh.h.
-	// Lazily called on the first frame that reaches the mesh draw path.
-	void CreateMeshPipeline();
-
+	// Every pipeline, created once in Init into m_pipelines.
+	void CreatePipelines();
+	void CreateShadowPipeline();
 	void CreateDeferredGeometryPipeline();
 	void CreateDeferredLightingPipeline();
+	void CreateTonemapPipeline();
+	void CreateCullPipeline();
 
 	void CreateDepthBuffer(u32 width, u32 height);
 	void InitGBufferTextures();
-
-	void InitShadowPass();
-	void InitShadowPSO();
 	void InitShadowTextures();
-
-	void CreateTonemapPipeline();
 
 	// Resolves each batch's buffers and textures. Per frame, since textures can
 	// finish loading after the batch was created.
@@ -232,8 +223,6 @@ protected:
 	// UnorderedAccess for the cull to count into.
 	void UploadDrawArgs(CommandList& cmd, const Vector<DrawIndexedArgs>& args, URef<Buffer>& buffer, u32& capacity,
 						const char* name, ResourceState finalState);
-
-	void CreateCullPipeline();
 
 	// Culls every slot on the GPU into drawArgs' instance counts and visibleIndices.
 	// Leaves drawArgs in IndirectArgument and visibleIndices in ShaderResource.
@@ -276,31 +265,22 @@ protected:
 	// Depth buffer shared across all render paths.
 	// Created by CreateDepthBuffer(); used directly in DrawXxx() via Texture*.
 	URef<Texture> m_depthTexture;
-	// Test triangle — filled by CreateTestTriangle(), drawn in DrawDeferred().
-	// Replace with a proper scene submission system once the pipeline is proven.
-	URef<Shader> m_testTriVS;
-	URef<Shader> m_testTriPS;
-	URef<PipelineState> m_testTriPSO;
 
-	// Mesh pipeline — used to draw ECS entities with MeshComponent.
-	URef<Shader> m_meshVS;
-	URef<Shader> m_meshPS;
-	URef<PipelineState> m_meshPSO;
+	// Declared after m_device, so it is destroyed first. Handles stay valid across
+	// r.ReloadShaders, so passes look the PSO up each time they bind it.
+	URef<PipelineLibrary> m_pipelines;
+	PipelineHandle m_directionalShadowPipeline;
+	PipelineHandle m_deferredGeomPipeline;
+	PipelineHandle m_deferredLightPipeline;
+	PipelineHandle m_tonemapPipeline;
+	ComputePipelineHandle m_cullPipeline;
 
-	URef<Shader> m_deferredGeomVS;
-	URef<Shader> m_deferredGeomPS;
-	URef<PipelineState> m_deferredGeomPSO;
+	// Set by r.ReloadShaders, which runs mid frame inside the ImGui build. The
+	// reload waits for the next BeginFrame, before anything records.
+	void OnReloadShaders(const ConsoleArgs& args);
+	URef<MemberFuncType<Renderer, const ConsoleArgs&>> m_reloadShadersDelegate;
+	bool m_bReloadShadersRequested = false;
 
-	URef<Shader> m_deferredLightVS;
-	URef<Shader> m_deferredLightPS;
-	URef<PipelineState> m_deferredLightPSO;
-
-	URef<Shader> m_directionalShadowVS;
-	URef<PipelineState> m_directionalShadowPSO;
-
-	URef<Shader> m_tonemapVS;
-	URef<Shader> m_tonemapPS;
-	URef<PipelineState> m_tonemapPSO;
 	URef<Texture> m_hdrTarget;
 
 	World* m_world					   = nullptr; // non-owning — set by WarpEngine
@@ -347,8 +327,6 @@ protected:
 	URef<Buffer> m_regionStartBuffer;
 	u32 m_regionStartCapacity = 0;
 
-	URef<Shader> m_cullCS;
-	URef<ComputePipelineState> m_cullPSO;
 	// Subscribed to r.GPUCulling for the renderer's lifetime.
 	void OnGPUCullingChanged(bool bEnabled);
 	URef<MemberFuncType<Renderer, bool>> m_gpuCullingChangedDelegate;

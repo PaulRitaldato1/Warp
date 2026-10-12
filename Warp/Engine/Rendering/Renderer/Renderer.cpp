@@ -1,6 +1,7 @@
 #include "DirectXMath.h"
 #include "Math/Frustum.h"
 #include "Math/Math.h"
+#include <Core/Console/ConsoleCommand.h>
 #include <Core/Console/ConsoleVariable.h>
 #include <Core/ECS/Components/CameraComponent.h>
 #include <Core/ECS/Components/LightComponent.h>
@@ -70,6 +71,10 @@ static Cvar<f32> CvarWhitePoint("r.Tonemap.WhitePoint", 4.0f,
 static Cvar<bool> CvarGPUCulling("r.GPUCulling", true,
 								 "Cull instances on the GPU. Off uses the CPU cull, kept as a reference");
 
+// Reads the Shaders folder next to the exe, which the POST_BUILD step copies.
+static ConsoleCommand CmdReloadShaders("r.ReloadShaders",
+									   "Recompile every shader and rebuild every pipeline at the next frame");
+
 // Matches CullConstants in InstanceCull.hlsl.
 struct CullConstants
 {
@@ -106,6 +111,14 @@ void Renderer::Init(IWindow* window, URef<Device> device)
 	// Depth buffer
 	CreateDepthBuffer(scDesc.Width, scDesc.Height);
 
+	// Up front, so a shader that fails to compile stops startup instead of the
+	// first frame that draws with it.
+	m_pipelines = std::make_unique<PipelineLibrary>(m_device.get());
+	CreatePipelines();
+
+	// Size independent, unlike the GBuffer, so made once here.
+	InitShadowTextures();
+
 	// Command lists
 	m_graphicsLists.push_back(m_device->CreateCommandList(CommandQueueType::Graphics, k_framesInFlight));
 	m_computeLists.push_back(m_device->CreateCommandList(CommandQueueType::Compute, k_framesInFlight));
@@ -123,7 +136,16 @@ void Renderer::Init(IWindow* window, URef<Device> device)
 		std::make_unique<MemberFuncType<Renderer, bool>>(this, &Renderer::OnGPUCullingChanged);
 	CvarGPUCulling.SubscribeToChanged(m_gpuCullingChangedDelegate.get());
 
+	m_reloadShadersDelegate =
+		std::make_unique<MemberFuncType<Renderer, const ConsoleArgs&>>(this, &Renderer::OnReloadShaders);
+	CmdReloadShaders.Subscribe(m_reloadShadersDelegate.get());
+
 	LOG_DEBUG("Renderer initialized ({})", m_device->GetAPIName());
+}
+
+void Renderer::OnReloadShaders(const ConsoleArgs& /*args*/)
+{
+	m_bReloadShadersRequested = true;
 }
 
 void Renderer::SetGPUCulling(bool bEnabled)
@@ -162,6 +184,11 @@ void Renderer::Shutdown()
 	if (m_gpuCullingChangedDelegate)
 	{
 		CvarGPUCulling.UnsubscribeFromChanged(m_gpuCullingChangedDelegate.get());
+	}
+
+	if (m_reloadShadersDelegate)
+	{
+		CmdReloadShaders.Unsubscribe(m_reloadShadersDelegate.get());
 	}
 
 	ShutdownImGui();
@@ -263,6 +290,15 @@ void Renderer::CreateDepthBuffer(u32 width, u32 height)
 
 void Renderer::BeginFrame()
 {
+	// Requested from the console during last frame. Every frame in flight may still
+	// reference the old PSOs, so the GPU has to be idle before they are destroyed.
+	if (m_bReloadShadersRequested)
+	{
+		m_bReloadShadersRequested = false;
+		WaitForGPUIdle();
+		m_pipelines->ReloadAll();
+	}
+
 	// Wait for the GPU to finish with the oldest in-flight frame before reusing its slot.
 	const FrameSyncPoint& retiring = m_frameSyncPoints[m_frameIndex];
 	if (retiring.graphicsFenceValue > 0)
@@ -551,19 +587,10 @@ void Renderer::DrawDeferred()
 
 	const Array<Vec4, 6> cameraFrustum = ExtractFrustumPlanes(viewProj);
 
-	if (!m_deferredGeomPSO)
-	{
-		CreateDeferredGeometryPipeline();
-	}
-
+	// Reset by OnResize, so recreated here at the new size.
 	if (!m_gbufferSimple.IsInitialized())
 	{
 		InitGBufferTextures();
-	}
-
-	if (!m_directionalShadowPSO)
-	{
-		InitShadowPass();
 	}
 
 	// ---------------------------------------------------------------------------
@@ -785,7 +812,7 @@ void Renderer::DrawDeferred()
 	cmd.SetViewport(0.f, 0.f, static_cast<f32>(m_shadowResolution), static_cast<f32>(m_shadowResolution));
 	cmd.SetScissorRect(0, 0, m_shadowResolution, m_shadowResolution);
 
-	cmd.SetPipelineState(m_directionalShadowPSO.get());
+	cmd.SetPipelineState(m_pipelines->Get(m_directionalShadowPipeline));
 	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
 	// One directional light drives the shadow map. Its matrix and frustum were built
@@ -865,7 +892,7 @@ void Renderer::DrawDeferred()
 	cmd.SetViewport(0.f, 0.f, swapChainWidth, swapChainHeight);
 	cmd.SetScissorRect(0, 0, m_swapChain->GetWidth(), m_swapChain->GetHeight());
 
-	cmd.SetPipelineState(m_deferredGeomPSO.get());
+	cmd.SetPipelineState(m_pipelines->Get(m_deferredGeomPipeline));
 	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
 	// Bound once for the whole pass rather than re-uploaded per submesh.
@@ -913,11 +940,6 @@ void Renderer::DrawDeferred()
 					   batchCount);
 
 	// GBuffer Lighting Pass
-	if (!m_deferredLightPSO)
-	{
-		CreateDeferredLightingPipeline();
-	}
-
 	Warp::Debugging::GPUMarker::BeginEvent(&cmd, "Deferred Lighting");
 
 	cmd.TransitionTexture(m_gbufferSimple.albedo.get(), ResourceState::ShaderResource);
@@ -926,7 +948,7 @@ void Renderer::DrawDeferred()
 	cmd.TransitionTexture(m_gbufferSimple.emissive.get(), ResourceState::ShaderResource);
 	cmd.TransitionTexture(m_depthTexture.get(), ResourceState::ShaderResource);
 
-	cmd.SetPipelineState(m_deferredLightPSO.get());
+	cmd.SetPipelineState(m_pipelines->Get(m_deferredLightPipeline));
 	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
 	cmd.TransitionTexture(m_hdrTarget.get(), ResourceState::RenderTarget);
@@ -997,14 +1019,9 @@ void Renderer::DrawDeferred()
 	Warp::Debugging::GPUMarker::EndEvent(&cmd);
 
 	// tonemap pass
-	if (!m_tonemapPSO)
-	{
-		CreateTonemapPipeline();
-	}
-
 	Warp::Debugging::GPUMarker::BeginEvent(&cmd, "Tonemap Pass");
 
-	cmd.SetPipelineState(m_tonemapPSO.get());
+	cmd.SetPipelineState(m_pipelines->Get(m_tonemapPipeline));
 	cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
 	cmd.TransitionTexture(m_hdrTarget.get(), ResourceState::ShaderResource);
@@ -1069,54 +1086,6 @@ void Renderer::QueueCopyForThisFrame(PendingStagingUpload& upload, CommandQueueT
 		case CommandQueueType::Copy:
 			break; // No cross-queue wait needed
 	}
-}
-
-void Renderer::CreateMeshPipeline()
-{
-	ShaderDesc vsDesc;
-	vsDesc.type		  = ShaderType::Vertex;
-	vsDesc.entryPoint = "VSMain";
-	vsDesc.filePath	  = "Shaders/Mesh.hlsl";
-	m_meshVS		  = m_device->CreateShader(vsDesc);
-
-	ShaderDesc psDesc;
-	psDesc.type		  = ShaderType::Pixel;
-	psDesc.entryPoint = "PSMain";
-	psDesc.filePath	  = "Shaders/Mesh.hlsl";
-	m_meshPS		  = m_device->CreateShader(psDesc);
-
-	// Slot 0 is the position stream, slot 1 the VertexAttributes struct in Mesh.h.
-	// Byte offsets append-align within each slot independently.
-	PipelineDesc meshDesc;
-	meshDesc.vertexShader = m_meshVS.get();
-	meshDesc.pixelShader  = m_meshPS.get();
-	meshDesc.inputLayout  = {
-		{ "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
-		{ "NORMAL", 0, TextureFormat::RGB32F, 1, InputElement::AppendAligned },
-		{ "TANGENT", 0, TextureFormat::RGBA32F, 1, InputElement::AppendAligned },
-		{ "TEXCOORD", 0, TextureFormat::RG32F, 1, InputElement::AppendAligned },
-		{ "TEXCOORD", 1, TextureFormat::RG32F, 1, InputElement::AppendAligned },
-		{ "COLOR", 0, TextureFormat::RGBA32F, 1, InputElement::AppendAligned },
-	};
-	meshDesc.renderTargetFormats  = { TextureFormat::BGRA8 };
-	meshDesc.depthFormat		  = TextureFormat::Depth32F;
-	meshDesc.topology			  = PrimitiveTopology::TriangleList;
-	meshDesc.enableDepthTest	  = true;
-	meshDesc.enableDepthWrite	  = true;
-	meshDesc.enableStencilTest	  = false;
-	meshDesc.enableBlending		  = false;
-	meshDesc.rasterState.cullMode = RasterizerState::CullMode::Back;
-	meshDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
-	meshDesc.bindings			  = {
-		{ BindingType::ConstantBuffer, 0, 1 },							 // rootIndex 0: b0 — per-draw constants
-		{ BindingType::TextureTable, 0, TextureSlot::TextureSlotCount }, // rootIndex 1: t0-t4 — material textures
-	};
-	meshDesc.samplers = {
-		{ 0, SamplerFilter::Linear, SamplerAddressMode::Wrap },
-	};
-	m_meshPSO = m_device->CreatePipelineState(meshDesc);
-
-	LOG_DEBUG("Renderer: mesh PSO ready");
 }
 
 bool Renderer::EnsureBufferCapacity(URef<Buffer>& buffer, u32& capacity, u32 needed, u32 stride, const char* name,
@@ -1282,36 +1251,33 @@ Vector<DrawIndexedArgs> Renderer::BuildDrawArgs() const
 	return args;
 }
 
+void Renderer::CreatePipelines()
+{
+	CreateCullPipeline();
+	CreateShadowPipeline();
+	CreateDeferredGeometryPipeline();
+	CreateDeferredLightingPipeline();
+	CreateTonemapPipeline();
+}
+
 void Renderer::CreateCullPipeline()
 {
-	ShaderDesc csDesc;
-	csDesc.type		  = ShaderType::Compute;
-	csDesc.entryPoint = "CSMain";
-	csDesc.filePath	  = "Shaders/InstanceCull.hlsl";
-	m_cullCS		  = m_device->CreateShader(csDesc);
-
-	ComputePipelineDesc psoDesc;
-	psoDesc.computeShader = m_cullCS.get();
-	psoDesc.bindings	  = {
+	ComputePipelineInfo info;
+	info.name		   = "Instance Cull";
+	info.computeShader = ShaderDesc::FromFile(ShaderType::Compute, "Shaders/InstanceCull.hlsl", "CSMain");
+	info.state.bindings = {
 		{ BindingType::ConstantBuffer, 0, 1 },	   // rootIndex 0: b0 — frustum, slot count, flags
 		{ BindingType::StructuredBuffer, 0, 1 },   // rootIndex 1: t0 — instances
 		{ BindingType::StructuredBuffer, 1, 1 },   // rootIndex 2: t1 — region starts
 		{ BindingType::RWStructuredBuffer, 0, 1 }, // rootIndex 3: u0 — draw args
 		{ BindingType::RWStructuredBuffer, 1, 1 }, // rootIndex 4: u1 — visible indices
 	};
-	m_cullPSO = m_device->CreateComputePipelineState(psoDesc);
-
-	LOG_DEBUG("Renderer: cull PSO ready");
+	m_cullPipeline = m_pipelines->Create(info);
 }
 
 void Renderer::DispatchCull(CommandList& cmd, const Array<Vec4, 6>& frustum, u32 requiredFlags, Buffer* drawArgs,
 							Buffer* visibleIndices)
 {
-	if (!m_cullPSO)
-	{
-		CreateCullPipeline();
-	}
-
 	const u32 slotCount = static_cast<u32>(m_scene.GetInstances().size());
 
 	CullConstants constants = {};
@@ -1328,7 +1294,7 @@ void Renderer::DispatchCull(CommandList& cmd, const Array<Vec4, 6>& frustum, u32
 	cmd.TransitionBuffer(drawArgs, ResourceState::UnorderedAccess);
 	cmd.TransitionBuffer(visibleIndices, ResourceState::UnorderedAccess);
 
-	cmd.SetComputePipelineState(m_cullPSO.get());
+	cmd.SetComputePipelineState(m_pipelines->Get(m_cullPipeline));
 	cmd.SetConstantBufferView(0, m_uploadBuffer->GetBackingBuffer(), upload.offset, upload.size);
 	cmd.SetShaderResourceBuffer(1, m_instanceBuffer.get(), 0);
 	cmd.SetShaderResourceBuffer(2, m_regionStartBuffer.get(), 0);
@@ -1472,24 +1438,15 @@ Vector<BatchItem> Renderer::BuildBatchItems(const Vector<RenderScene::VisibleBat
 
 void Renderer::CreateDeferredGeometryPipeline()
 {
-	ShaderDesc vsDesc;
-	vsDesc.type		  = ShaderType::Vertex;
-	vsDesc.entryPoint = "VSMain";
-	vsDesc.filePath	  = "Shaders/DeferredGeometry.hlsl";
-	m_deferredGeomVS  = m_device->CreateShader(vsDesc);
-
-	ShaderDesc psDesc;
-	psDesc.type		  = ShaderType::Pixel;
-	psDesc.entryPoint = "PSMain";
-	psDesc.filePath	  = "Shaders/DeferredGeometry.hlsl";
-	m_deferredGeomPS  = m_device->CreateShader(psDesc);
+	GraphicsPipelineInfo info;
+	info.name		  = "GBuffer Geometry";
+	info.vertexShader = ShaderDesc::FromFile(ShaderType::Vertex, "Shaders/DeferredGeometry.hlsl", "VSMain");
+	info.pixelShader  = ShaderDesc::FromFile(ShaderType::Pixel, "Shaders/DeferredGeometry.hlsl", "PSMain");
 
 	// Slot 0 is the position stream, slot 1 the VertexAttributes struct in Mesh.h.
 	// Byte offsets append-align within each slot independently.
-	PipelineDesc meshDesc;
-	meshDesc.vertexShader = m_deferredGeomVS.get();
-	meshDesc.pixelShader  = m_deferredGeomPS.get();
-	meshDesc.inputLayout  = {
+	PipelineDesc& meshDesc = info.state;
+	meshDesc.inputLayout   = {
 		{ "POSITION", 0, TextureFormat::RGB32F, 0, InputElement::AppendAligned },
 		{ "NORMAL", 0, TextureFormat::RGB32F, 1, InputElement::AppendAligned },
 		{ "TANGENT", 0, TextureFormat::RGBA32F, 1, InputElement::AppendAligned },
@@ -1517,84 +1474,29 @@ void Renderer::CreateDeferredGeometryPipeline()
 	meshDesc.samplers = {
 		{ 0, SamplerFilter::Linear, SamplerAddressMode::Wrap },
 	};
-	m_deferredGeomPSO = m_device->CreatePipelineState(meshDesc);
-
-	LOG_DEBUG("Renderer: deferred geometry PSO ready");
+	m_deferredGeomPipeline = m_pipelines->Create(info);
 }
 
 void Renderer::CreateDeferredLightingPipeline()
 {
-	ShaderDesc vsDesc;
-	vsDesc.type		  = ShaderType::Vertex;
-	vsDesc.entryPoint = "VSMain";
-	vsDesc.filePath	  = "Shaders/DeferredLighting.hlsl";
-	m_deferredLightVS = m_device->CreateShader(vsDesc);
+	GraphicsPipelineInfo info = MakeFullscreenPipeline(
+		"Deferred Lighting", "Shaders/DeferredLighting.hlsl", TextureFormat::RGBA16F,
+		{
+			{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — lighting constants
+			{ BindingType::TextureTable, 0,
+			  5 }, // rootIndex 1: t0-t4 — GBuffer textures (albedo, normal, material, depth, emissive)
+			{ BindingType::StructuredBuffer, 5, 1 }, // rootIndex 2: t5 — Light Infos buffer
+			{ BindingType::TextureTable, 6, 1 },	 // rootIndex 3: t6 — Shadow map
+		});
 
-	ShaderDesc psDesc;
-	psDesc.type		  = ShaderType::Pixel;
-	psDesc.entryPoint = "PSMain";
-	psDesc.filePath	  = "Shaders/DeferredLighting.hlsl";
-	m_deferredLightPS = m_device->CreateShader(psDesc);
+	// Its own VS, which also projects each corner onto the far plane for the view ray.
+	info.vertexShader.filePath = "Shaders/DeferredLighting.hlsl";
 
-	PipelineDesc desc;
-	desc.vertexShader		  = m_deferredLightVS.get();
-	desc.pixelShader		  = m_deferredLightPS.get();
-	desc.inputLayout		  = {};
-	desc.renderTargetFormats  = { TextureFormat::RGBA16F };
-	desc.depthFormat		  = TextureFormat::Unknown; // No depth
-	desc.topology			  = PrimitiveTopology::TriangleList;
-	desc.enableDepthTest	  = false;
-	desc.enableDepthWrite	  = false;
-	desc.enableStencilTest	  = false;
-	desc.enableBlending		  = false;
-	desc.rasterState.cullMode = RasterizerState::CullMode::None;
-	desc.rasterState.fillMode = RasterizerState::FillMode::Solid;
-	desc.bindings			  = {
-		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — lighting constants
-		{ BindingType::TextureTable, 0,
-		  5 }, // rootIndex 1: t0-t4 — GBuffer textures (albedo, normal, material, depth, emissive)
-		{ BindingType::StructuredBuffer, 5, 1 }, // rootIndex 2: t5 — Light Infos buffer
-		{ BindingType::TextureTable, 6, 1 },	 // rootIndex 3: t6 — Shadow map
-	};
-	desc.samplers = {
+	info.state.samplers = {
 		{ 0, SamplerFilter::Point, SamplerAddressMode::Clamp },				// s0 — GBuffer sampling
 		{ 2, SamplerFilter::ComparisonLinear, SamplerAddressMode::Border }, // s2 — Shadow map comparison
 	};
-	m_deferredLightPSO = m_device->CreatePipelineState(desc);
-
-	LOG_DEBUG("Renderer: deferred lighting PSO ready");
-}
-
-void Renderer::CreateTestTriangle()
-{
-	ShaderDesc vsDesc;
-	vsDesc.type		  = ShaderType::Vertex;
-	vsDesc.entryPoint = "VSMain";
-	vsDesc.filePath	  = "Shaders/TestTriangle.hlsl";
-	m_testTriVS		  = m_device->CreateShader(vsDesc);
-
-	ShaderDesc psDesc;
-	psDesc.type		  = ShaderType::Pixel;
-	psDesc.entryPoint = "PSMain";
-	psDesc.filePath	  = "Shaders/TestTriangle.hlsl";
-	m_testTriPS		  = m_device->CreateShader(psDesc);
-
-	PipelineDesc triDesc;
-	triDesc.vertexShader		 = m_testTriVS.get();
-	triDesc.pixelShader			 = m_testTriPS.get();
-	triDesc.inputLayout			 = {};
-	triDesc.renderTargetFormats	 = { TextureFormat::BGRA8 };
-	triDesc.depthFormat			 = TextureFormat::Depth32F;
-	triDesc.topology			 = PrimitiveTopology::TriangleList;
-	triDesc.enableDepthTest		 = false;
-	triDesc.enableDepthWrite	 = false;
-	triDesc.enableStencilTest	 = false;
-	triDesc.enableBlending		 = false;
-	triDesc.rasterState.cullMode = RasterizerState::CullMode::None;
-	triDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
-	m_testTriPSO				 = m_device->CreatePipelineState(triDesc);
-
-	LOG_DEBUG("Renderer: test triangle PSO ready");
+	m_deferredLightPipeline = m_pipelines->Create(info);
 }
 
 void Renderer::InitGBufferTextures()
@@ -1643,30 +1545,14 @@ void Renderer::InitGBufferTextures()
 	LOG_DEBUG("Renderer: G-buffer textures ready");
 }
 
-void Renderer::InitShadowPass()
+void Renderer::CreateShadowPipeline()
 {
-	if (!m_directionalShadowPSO)
-	{
-		InitShadowPSO();
-	}
+	// Depth only, so no pixel shader.
+	GraphicsPipelineInfo info;
+	info.name		  = "Directional Shadow";
+	info.vertexShader = ShaderDesc::FromFile(ShaderType::Vertex, "Shaders/DirectionalShadow.hlsl", "VSMain");
 
-	if (!m_shadowTextures.IsInitialized())
-	{
-		InitShadowTextures();
-	}
-}
-
-void Renderer::InitShadowPSO()
-{
-	ShaderDesc vsDesc;
-	vsDesc.type			  = ShaderType::Vertex;
-	vsDesc.entryPoint	  = "VSMain";
-	vsDesc.filePath		  = "Shaders/DirectionalShadow.hlsl";
-	m_directionalShadowVS = m_device->CreateShader(vsDesc);
-
-	PipelineDesc desc;
-	desc.vertexShader = m_directionalShadowVS.get();
-	desc.pixelShader  = nullptr;
+	PipelineDesc& desc = info.state;
 	// Position only. The shadow VS reads nothing else, and binding this stream
 	// alone is what makes the split pay off.
 	desc.inputLayout = {
@@ -1696,9 +1582,7 @@ void Renderer::InitShadowPSO()
 		{ BindingType::StructuredBuffer, 1, 1 }, // rootIndex 3: t1 — slot indices
 	};
 
-	m_directionalShadowPSO = m_device->CreatePipelineState(desc);
-
-	LOG_DEBUG("Renderer: deferred lighting PSO ready");
+	m_directionalShadowPipeline = m_pipelines->Create(info);
 }
 
 void Renderer::InitShadowTextures()
@@ -1719,41 +1603,15 @@ void Renderer::InitShadowTextures()
 	m_shadowTextures.spotShadowMap		  = m_device->CreateTexture(spotShadowMap);
 }
 
-// Size independent, so created once and kept across resizes. The HDR target it
-// reads is created with the GBuffer, since it shares the GBuffer's lifetime.
+// The HDR target it reads is created with the GBuffer, since it shares the
+// GBuffer's lifetime.
 void Renderer::CreateTonemapPipeline()
 {
-	ShaderDesc vsDesc;
-	vsDesc.entryPoint = "VSMain";
-	vsDesc.filePath	  = "Shaders/Tonemap.hlsl";
-	vsDesc.type		  = ShaderType::Vertex;
-	m_tonemapVS		  = m_device->CreateShader(vsDesc);
-
-	ShaderDesc psDesc;
-	psDesc.entryPoint = "PSMain";
-	psDesc.filePath	  = "Shaders/Tonemap.hlsl";
-	psDesc.type		  = ShaderType::Pixel;
-	m_tonemapPS		  = m_device->CreateShader(psDesc);
-
-	PipelineDesc pipelineDesc;
-	pipelineDesc.vertexShader		  = m_tonemapVS.get();
-	pipelineDesc.pixelShader		  = m_tonemapPS.get();
-	pipelineDesc.inputLayout		  = {};
-	pipelineDesc.depthFormat		  = TextureFormat::Unknown;
-	pipelineDesc.renderTargetFormats  = { TextureFormat::BGRA8 }; // the swap chain
-	pipelineDesc.topology			  = PrimitiveTopology::TriangleList;
-	pipelineDesc.enableDepthTest	  = false;
-	pipelineDesc.enableDepthWrite	  = false;
-	pipelineDesc.enableStencilTest	  = false;
-	pipelineDesc.enableBlending		  = false;
-	pipelineDesc.rasterState.cullMode = RasterizerState::CullMode::None;
-	pipelineDesc.rasterState.fillMode = RasterizerState::FillMode::Solid;
-	pipelineDesc.bindings			  = {
-		{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — exposureEV, tonemapper, padding
-		{ BindingType::TextureTable, 0, 1 },   // rootIndex 1: t0 - HDR target
-	};
-
-	m_tonemapPSO = m_device->CreatePipelineState(pipelineDesc);
-
-	LOG_DEBUG("Renderer: Tonemap PSO ready");
+	// Writes the swap chain.
+	m_tonemapPipeline = m_pipelines->Create(MakeFullscreenPipeline(
+		"Tonemap", "Shaders/Tonemap.hlsl", TextureFormat::BGRA8,
+		{
+			{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — exposureEV, tonemapper, padding
+			{ BindingType::TextureTable, 0, 1 },   // rootIndex 1: t0 - HDR target
+		}));
 }

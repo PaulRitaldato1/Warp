@@ -168,7 +168,10 @@ URef<PipelineState> D3D12Device::CreatePipelineState(const PipelineDesc& desc)
 {
 	DYNAMIC_ASSERT(m_device, "D3D12Device::CreatePipelineState: device not initialized");
 	URef<D3D12Pipeline> pipeline = std::make_unique<D3D12Pipeline>();
-	pipeline->InitializeWithDevice(m_device.Get(), desc);
+	if (!pipeline->InitializeWithDevice(m_device.Get(), desc))
+	{
+		return nullptr;
+	}
 	return pipeline;
 }
 
@@ -176,7 +179,10 @@ URef<ComputePipelineState> D3D12Device::CreateComputePipelineState(const Compute
 {
 	DYNAMIC_ASSERT(m_device, "D3D12Device::CreateComputePipelineState: device not initialized");
 	URef<D3D12ComputePipeline> pipeline = std::make_unique<D3D12ComputePipeline>();
-	pipeline->InitializeWithDevice(m_device.Get(), desc);
+	if (!pipeline->InitializeWithDevice(m_device.Get(), desc))
+	{
+		return nullptr;
+	}
 	return pipeline;
 }
 
@@ -200,7 +206,10 @@ URef<Shader> D3D12Device::CreateShader(const ShaderDesc& desc)
 {
 	DYNAMIC_ASSERT(m_device, "D3D12Device::CreateShader: device not initialized");
 	URef<D3D12Shader> shader = std::make_unique<D3D12Shader>();
-	shader->Initialize(desc);
+	if (!shader->Initialize(desc))
+	{
+		return nullptr;
+	}
 	return shader;
 }
 

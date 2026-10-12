@@ -21,7 +21,7 @@ void VKShader::InitializeWithDevice(VkDevice device)
 	m_device = device;
 }
 
-void VKShader::Initialize(const ShaderDesc& desc)
+bool VKShader::Initialize(const ShaderDesc& desc)
 {
 	DYNAMIC_ASSERT(!desc.entryPoint.empty(), "VKShader::Initialize: entryPoint must not be empty");
 	DYNAMIC_ASSERT(!desc.filePath.empty() || !desc.sourceCode.empty(),
@@ -95,8 +95,11 @@ void VKShader::Initialize(const ShaderDesc& desc)
 	if (!desc.filePath.empty())
 	{
 		WString wpath(desc.filePath.begin(), desc.filePath.end());
-		FATAL_ASSERT(SUCCEEDED(utils->LoadFile(wpath.c_str(), nullptr, &sourceBlob)),
-					 "VKShader::Initialize: Failed to load file");
+		if (FAILED(utils->LoadFile(wpath.c_str(), nullptr, &sourceBlob)))
+		{
+			LOG_ERROR("VKShader: could not load '{}'", desc.filePath);
+			return false;
+		}
 
 		sourceBuffer.Ptr	  = sourceBlob->GetBufferPointer();
 		sourceBuffer.Size	  = sourceBlob->GetBufferSize();
@@ -116,18 +119,26 @@ void VKShader::Initialize(const ShaderDesc& desc)
 
 	DxcRef<IDxcBlobUtf8> errors;
 	result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr);
-	if (errors && errors->GetStringLength() > 0)
-	{
-		LOG_WARNING("VKShader compile output: {}", errors->GetStringPointer());
-	}
+	const char* compilerOutput = (errors && errors->GetStringLength() > 0) ? errors->GetStringPointer() : "";
 
 	HRESULT hr;
 	result->GetStatus(&hr);
-	DYNAMIC_ASSERT(SUCCEEDED(hr), "VKShader::Initialize: shader compilation failed");
 
 	DxcRef<IDxcBlob> shaderBlob;
 	result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr);
-	DYNAMIC_ASSERT(shaderBlob && shaderBlob->GetBufferSize() > 0, "VKShader::Initialize: No spirv output produced");
+
+	if (FAILED(hr) || !shaderBlob || shaderBlob->GetBufferSize() == 0)
+	{
+		LOG_ERROR("VKShader: {} shader {} in '{}' failed to compile:\n{}", ToString(desc.type), desc.entryPoint,
+				  desc.filePath.empty() ? "source string" : desc.filePath, compilerOutput);
+		return false;
+	}
+
+	// Warnings only, since it compiled.
+	if (compilerOutput[0] != '\0')
+	{
+		LOG_WARNING("VKShader compile output: {}", compilerOutput);
+	}
 
 	m_spirv.resize(shaderBlob->GetBufferSize() / sizeof(u32));
 	std::memcpy(m_spirv.data(), shaderBlob->GetBufferPointer(), shaderBlob->GetBufferSize());
@@ -143,6 +154,7 @@ void VKShader::Initialize(const ShaderDesc& desc)
 
 	LOG_DEBUG("VKShader: compiled {} shader {} frfm '{}' ({} bytes SPIR-V)", ToString(desc.type), desc.entryPoint,
 			  desc.filePath.empty() ? "source string" : desc.filePath, m_spirv.size() * sizeof(u32));
+	return true;
 }
 
 void VKShader::Cleanup()

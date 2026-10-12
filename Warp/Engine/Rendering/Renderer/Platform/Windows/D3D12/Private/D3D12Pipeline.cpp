@@ -156,7 +156,7 @@ void D3D12Pipeline::BuildRootSignature(ID3D12Device* device, const Vector<Bindin
 	m_rootSignature = CreateRootSignature(device, bindings, samplers, false);
 }
 
-void D3D12Pipeline::InitializeWithDevice(ID3D12Device* device, const PipelineDesc& desc)
+bool D3D12Pipeline::InitializeWithDevice(ID3D12Device* device, const PipelineDesc& desc)
 {
 	DYNAMIC_ASSERT(device, "D3D12Pipeline::InitializeWithDevice: device is null");
 	DYNAMIC_ASSERT(desc.vertexShader, "D3D12Pipeline::InitializeWithDevice: vertexShader required");
@@ -307,8 +307,15 @@ void D3D12Pipeline::InitializeWithDevice(ID3D12Device* device, const PipelineDes
 		psoDesc.DSVFormat = ToD3D12Format(desc.depthFormat);
 	}
 
-	ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pso)));
+	const HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pso));
+	if (FAILED(hr))
+	{
+		LOG_ERROR("D3D12Pipeline: CreateGraphicsPipelineState failed ({:#010x})", static_cast<u32>(hr));
+		return false;
+	}
+
 	LOG_DEBUG("D3D12Pipeline (graphics) created");
+	return true;
 }
 
 void D3D12Pipeline::Initialize(const PipelineDesc& /*desc*/)
@@ -325,7 +332,7 @@ void D3D12Pipeline::Cleanup()
 // D3D12ComputePipeline
 // ===========================================================================
 
-void D3D12ComputePipeline::InitializeWithDevice(ID3D12Device* device, const ComputePipelineDesc& desc)
+bool D3D12ComputePipeline::InitializeWithDevice(ID3D12Device* device, const ComputePipelineDesc& desc)
 {
 	DYNAMIC_ASSERT(device, "D3D12ComputePipeline::InitializeWithDevice: device is null");
 	DYNAMIC_ASSERT(desc.computeShader, "D3D12ComputePipeline::InitializeWithDevice: computeShader required");
@@ -338,8 +345,15 @@ void D3D12ComputePipeline::InitializeWithDevice(ID3D12Device* device, const Comp
 	psoDesc.pRootSignature					  = m_rootSignature.Get();
 	psoDesc.CS								  = { cs->GetBytecode(), cs->GetBytecodeSize() };
 
-	ThrowIfFailed(device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&m_pso)));
+	const HRESULT hr = device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&m_pso));
+	if (FAILED(hr))
+	{
+		LOG_ERROR("D3D12ComputePipeline: CreateComputePipelineState failed ({:#010x})", static_cast<u32>(hr));
+		return false;
+	}
+
 	LOG_DEBUG("D3D12ComputePipeline created");
+	return true;
 }
 
 void D3D12ComputePipeline::Initialize(const ComputePipelineDesc& /*desc*/)

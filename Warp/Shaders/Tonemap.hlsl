@@ -8,21 +8,12 @@ cbuffer TonemapConstants : register(b0)
 
 Texture2D HDRTarget : register(t0);
 
-struct VSOutput
+// The VS is FullscreenTriangle.hlsl. Only the pixel position is read, from its
+// first output.
+struct PSInput
 {
     float4 position : SV_Position;
 };
-
-VSOutput VSMain(uint vertexID : SV_VertexID)
-{
-    VSOutput output;
-    float2 position;
-    position.x = (vertexID == 1) ? 3.0f : -1.0f;
-    position.y = (vertexID == 2) ? 3.0f : -1.0f;
-    output.position = float4(position, 0.0f, 1.0f);
-
-    return output;
-}
 
 float3 LinearToSRGB(float3 color)
 {
@@ -61,7 +52,7 @@ float3 Tonemap(float3 color)
     return saturate(color); //Clamp when unknown
 }
 
-float4 PSMain(VSOutput input) : SV_Target
+float4 PSMain(PSInput input) : SV_Target
 {
     float3 color = HDRTarget.Load(int3(input.position.xy, 0)).rgb;
 

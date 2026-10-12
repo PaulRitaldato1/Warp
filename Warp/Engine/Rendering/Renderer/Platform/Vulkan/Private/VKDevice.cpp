@@ -472,7 +472,10 @@ URef<Shader> VKDevice::CreateShader(const ShaderDesc& desc)
 {
 	URef<VKShader> shader = std::make_unique<VKShader>();
 	shader->InitializeWithDevice(m_device);
-	shader->Initialize(desc);
+	if (!shader->Initialize(desc))
+	{
+		return nullptr;
+	}
 	return shader;
 }
 

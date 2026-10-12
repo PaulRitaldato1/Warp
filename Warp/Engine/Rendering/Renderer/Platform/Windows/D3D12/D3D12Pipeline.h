@@ -14,7 +14,9 @@ class D3D12Pipeline : public PipelineState
 {
 public:
 	// Device-specific init — called by D3D12Device::CreatePipelineState().
-	void InitializeWithDevice(ID3D12Device* device, const PipelineDesc& desc);
+	// False if the driver rejects the PSO, e.g. a shader reads a register the
+	// bindings do not declare. The debug layer says which.
+	bool InitializeWithDevice(ID3D12Device* device, const PipelineDesc& desc);
 
 	// PipelineState interface
 	void  Initialize(const PipelineDesc& desc) override; // no-op (use InitializeWithDevice)
@@ -41,7 +43,8 @@ class D3D12ComputePipeline : public ComputePipelineState
 {
 public:
 	// Device-specific init — called by D3D12Device::CreateComputePipelineState().
-	void InitializeWithDevice(ID3D12Device* device, const ComputePipelineDesc& desc);
+	// False if the driver rejects the PSO, same as the graphics one.
+	bool InitializeWithDevice(ID3D12Device* device, const ComputePipelineDesc& desc);
 
 	// ComputePipelineState interface
 	void  Initialize(const ComputePipelineDesc& desc) override; // no-op (use InitializeWithDevice)

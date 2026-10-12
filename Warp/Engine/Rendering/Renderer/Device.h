@@ -69,10 +69,10 @@ public:
 	// Create a swap chain
 	virtual URef<SwapChain> CreateSwapChain(const SwapChainDesc& Desc) = 0;
 
-	// Create a graphics pipeline state object
+	// Create a graphics pipeline state object. Null if the driver rejects it.
 	virtual URef<PipelineState> CreatePipelineState(const PipelineDesc& Desc) = 0;
 
-	// Create a compute pipeline state object
+	// Create a compute pipeline state object. Null if the driver rejects it.
 	virtual URef<ComputePipelineState> CreateComputePipelineState(const ComputePipelineDesc& Desc) = 0;
 
 	// Create a buffer
@@ -81,7 +81,7 @@ public:
 	// Create a texture
 	virtual URef<Texture> CreateTexture(const TextureDesc& Desc) = 0;
 
-	// Create a shader
+	// Create a shader. Null if it fails to load or compile, with the error logged.
 	virtual URef<Shader> CreateShader(const ShaderDesc& Desc) = 0;
 
 	// No WaitForIdle here: the device does not own the queues, so it cannot know

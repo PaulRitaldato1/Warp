@@ -38,6 +38,15 @@ struct ShaderDesc
 	String entryPoint = "main";
 	String filePath;   // load from file   (preferred)
 	String sourceCode; // compile from string (fallback / runtime)
+
+	static ShaderDesc FromFile(ShaderType type, String filePath, String entryPoint)
+	{
+		ShaderDesc desc;
+		desc.type		= type;
+		desc.filePath	= std::move(filePath);
+		desc.entryPoint = std::move(entryPoint);
+		return desc;
+	}
 };
 
 class Shader
@@ -45,8 +54,9 @@ class Shader
 public:
 	virtual ~Shader() = default;
 
-	// Compile or load the shader. Logs and asserts on failure.
-	virtual void Initialize(const ShaderDesc& desc) = 0;
+	// Compile or load the shader. Logs the compiler error and returns false on
+	// failure, so a reload can keep the old shader.
+	virtual bool Initialize(const ShaderDesc& desc) = 0;
 
 	// Raw pointer to compiled bytecode (ID3DBlob data, SPIRV words, etc.)
 	virtual const void* GetBytecode() const = 0;

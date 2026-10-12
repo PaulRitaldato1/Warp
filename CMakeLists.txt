@@ -1,5 +1,8 @@
 # 3.16 for target_precompile_headers
 cmake_minimum_required(VERSION 3.16)
+# $<TARGET_FILE_DIR:Warp> in CopyShaders would otherwise make it depend on Warp,
+# which depends on CopyShaders, a cycle.
+cmake_policy(SET CMP0112 NEW)
 project(Warp)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -254,11 +257,21 @@ add_custom_command(TARGET Warp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${Warp_SOURCE_DIR}/Resources"
         "$<TARGET_FILE_DIR:Warp>/Resources"
+    COMMENT "Copying Resources to output directory"
+)
+
+# Shaders get their own target so they can be copied while the game is running,
+# when Warp can't relink, then picked up with r.ReloadShaders:
+#   cmake --build build --target CopyShaders
+# It has no outputs so it always runs, and Warp depends on it, so a normal build
+# copies them too.
+add_custom_target(CopyShaders
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${Warp_SOURCE_DIR}/Warp/Shaders"
         "$<TARGET_FILE_DIR:Warp>/Shaders"
-    COMMENT "Copying Resources and Shaders to output directory"
+    COMMENT "Copying Shaders to output directory"
 )
+add_dependencies(Warp CopyShaders)
 
 if(WIN32)
     add_custom_command(TARGET Warp POST_BUILD
@@ -269,9 +282,9 @@ if(WIN32)
     )
 endif()
 
-# Make shader edits trigger a rebuild so the POST_BUILD copy always runs.
+# Listed so they show up in the IDE. CopyShaders does the copying.
 file(GLOB_RECURSE WARP_SHADER_FILES "${Warp_SOURCE_DIR}/Warp/Shaders/*.hlsl")
-target_sources(Warp PRIVATE ${WARP_SHADER_FILES})
+target_sources(CopyShaders PRIVATE ${WARP_SHADER_FILES})
 set_source_files_properties(${WARP_SHADER_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
 
 if(MSVC_IDE)
