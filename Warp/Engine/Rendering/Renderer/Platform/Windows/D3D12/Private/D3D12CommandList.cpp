@@ -40,6 +40,7 @@ void D3D12CommandList::Begin(u32 frameIndex)
 	DYNAMIC_ASSERT(frameIndex < m_allocators.size(), "D3D12CommandList::Begin: frameIndex out of range");
 	ThrowIfFailed(m_allocators[frameIndex]->Reset());
 	ThrowIfFailed(m_list->Reset(m_allocators[frameIndex].Get(), nullptr));
+	m_drawCount = 0;
 
 	// Descriptor heaps must be re-bound after every Reset().
 	if (m_srvHeap && m_srvHeap->IsInitialized())
@@ -443,6 +444,7 @@ void D3D12CommandList::Draw(u32 vertexCount, u32 instanceCount,
                              u32 firstVertex, u32 firstInstance)
 {
 	m_list->DrawInstanced(vertexCount, instanceCount, firstVertex, firstInstance);
+	++m_drawCount;
 }
 
 void D3D12CommandList::DrawIndexed(u32 indexCount, u32 instanceCount,
@@ -450,6 +452,7 @@ void D3D12CommandList::DrawIndexed(u32 indexCount, u32 instanceCount,
 {
 	m_list->DrawIndexedInstanced(indexCount, instanceCount, firstIndex,
 	                              static_cast<INT>(baseVertex), firstInstance);
+	++m_drawCount;
 }
 
 void D3D12CommandList::DrawIndexedIndirect(Buffer* argsBuffer, u64 offset, u32 drawCount)
@@ -462,6 +465,7 @@ void D3D12CommandList::DrawIndexedIndirect(Buffer* argsBuffer, u64 offset, u32 d
 
 	// No count buffer, so drawCount is exact.
 	m_list->ExecuteIndirect(m_drawIndexedSignature, drawCount, d3dArgs->GetNativeResource(), offset, nullptr, 0);
+	m_drawCount += drawCount;
 }
 
 void D3D12CommandList::Dispatch(u32 x, u32 y, u32 z)

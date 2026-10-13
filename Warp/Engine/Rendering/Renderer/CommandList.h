@@ -160,4 +160,15 @@ public:
 	virtual void DrawIndexedIndirect(Buffer* argsBuffer, u64 offset, u32 drawCount = 1) = 0;
 
 	virtual void Dispatch(u32 groupCountX, u32 groupCountY, u32 groupCountZ) = 0;
+
+	// Draws recorded since Begin, for the stats window. An indirect call counts its
+	// records, not the instances the GPU ends up drawing.
+	u32 GetDrawCount() const
+	{
+		return m_drawCount;
+	}
+
+protected:
+	// Reset by each backend's Begin, bumped by its draw calls.
+	u32 m_drawCount = 0;
 };

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "Common/CommonTypes.h"
 #include <Math/Math.h>
 

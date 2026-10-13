@@ -86,6 +86,7 @@ void VKCommandList::Begin(u32 frameIndex)
 	VK_CHECK(vkBeginCommandBuffer(m_cmdBuf, &beginInfo), "VKCommandList::Begin: vkBeginCommandBuffer failed");
 
 	m_inRenderPass = false;
+	m_drawCount	   = 0;
 }
 
 void VKCommandList::End()
@@ -758,11 +759,13 @@ void VKCommandList::SetUnorderedAccessBuffer(u32 rootIndex, Buffer* buffer, u64 
 void VKCommandList::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance)
 {
 	vkCmdDraw(m_cmdBuf, vertexCount, instanceCount, firstVertex, firstInstance);
+	++m_drawCount;
 }
 
 void VKCommandList::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, u32 baseVertex, u32 firstInstance)
 {
 	vkCmdDrawIndexed(m_cmdBuf, indexCount, instanceCount, firstIndex, static_cast<int32_t>(baseVertex), firstInstance);
+	++m_drawCount;
 }
 
 void VKCommandList::DrawIndexedIndirect(Buffer* argsBuffer, u64 offset, u32 drawCount)
@@ -776,6 +779,7 @@ void VKCommandList::DrawIndexedIndirect(Buffer* argsBuffer, u64 offset, u32 draw
 	// drawCount above 1 needs the multiDrawIndirect device feature.
 	VKBuffer* vkArgs = static_cast<VKBuffer*>(argsBuffer);
 	vkCmdDrawIndexedIndirect(m_cmdBuf, vkArgs->GetNativeBuffer(), offset, drawCount, sizeof(DrawIndexedArgs));
+	m_drawCount += drawCount;
 }
 
 void VKCommandList::Dispatch(u32 x, u32 y, u32 z)

@@ -109,7 +109,6 @@ public:
 	// The backend comes from RenderBackend, since it has to match the device's API.
 	void InitImGui(IWindow* window, URef<ImGuiBackend> backend);
 	void ShutdownImGui();
-	void RenderImGui();
 	void NewFrameImGui();
 	bool IsImGuiInitialized() const;
 
@@ -199,13 +198,8 @@ protected:
 	void DrawDeferred();
 	void DrawForwardPlus();
 
-	// Every pipeline, created once in Init into m_pipelines.
+	// Calls each pass's Create...PassPipeline once in Init and keeps the handles.
 	void CreatePipelines();
-	void CreateShadowPipeline();
-	void CreateDeferredGeometryPipeline();
-	void CreateDeferredLightingPipeline();
-	void CreateTonemapPipeline();
-	void CreateCullPipeline();
 
 	void CreateDepthBuffer(u32 width, u32 height);
 	void InitGBufferTextures();
@@ -219,21 +213,28 @@ protected:
 	// cull fills the counts in; the GPU cull counts up from 0.
 	Vector<DrawIndexedArgs> BuildDrawArgs() const;
 
-	// Copies the scene's written slots into m_instanceBuffer, or all of them after a grow.
-	void UploadInstances(CommandList& cmd);
+	// Grows every scene buffer the frame needs. Called before any pass is added,
+	// so the Buffer pointers passes are given stay valid while the graph runs.
+	// Returns whether the instance buffer was regrown, which forces a full upload.
+	bool GrowSceneBuffers(const RenderScene::CullRegions& regions, bool bGPUCulling);
 
-	void UploadSlotIndices(CommandList& cmd, const Vector<u32>& indices, URef<Buffer>& buffer, u32& capacity,
-						   const char* name, bool bUnorderedAccess = false);
+	// Copies the scene's written slots into m_instanceBuffer, or all of them when
+	// bFullUpload, e.g. after a regrow left it empty.
+	void UploadInstances(CommandList& cmd, bool bFullUpload);
+
+	// The buffer must already be big enough, see GrowSceneBuffers.
+	void UploadSlotIndices(CommandList& cmd, const Vector<u32>& indices, Buffer* buffer);
 
 	// Leaves the buffer in finalState: IndirectArgument to draw directly, or
-	// UnorderedAccess for the cull to count into.
-	void UploadDrawArgs(CommandList& cmd, const Vector<DrawIndexedArgs>& args, URef<Buffer>& buffer, u32& capacity,
-						const char* name, ResourceState finalState);
+	// UnorderedAccess for the cull to count into. Must already be big enough.
+	void UploadDrawArgs(CommandList& cmd, const Vector<DrawIndexedArgs>& args, Buffer* buffer,
+						ResourceState finalState);
 
-	// Culls every slot on the GPU into drawArgs' instance counts and visibleIndices.
-	// Leaves drawArgs in IndirectArgument and visibleIndices in ShaderResource.
-	void DispatchCull(CommandList& cmd, const Array<Vec4, 6>& frustum, u32 requiredFlags, Buffer* drawArgs,
-					  Buffer* visibleIndices);
+	// The renderer's own passes. They keep the scene's GPU copy and the stats
+	// readback in step, so they stay here rather than in Rendering/Passes.
+	void AddSceneUploadPass(bool bInstancesGrown, bool bGPUCulling, Vector<u32> regionStarts,
+							Vector<DrawIndexedArgs> cameraArgs, Vector<DrawIndexedArgs> shadowArgs);
+	void AddArgsReadbackPass(bool bHasShadowArgs);
 
 	// Copies a pass's draw args into this frame slot's readback buffer, read in
 	// BeginFrame once the slot's fence has passed.
