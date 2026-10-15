@@ -13,6 +13,7 @@
 #include <Rendering/Renderer/CommandQueue.h>
 #include <Rendering/Renderer/DescriptorHandle.h>
 #include <Rendering/Renderer/Device.h>
+#include <Rendering/Renderer/GPUScene.h>
 #include <Rendering/Renderer/Pipeline.h>
 #include <Rendering/Renderer/PipelineLibrary.h>
 #include <Rendering/Renderer/RenderGraph.h>
@@ -22,6 +23,12 @@
 #include <Rendering/Renderer/Texture.h>
 #include <Rendering/Renderer/TextureUpload.h>
 #include <Rendering/Renderer/UploadBuffer.h>
+
+#include <Rendering/Passes/GBufferPass.h>
+#include <Rendering/Passes/ImGuiPass.h>
+#include <Rendering/Passes/LightingPass.h>
+#include <Rendering/Passes/ShadowPass.h>
+#include <Rendering/Passes/TonemapPass.h>
 
 class IWindow;
 class World;
@@ -34,36 +41,6 @@ enum class RenderPath : u8
 {
 	Deferred,
 	ForwardPlus
-};
-
-struct GBufferSimple
-{
-	URef<Texture> albedo;
-	URef<Texture> normal;
-	URef<Texture> material;
-	URef<Texture> emissive;
-
-	bool IsInitialized() const
-	{
-		return albedo && normal && material && emissive;
-	}
-};
-
-struct ShadowPassTextures
-{
-	URef<Texture> directionalShadowMap;
-	URef<Texture> spotShadowMap;
-	// TODO add cubemap for point lights
-
-	bool IsInitialized() const
-	{
-		return directionalShadowMap && spotShadowMap;
-	}
-
-	bool IsDirectionalMapInitialized() const
-	{
-		return directionalShadowMap.get() ? true : false;
-	}
 };
 
 // Tracks the GPU fence values for one in-flight frame slot.
@@ -132,6 +109,7 @@ public:
 	void SetResourceManager(ResourceManager* manager)
 	{
 		m_resourceManager = manager;
+		m_gpuScene.SetResourceManager(manager);
 	}
 
 	ResourceManager* GetResourceManager() const
@@ -173,15 +151,9 @@ public:
 		u32 uploadedSlots	= 0;
 	};
 
-	CullStats GetCullStats() const
-	{
-		return m_cullStats;
-	}
-
-	DrawStats GetDrawStats() const
-	{
-		return m_drawStats;
-	}
+	// Both last frame's, built from the GPU scene's stats.
+	CullStats GetCullStats() const;
+	DrawStats GetDrawStats() const;
 
 	const RenderGraph& GetRenderGraph() const
 	{
@@ -198,65 +170,8 @@ protected:
 	void DrawDeferred();
 	void DrawForwardPlus();
 
-	// Calls each pass's Create...PassPipeline once in Init and keeps the handles.
-	void CreatePipelines();
-
-	void CreateDepthBuffer(u32 width, u32 height);
-	void InitGBufferTextures();
-	void InitShadowTextures();
-
-	// Resolves each batch's buffers and textures. Per frame, since textures can
-	// finish loading after the batch was created.
-	Vector<BatchItem> BuildBatchItems(const Vector<RenderScene::VisibleBatch>& batches) const;
-
-	// One record per scene batch, indexed by batch, with instanceCount 0. The CPU
-	// cull fills the counts in; the GPU cull counts up from 0.
-	Vector<DrawIndexedArgs> BuildDrawArgs() const;
-
-	// Grows every scene buffer the frame needs. Called before any pass is added,
-	// so the Buffer pointers passes are given stay valid while the graph runs.
-	// Returns whether the instance buffer was regrown, which forces a full upload.
-	bool GrowSceneBuffers(const RenderScene::CullRegions& regions, bool bGPUCulling);
-
-	// Copies the scene's written slots into m_instanceBuffer, or all of them when
-	// bFullUpload, e.g. after a regrow left it empty.
-	void UploadInstances(CommandList& cmd, bool bFullUpload);
-
-	// The buffer must already be big enough, see GrowSceneBuffers.
-	void UploadSlotIndices(CommandList& cmd, const Vector<u32>& indices, Buffer* buffer);
-
-	// Leaves the buffer in finalState: IndirectArgument to draw directly, or
-	// UnorderedAccess for the cull to count into. Must already be big enough.
-	void UploadDrawArgs(CommandList& cmd, const Vector<DrawIndexedArgs>& args, Buffer* buffer,
-						ResourceState finalState);
-
-	// The renderer's own passes. They keep the scene's GPU copy and the stats
-	// readback in step, so they stay here rather than in Rendering/Passes.
-	void AddSceneUploadPass(bool bInstancesGrown, bool bGPUCulling, Vector<u32> regionStarts,
-							Vector<DrawIndexedArgs> cameraArgs, Vector<DrawIndexedArgs> shadowArgs);
-	void AddArgsReadbackPass(bool bHasShadowArgs);
-
-	// Copies a pass's draw args into this frame slot's readback buffer, read in
-	// BeginFrame once the slot's fence has passed.
-	enum class DrawPass : u8
-	{
-		Camera,
-		Shadow,
-		Count
-	};
-	void RecordArgsReadback(CommandList& cmd, DrawPass pass, Buffer* drawArgs, u32 count);
-
-	struct ReadbackStats
-	{
-		u32 visibleInstances = 0;
-		u32 numTris			 = 0;
-	};
-	ReadbackStats ReadArgsReadback();
-
-	// Reallocates if needed. Contents are not preserved, so callers that rely on
-	// them must rewrite after a true return.
-	bool EnsureBufferCapacity(URef<Buffer>& buffer, u32& capacity, u32 needed, u32 stride, const char* name,
-							  bool bUnorderedAccess = false);
+	// Every pass, for the calls that do not care about order: Init and OnResize.
+	Array<RenderPass*, 5> GetPasses();
 
 	// Split k_framesInFlight ways. Instance data only passes through here when it
 	// changes, but a full upload after a grow is 16 MB at 100k instances.
@@ -269,18 +184,18 @@ protected:
 	URef<CommandQueue> m_copyQueue;
 	URef<SwapChain> m_swapChain;
 
-	// Depth buffer shared across all render paths.
-	// Created by CreateDepthBuffer(); used directly in DrawXxx() via Texture*.
-	URef<Texture> m_depthTexture;
-
 	// Declared after m_device, so it is destroyed first. Handles stay valid across
 	// r.ReloadShaders, so passes look the PSO up each time they bind it.
 	URef<PipelineLibrary> m_pipelines;
-	PipelineHandle m_directionalShadowPipeline;
-	PipelineHandle m_deferredGeomPipeline;
-	PipelineHandle m_deferredLightPipeline;
-	PipelineHandle m_tonemapPipeline;
-	ComputePipelineHandle m_cullPipeline;
+
+	// These own pipelines, buffers and textures, so they are destroyed before the
+	// device too. DrawDeferred decides their order.
+	GPUScene m_gpuScene;
+	ShadowPass m_shadowPass;
+	GBufferPass m_gbufferPass;
+	LightingPass m_lightingPass;
+	TonemapPass m_tonemapPass;
+	ImGuiPass m_imguiPass;
 
 	// Set by r.ReloadShaders, which runs mid frame inside the ImGui build. The
 	// reload waits for the next BeginFrame, before anything records.
@@ -292,8 +207,6 @@ protected:
 	// list keeps its capacity and the window can read last frame's passes.
 	RenderGraph m_renderGraph;
 
-	URef<Texture> m_hdrTarget;
-
 	World* m_world					   = nullptr; // non-owning — set by WarpEngine
 	ResourceManager* m_resourceManager = nullptr; // non-owning — set by WarpEngine
 	RenderPath m_renderPath			   = RenderPath::Deferred;
@@ -301,8 +214,8 @@ protected:
 	Array<FrameSyncPoint, k_framesInFlight> m_frameSyncPoints;
 	u32 m_frameIndex = 0;
 
-	CullStats m_cullStats;
-	DrawStats m_drawStats{};
+	// Recorded by last frame's graph, for GetDrawStats.
+	u32 m_drawCalls = 0;
 
 	// Per-worker command lists — long-lived, reset each frame via Begin(frameIndex).
 	// Indexed by worker thread index.
@@ -314,48 +227,6 @@ protected:
 	// CPU-side bump allocator: Reset() at the start of every frame.
 	// Use for transient per-frame structures (draw lists, sort keys, etc.).
 	Arena m_frameArena{ k_frameArenaSize };
-
-	// GPU copy of RenderScene's instances, indexed by slot. Shared by both passes,
-	// written only where slots changed, and grown on demand rather than capped.
-	URef<Buffer> m_instanceBuffer;
-	u32 m_instanceCapacity = 0;
-
-	// Visible slot indices per pass, rebuilt by the cull every frame. UAVs so the
-	// GPU cull can write them; the CPU cull uploads into the same buffers.
-	URef<Buffer> m_slotIndexBuffer;
-	URef<Buffer> m_shadowSlotIndexBuffer;
-	u32 m_slotIndexCapacity		  = 0;
-	u32 m_shadowSlotIndexCapacity = 0;
-
-	// Indirect draw records, indexed by scene batch. UAVs so the GPU cull can
-	// count instances into them.
-	URef<Buffer> m_drawArgsBuffer;
-	URef<Buffer> m_shadowDrawArgsBuffer;
-	u32 m_drawArgsCapacity		 = 0;
-	u32 m_shadowDrawArgsCapacity = 0;
-
-	// Where each batch's region starts in the GPU visible index lists.
-	URef<Buffer> m_regionStartBuffer;
-	u32 m_regionStartCapacity = 0;
-
-	// Subscribed to r.GPUCulling for the renderer's lifetime.
-	void OnGPUCullingChanged(bool bEnabled);
-	URef<MemberFuncType<Renderer, bool>> m_gpuCullingChangedDelegate;
-
-	// Per pass, per frame slot. Written at the end of a frame, read when that
-	// slot comes round again and its fence has passed.
-	struct ArgsReadback
-	{
-		URef<Buffer> buffer;
-		u32 count = 0;
-	};
-	Array<Array<ArgsReadback, k_framesInFlight>, static_cast<u32>(DrawPass::Count)> m_argsReadback;
-	ReadbackStats m_readbackStats;
-
-	// Buffers replaced by a grow, parked in the frame slot that was current when
-	// they were retired. BeginFrame waits on that slot's fence before clearing it,
-	// so the GPU is provably finished with them.
-	Array<Vector<URef<Buffer>>, k_framesInFlight> m_retiredBuffers;
 
 	// GPU-visible ring buffer: OnBeginFrame() retires the oldest frame's slice.
 	// Use for constant buffer data (transforms, material params, light data).
@@ -400,19 +271,8 @@ protected:
 
 	URef<RenderDocCapture> m_renderDoc = std::make_unique<RenderDocCapture>();
 
-	GBufferSimple m_gbufferSimple;
-
-	u32 m_shadowResolution = 4096;
-	ShadowPassTextures m_shadowTextures;
-
 	bool m_imguiInitialized = false;
 	URef<ImGuiBackend> m_imguiBackend;
-
-	DrawList m_drawList;
-
-	RenderScene m_scene;
-	RenderScene::CullResult m_cameraCull;
-	RenderScene::CullResult m_shadowCull;
 
 public:
 	// Queue a staging upload for the Renderer to process.

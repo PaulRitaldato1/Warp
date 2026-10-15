@@ -1,4 +1,8 @@
 #include <Rendering/Passes/GBufferPass.h>
+#include <Rendering/Renderer/Device.h>
+#include <Rendering/Renderer/FrameBlackboard.h>
+#include <Rendering/Renderer/FrameView.h>
+#include <Rendering/Renderer/GPUScene.h>
 #include <Rendering/Renderer/RenderGraph.h>
 #include <Rendering/Renderer/Texture.h>
 
@@ -18,7 +22,7 @@ struct PerBatchConstants
 	uint instanceOffset;
 };
 
-PipelineHandle CreateGBufferPassPipeline(PipelineLibrary& library)
+static PipelineHandle CreatePipeline(PipelineLibrary& library)
 {
 	GraphicsPipelineInfo info;
 	info.name		  = "GBuffer Geometry";
@@ -36,7 +40,7 @@ PipelineHandle CreateGBufferPassPipeline(PipelineLibrary& library)
 		{ "TEXCOORD", 1, TextureFormat::RG32F, 1, InputElement::AppendAligned },
 		{ "COLOR", 0, TextureFormat::RGBA32F, 1, InputElement::AppendAligned },
 	};
-	// Same order as GBufferTargets.
+	// Same order as GBufferOutput.
 	meshDesc.renderTargetFormats  = { TextureFormat::RGBA8, TextureFormat::RGBA16F, TextureFormat::RGBA8,
 									  TextureFormat::RGBA8 };
 	meshDesc.depthFormat		  = TextureFormat::Depth32F;
@@ -61,48 +65,89 @@ PipelineHandle CreateGBufferPassPipeline(PipelineLibrary& library)
 	return library.Create(info);
 }
 
-void AddGBufferPass(RenderGraph& graph, const PassContext& context, const GBufferPassInputs& inputs)
-{
-	graph.AddPass("GBuffer").Execute(
-		[context, inputs](CommandList& cmd)
-		{
-			const GBufferTargets& targets = inputs.targets;
-			const Array<DescriptorHandle, 4> rtvs{ targets.albedo->GetRTV(), targets.normal->GetRTV(),
-												   targets.material->GetRTV(), targets.emissive->GetRTV() };
+GBufferPass::~GBufferPass() = default;
 
-			cmd.TransitionTexture(targets.albedo, ResourceState::RenderTarget);
-			cmd.TransitionTexture(targets.normal, ResourceState::RenderTarget);
-			cmd.TransitionTexture(targets.material, ResourceState::RenderTarget);
-			cmd.TransitionTexture(targets.emissive, ResourceState::RenderTarget);
+void GBufferPass::Init(const PassInitContext& context)
+{
+	m_device   = context.device;
+	m_pipeline = CreatePipeline(*context.pipelines);
+	CreateTargets(context.width, context.height);
+}
+
+void GBufferPass::OnResize(u32 width, u32 height)
+{
+	CreateTargets(width, height);
+}
+
+void GBufferPass::CreateTargets(u32 width, u32 height)
+{
+	auto createTarget = [&](TextureFormat format, TextureUsage usage)
+	{
+		TextureDesc desc;
+		desc.type	= TextureType::Texture2D;
+		desc.width	= width;
+		desc.height = height;
+		desc.format = format;
+		desc.usage	= usage;
+		return m_device->CreateTexture(desc);
+	};
+
+	m_albedo   = createTarget(TextureFormat::RGBA8, TextureUsage::RenderTarget);
+	m_normal   = createTarget(TextureFormat::RGBA16F, TextureUsage::RenderTarget);
+	m_material = createTarget(TextureFormat::RGBA8, TextureUsage::RenderTarget);
+	m_emissive = createTarget(TextureFormat::RGBA8, TextureUsage::RenderTarget);
+
+	// Sampled by lighting to rebuild world positions.
+	m_depth = createTarget(TextureFormat::Depth32F, TextureUsage::DepthStencilSampled);
+}
+
+void GBufferPass::AddToGraph(RenderGraph& graph, FrameBlackboard& blackboard, const FrameView& view,
+							 const PassContext& context)
+{
+	const SceneDrawView scene = blackboard.Get<GPUSceneOutput>().camera;
+
+	const GBufferOutput output{ m_albedo.get(), m_normal.get(), m_material.get(), m_emissive.get(), m_depth.get() };
+	blackboard.Add(output);
+
+	graph.AddPass("GBuffer").Execute(
+		[context, pipeline = m_pipeline, output, scene, viewProj = view.camera.viewProj](CommandList& cmd)
+		{
+			const Array<DescriptorHandle, 4> rtvs{ output.albedo->GetRTV(), output.normal->GetRTV(),
+												   output.material->GetRTV(), output.emissive->GetRTV() };
+
+			cmd.TransitionTexture(output.albedo, ResourceState::RenderTarget);
+			cmd.TransitionTexture(output.normal, ResourceState::RenderTarget);
+			cmd.TransitionTexture(output.material, ResourceState::RenderTarget);
+			cmd.TransitionTexture(output.emissive, ResourceState::RenderTarget);
 
 			// The lighting pass left it as ShaderResource last frame.
-			cmd.TransitionTexture(inputs.depth, ResourceState::DepthWrite);
+			cmd.TransitionTexture(output.depth, ResourceState::DepthWrite);
 
-			cmd.SetRenderTargets(4, rtvs.data(), inputs.depth);
+			cmd.SetRenderTargets(4, rtvs.data(), output.depth);
 
 			for (const DescriptorHandle& rtv : rtvs)
 			{
 				cmd.ClearRenderTarget(rtv, 0.0f, 0.0f, 0.0f, 0.0f);
 			}
-			cmd.ClearDepthStencil(inputs.depth, 1.f, 0);
+			cmd.ClearDepthStencil(output.depth, 1.f, 0);
 
-			const u32 width	 = targets.albedo->GetWidth();
-			const u32 height = targets.albedo->GetHeight();
+			const u32 width	 = output.albedo->GetWidth();
+			const u32 height = output.albedo->GetHeight();
 			cmd.SetViewport(0.f, 0.f, static_cast<f32>(width), static_cast<f32>(height));
 			cmd.SetScissorRect(0, 0, width, height);
 
-			cmd.SetPipelineState(context.pipelines->Get(inputs.pipeline));
+			cmd.SetPipelineState(context.pipelines->Get(pipeline));
 			cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
-			BindConstants(cmd, context, 2, PerViewConstants{ inputs.viewProj });
+			BindConstants(cmd, context, 2, PerViewConstants{ viewProj });
 
-			if (!inputs.batches.empty())
+			if (!scene.batches.empty())
 			{
-				cmd.SetShaderResourceBuffer(3, inputs.instances, 0);
-				cmd.SetShaderResourceBuffer(4, inputs.visibleIndices, 0);
+				cmd.SetShaderResourceBuffer(3, scene.instances, 0);
+				cmd.SetShaderResourceBuffer(4, scene.visibleIndices, 0);
 			}
 
-			for (const BatchItem& batch : inputs.batches)
+			for (const BatchItem& batch : scene.batches)
 			{
 				PerBatchConstants batchConstants;
 				batchConstants.emissiveFactor = batch.emissiveFactor;
@@ -117,7 +162,7 @@ void AddGBufferPass(RenderGraph& graph, const PassContext& context, const GBuffe
 											batch.textures[TextureSlot::Occlusion],
 											batch.textures[TextureSlot::Emissive] });
 
-				cmd.DrawIndexedIndirect(inputs.drawArgs, batch.batchIndex * sizeof(DrawIndexedArgs));
+				cmd.DrawIndexedIndirect(scene.drawArgs, batch.batchIndex * sizeof(DrawIndexedArgs));
 			}
 		});
 }

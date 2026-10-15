@@ -1,8 +1,14 @@
+#include <Rendering/Lighting/LightData.h>
+#include <Rendering/Passes/GBufferPass.h>
 #include <Rendering/Passes/LightingPass.h>
+#include <Rendering/Passes/ShadowPass.h>
+#include <Rendering/Renderer/Device.h>
+#include <Rendering/Renderer/FrameBlackboard.h>
+#include <Rendering/Renderer/FrameView.h>
 #include <Rendering/Renderer/RenderGraph.h>
 #include <Rendering/Renderer/Texture.h>
 
-PipelineHandle CreateLightingPassPipeline(PipelineLibrary& library)
+static PipelineHandle CreatePipeline(PipelineLibrary& library)
 {
 	GraphicsPipelineInfo info = MakeFullscreenPipeline(
 		"Deferred Lighting", "Shaders/DeferredLighting.hlsl", TextureFormat::RGBA16F,
@@ -25,13 +31,13 @@ PipelineHandle CreateLightingPassPipeline(PipelineLibrary& library)
 	return library.Create(info);
 }
 
-// The scene lights in the GPU layout, then the sky's sun.
-static Vector<LightInfo> BuildLightInfos(const LightList& lights, const Vector<LightInfo>& skyLights)
+// The scene lights in the GPU layout, then the sun.
+static Vector<LightInfo> BuildLightInfos(const FrameView& view)
 {
 	Vector<LightInfo> lightInfos;
-	lightInfos.reserve(lights.items.size() + skyLights.size());
+	lightInfos.reserve(view.lights.items.size() + 1);
 
-	for (const LightItem& light : lights.items)
+	for (const LightItem& light : view.lights.items)
 	{
 		LightInfo info;
 		info.position		= light.position;
@@ -45,51 +51,78 @@ static Vector<LightInfo> BuildLightInfos(const LightList& lights, const Vector<L
 		lightInfos.push_back(info);
 	}
 
-	lightInfos.insert(lightInfos.end(), skyLights.begin(), skyLights.end());
+	if (view.sky.bHasSun)
+	{
+		lightInfos.push_back(view.sky.sun);
+	}
+
 	return lightInfos;
 }
 
-void AddLightingPass(RenderGraph& graph, const PassContext& context, const LightingPassInputs& inputs)
+LightingPass::~LightingPass() = default;
+
+void LightingPass::Init(const PassInitContext& context)
 {
-	// Built while the pass is added, so the lambda only records.
-	Vector<LightInfo> lightInfos = BuildLightInfos(inputs.lights, inputs.skyLights);
+	m_device   = context.device;
+	m_pipeline = CreatePipeline(*context.pipelines);
+	CreateTarget(context.width, context.height);
+}
+
+void LightingPass::OnResize(u32 width, u32 height)
+{
+	CreateTarget(width, height);
+}
+
+void LightingPass::CreateTarget(u32 width, u32 height)
+{
+	TextureDesc desc;
+	desc.width	= width;
+	desc.height = height;
+	desc.format = TextureFormat::RGBA16F;
+	desc.usage	= TextureUsage::RenderTarget;
+	m_hdr		= m_device->CreateTexture(desc);
+}
+
+void LightingPass::AddToGraph(RenderGraph& graph, FrameBlackboard& blackboard, const FrameView& view,
+							  const PassContext& context)
+{
+	const GBufferOutput gbuffer = blackboard.Get<GBufferOutput>();
+	Texture* shadowMap			= blackboard.Get<ShadowOutput>().sunShadowMap;
+
+	blackboard.Add(SceneColorOutput{ m_hdr.get() });
+
+	Vector<LightInfo> lightInfos = BuildLightInfos(view);
 
 	LightPassConstants constants = {};
-	{
-		using namespace DirectX;
-		SimdMat simdViewProj	= XMLoadFloat4x4(&inputs.viewProj);
-		SimdMat simdInvViewProj = XMMatrixInverse(nullptr, simdViewProj);
-		XMStoreFloat4x4(&constants.invViewProj, simdInvViewProj);
-	}
-	constants.cameraPosition = inputs.cameraPosition;
-	constants.lightCount	 = static_cast<int32>(lightInfos.size());
-	constants.sky			 = inputs.sky;
-	constants.lightViewProj	 = inputs.lightViewProj;
-	constants.shadowBias	 = 0.005f;
+	constants.invViewProj		 = view.camera.invViewProj;
+	constants.cameraPosition	 = view.camera.position;
+	constants.lightCount		 = static_cast<int32>(lightInfos.size());
+	constants.sky				 = view.sky.parameters;
+	constants.lightViewProj		 = view.sky.sunViewProj;
+	constants.shadowBias		 = 0.005f;
 
 	graph.AddPass("Lighting")
 		.Execute(
-			[context, pipeline = inputs.pipeline, gbuffer = inputs.gbuffer, depth = inputs.depth,
-			 shadowMap = inputs.shadowMap, hdrTarget = inputs.hdrTarget, constants,
+			[context, pipeline = m_pipeline, hdr = m_hdr.get(), gbuffer, shadowMap, constants,
 			 lightInfos = std::move(lightInfos)](CommandList& cmd)
 			{
 				cmd.TransitionTexture(gbuffer.albedo, ResourceState::ShaderResource);
 				cmd.TransitionTexture(gbuffer.normal, ResourceState::ShaderResource);
 				cmd.TransitionTexture(gbuffer.material, ResourceState::ShaderResource);
 				cmd.TransitionTexture(gbuffer.emissive, ResourceState::ShaderResource);
-				cmd.TransitionTexture(depth, ResourceState::ShaderResource);
+				cmd.TransitionTexture(gbuffer.depth, ResourceState::ShaderResource);
 
 				cmd.SetPipelineState(context.pipelines->Get(pipeline));
 				cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
-				cmd.TransitionTexture(hdrTarget, ResourceState::RenderTarget);
-				const DescriptorHandle hdrRTV = hdrTarget->GetRTV();
+				cmd.TransitionTexture(hdr, ResourceState::RenderTarget);
+				const DescriptorHandle hdrRTV = hdr->GetRTV();
 				cmd.SetRenderTargets(1, &hdrRTV, nullptr);
 
 				BindConstants(cmd, context, 0, constants);
 
-				cmd.SetShaderResources(1,
-									   { gbuffer.albedo, gbuffer.normal, gbuffer.material, depth, gbuffer.emissive });
+				cmd.SetShaderResources(
+					1, { gbuffer.albedo, gbuffer.normal, gbuffer.material, gbuffer.depth, gbuffer.emissive });
 
 				if (!lightInfos.empty())
 				{

@@ -1,5 +1,7 @@
 #include <Core/Console/ConsoleVariable.h>
+#include <Rendering/Passes/LightingPass.h>
 #include <Rendering/Passes/TonemapPass.h>
+#include <Rendering/Renderer/FrameBlackboard.h>
 #include <Rendering/Renderer/RenderGraph.h>
 #include <Rendering/Renderer/SwapChain.h>
 #include <Rendering/Renderer/Texture.h>
@@ -18,10 +20,10 @@ struct TonemapConstants
 	u32 padding;
 };
 
-PipelineHandle CreateTonemapPassPipeline(PipelineLibrary& library)
+void TonemapPass::Init(const PassInitContext& context)
 {
 	// Writes the swap chain.
-	return library.Create(MakeFullscreenPipeline(
+	m_pipeline = context.pipelines->Create(MakeFullscreenPipeline(
 		"Tonemap", "Shaders/Tonemap.hlsl", TextureFormat::BGRA8,
 		{
 			{ BindingType::ConstantBuffer, 0, 1 }, // rootIndex 0: b0 — exposureEV, tonemapper, padding
@@ -29,26 +31,29 @@ PipelineHandle CreateTonemapPassPipeline(PipelineLibrary& library)
 		}));
 }
 
-void AddTonemapPass(RenderGraph& graph, const PassContext& context, const TonemapPassInputs& inputs)
+void TonemapPass::AddToGraph(RenderGraph& graph, FrameBlackboard& blackboard, const FrameView& view,
+							 const PassContext& context)
 {
+	Texture* hdr = blackboard.Get<SceneColorOutput>().hdr;
+
 	TonemapConstants constants = {};
 	constants.exposureEV	   = CvarExposureEV.Get();
 	constants.tonemapper	   = CvarTonemapperMethod.Get();
 	constants.whitePoint	   = CvarWhitePoint.Get();
 
 	graph.AddPass("Tonemap").Execute(
-		[context, inputs, constants](CommandList& cmd)
+		[context, pipeline = m_pipeline, hdr, constants](CommandList& cmd)
 		{
-			cmd.SetPipelineState(context.pipelines->Get(inputs.pipeline));
+			cmd.SetPipelineState(context.pipelines->Get(pipeline));
 			cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
-			cmd.TransitionTexture(inputs.hdrTarget, ResourceState::ShaderResource);
-			inputs.swapChain->TransitionToRenderTarget(cmd);
-			const DescriptorHandle backBufferRTV = inputs.swapChain->GetCurrentRTV();
+			cmd.TransitionTexture(hdr, ResourceState::ShaderResource);
+			context.swapChain->TransitionToRenderTarget(cmd);
+			const DescriptorHandle backBufferRTV = context.swapChain->GetCurrentRTV();
 			cmd.SetRenderTargets(1, &backBufferRTV, nullptr);
 
 			BindConstants(cmd, context, 0, constants);
-			cmd.SetShaderResources(1, { inputs.hdrTarget });
+			cmd.SetShaderResources(1, { hdr });
 
 			cmd.Draw(3);
 		});

@@ -1,4 +1,8 @@
 #include <Rendering/Passes/ShadowPass.h>
+#include <Rendering/Renderer/Device.h>
+#include <Rendering/Renderer/FrameBlackboard.h>
+#include <Rendering/Renderer/FrameView.h>
+#include <Rendering/Renderer/GPUScene.h>
 #include <Rendering/Renderer/RenderGraph.h>
 #include <Rendering/Renderer/Texture.h>
 
@@ -15,7 +19,7 @@ struct ShadowDrawConstants
 	u32 padding[3];
 };
 
-PipelineHandle CreateShadowPassPipeline(PipelineLibrary& library)
+static PipelineHandle CreatePipeline(PipelineLibrary& library)
 {
 	// Depth only, so no pixel shader.
 	GraphicsPipelineInfo info;
@@ -55,32 +59,53 @@ PipelineHandle CreateShadowPassPipeline(PipelineLibrary& library)
 	return library.Create(info);
 }
 
-void AddShadowPass(RenderGraph& graph, const PassContext& context, const ShadowPassInputs& inputs)
+ShadowPass::~ShadowPass() = default;
+
+void ShadowPass::Init(const PassInitContext& context)
 {
+	m_pipeline = CreatePipeline(*context.pipelines);
+
+	// Size independent, so made once and kept across resizes.
+	TextureDesc desc;
+	desc.width	   = k_resolution;
+	desc.height	   = k_resolution;
+	desc.format	   = TextureFormat::Depth32F;
+	desc.usage	   = TextureUsage::DepthStencilSampled;
+	m_sunShadowMap = context.device->CreateTexture(desc);
+}
+
+void ShadowPass::AddToGraph(RenderGraph& graph, FrameBlackboard& blackboard, const FrameView& view,
+							const PassContext& context)
+{
+	const SceneDrawView casters = blackboard.Get<GPUSceneOutput>().sunShadow;
+
+	blackboard.Add(ShadowOutput{ m_sunShadowMap.get() });
+
 	graph.AddPass("Shadow").Execute(
-		[context, inputs](CommandList& cmd)
+		[context, pipeline = m_pipeline, shadowMap = m_sunShadowMap.get(), casters, bHasSun = view.sky.bHasSun,
+		 sunViewProj = view.sky.sunViewProj](CommandList& cmd)
 		{
-			cmd.TransitionTexture(inputs.shadowMap, ResourceState::DepthWrite);
-			cmd.SetRenderTargets(0, nullptr, inputs.shadowMap);
-			cmd.ClearDepthStencil(inputs.shadowMap, 1.f, 0);
+			cmd.TransitionTexture(shadowMap, ResourceState::DepthWrite);
+			cmd.SetRenderTargets(0, nullptr, shadowMap);
+			cmd.ClearDepthStencil(shadowMap, 1.f, 0);
 
-			cmd.SetViewport(0.f, 0.f, static_cast<f32>(inputs.resolution), static_cast<f32>(inputs.resolution));
-			cmd.SetScissorRect(0, 0, inputs.resolution, inputs.resolution);
+			cmd.SetViewport(0.f, 0.f, static_cast<f32>(k_resolution), static_cast<f32>(k_resolution));
+			cmd.SetScissorRect(0, 0, k_resolution, k_resolution);
 
-			cmd.SetPipelineState(context.pipelines->Get(inputs.pipeline));
+			cmd.SetPipelineState(context.pipelines->Get(pipeline));
 			cmd.SetPrimitiveTopology(PrimitiveTopology::TriangleList);
 
-			if (inputs.bHasLight)
+			if (bHasSun)
 			{
-				BindConstants(cmd, context, 2, ShadowViewConstants{ inputs.lightViewProj });
+				BindConstants(cmd, context, 2, ShadowViewConstants{ sunViewProj });
 
-				if (!inputs.batches.empty())
+				if (!casters.batches.empty())
 				{
-					cmd.SetShaderResourceBuffer(0, inputs.instances, 0);
-					cmd.SetShaderResourceBuffer(3, inputs.visibleIndices, 0);
+					cmd.SetShaderResourceBuffer(0, casters.instances, 0);
+					cmd.SetShaderResourceBuffer(3, casters.visibleIndices, 0);
 				}
 
-				for (const BatchItem& batch : inputs.batches)
+				for (const BatchItem& batch : casters.batches)
 				{
 					ShadowDrawConstants drawConstants = {};
 					drawConstants.instanceOffset	  = batch.instanceOffset;
@@ -90,11 +115,11 @@ void AddShadowPass(RenderGraph& graph, const PassContext& context, const ShadowP
 					cmd.SetVertexBuffer(batch.positionBuffer);
 					cmd.SetIndexBuffer(batch.indexBuffer);
 
-					cmd.DrawIndexedIndirect(inputs.drawArgs, batch.batchIndex * sizeof(DrawIndexedArgs));
+					cmd.DrawIndexedIndirect(casters.drawArgs, batch.batchIndex * sizeof(DrawIndexedArgs));
 				}
 			}
 
 			// Transition shadow map for later use in the lighting pass.
-			cmd.TransitionTexture(inputs.shadowMap, ResourceState::ShaderResource);
+			cmd.TransitionTexture(shadowMap, ResourceState::ShaderResource);
 		});
 }

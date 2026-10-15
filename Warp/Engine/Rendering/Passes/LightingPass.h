@@ -1,37 +1,34 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
-#include <Math/Math.h>
-#include <Rendering/Lighting/LightData.h>
-#include <Rendering/Passes/GBufferPass.h>
-#include <Rendering/Passes/PassContext.h>
-#include <Rendering/Renderer/DrawList.h>
+#include <Rendering/Passes/RenderPass.h>
 #include <Rendering/Renderer/PipelineLibrary.h>
 
 class Texture;
-class RenderGraph;
 
-// Full screen deferred lighting. Reads the GBuffer, depth and shadow map, and
-// writes linear HDR for tonemap.
+// Full screen deferred lighting. Reads the GBuffer, depth and sun shadow map, and
+// writes linear HDR.
 
-PipelineHandle CreateLightingPassPipeline(PipelineLibrary& library);
-
-struct LightingPassInputs
+// Added to the blackboard for tonemap and later post passes. Left in RenderTarget.
+struct SceneColorOutput
 {
-	PipelineHandle pipeline;
-
-	GBufferTargets gbuffer;		  // moved to ShaderResource here
-	Texture* depth	   = nullptr; // moved to ShaderResource here
-	Texture* shadowMap = nullptr; // already ShaderResource, from the shadow pass
-	Texture* hdrTarget = nullptr; // left in RenderTarget
-
-	Mat4 viewProj		= {};
-	Vec3 cameraPosition = {};
-
-	LightList lights;
-	Vector<LightInfo> skyLights; // the sun, after the scene lights
-	SkyParameters sky  = {};
-	Mat4 lightViewProj = {}; // the directional shadow map's
+	Texture* hdr = nullptr; // RGBA16F, linear
 };
 
-void AddLightingPass(RenderGraph& graph, const PassContext& context, const LightingPassInputs& inputs);
+class LightingPass : public RenderPass
+{
+public:
+	~LightingPass() override;
+
+	void Init(const PassInitContext& context) override;
+	void OnResize(u32 width, u32 height) override;
+	void AddToGraph(RenderGraph& graph, FrameBlackboard& blackboard, const FrameView& view,
+					const PassContext& context) override;
+
+private:
+	void CreateTarget(u32 width, u32 height);
+
+	Device* m_device = nullptr;
+	PipelineHandle m_pipeline;
+	URef<Texture> m_hdr;
+};

@@ -1,35 +1,32 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
-#include <Math/Math.h>
-#include <Rendering/Passes/PassContext.h>
-#include <Rendering/Renderer/DrawList.h>
+#include <Rendering/Passes/RenderPass.h>
 #include <Rendering/Renderer/PipelineLibrary.h>
 
-class Buffer;
 class Texture;
-class RenderGraph;
 
-// Depth from the directional light's point of view, for the lighting pass to sample.
+// Depth from the sun's point of view, for the lighting pass to sample.
 
-PipelineHandle CreateShadowPassPipeline(PipelineLibrary& library);
-
-struct ShadowPassInputs
+// Added to the blackboard for lighting. Left in ShaderResource. Cleared even
+// without a sun, so lighting can always sample it.
+struct ShadowOutput
 {
-	PipelineHandle pipeline;
-
-	Texture* shadowMap = nullptr; // left in ShaderResource for lighting
-	u32 resolution	   = 0;
-
-	// Without a light the map is still cleared, so lighting samples it as unshadowed.
-	bool bHasLight	   = false;
-	Mat4 lightViewProj = {};
-
-	// The renderer's draw list, which outlives the frame's graph.
-	Span<const BatchItem> batches;
-	Buffer* instances	   = nullptr;
-	Buffer* visibleIndices = nullptr;
-	Buffer* drawArgs	   = nullptr; // in IndirectArgument
+	Texture* sunShadowMap = nullptr;
 };
 
-void AddShadowPass(RenderGraph& graph, const PassContext& context, const ShadowPassInputs& inputs);
+class ShadowPass : public RenderPass
+{
+public:
+	~ShadowPass() override;
+
+	void Init(const PassInitContext& context) override;
+	void AddToGraph(RenderGraph& graph, FrameBlackboard& blackboard, const FrameView& view,
+					const PassContext& context) override;
+
+private:
+	static constexpr u32 k_resolution = 4096;
+
+	PipelineHandle m_pipeline;
+	URef<Texture> m_sunShadowMap;
+};

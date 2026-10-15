@@ -4,15 +4,21 @@
 #include <Rendering/Renderer/SwapChain.h>
 #include <UI/ImGuiBackend.h>
 
-void AddImGuiPass(RenderGraph& graph, ImGuiBackend* backend, SwapChain* swapChain)
+void ImGuiPass::AddToGraph(RenderGraph& graph, FrameBlackboard& blackboard, const FrameView& view,
+						   const PassContext& context)
 {
+	if (!context.imgui)
+	{
+		return;
+	}
+
 	graph.AddPass("ImGui").Execute(
-		[backend, swapChain](CommandList& cmd)
+		[context](CommandList& cmd)
 		{
 			// Binds the back buffer itself rather than relying on tonemap leaving it
 			// bound. Vulkan loads the attachment, so the image survives the rebind.
-			const DescriptorHandle backBufferRTV = swapChain->GetCurrentRTV();
+			const DescriptorHandle backBufferRTV = context.swapChain->GetCurrentRTV();
 			cmd.SetRenderTargets(1, &backBufferRTV, nullptr);
-			backend->Render(&cmd);
+			context.imgui->Render(&cmd);
 		});
 }

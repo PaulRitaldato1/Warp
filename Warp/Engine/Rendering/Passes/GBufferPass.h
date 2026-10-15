@@ -1,42 +1,42 @@
 #pragma once
 
 #include <Common/CommonTypes.h>
-#include <Math/Math.h>
-#include <Rendering/Passes/PassContext.h>
-#include <Rendering/Renderer/DrawList.h>
+#include <Rendering/Passes/RenderPass.h>
 #include <Rendering/Renderer/PipelineLibrary.h>
 
-class Buffer;
 class Texture;
-class RenderGraph;
 
-// Draws every visible batch into the GBuffer and the depth buffer.
+// Draws every visible batch into the GBuffer targets and the depth buffer.
 
-// The renderer owns them and recreates them on resize.
-struct GBufferTargets
+// Added to the blackboard for lighting. All left in RenderTarget, depth in DepthWrite.
+struct GBufferOutput
 {
 	Texture* albedo	  = nullptr; // RGBA8
 	Texture* normal	  = nullptr; // RGBA16F
 	Texture* material = nullptr; // RGBA8
 	Texture* emissive = nullptr; // RGBA8
+	Texture* depth	  = nullptr; // Depth32F
 };
 
-PipelineHandle CreateGBufferPassPipeline(PipelineLibrary& library);
-
-struct GBufferPassInputs
+class GBufferPass : public RenderPass
 {
-	PipelineHandle pipeline;
+public:
+	~GBufferPass() override;
 
-	GBufferTargets targets;	  // left in RenderTarget
-	Texture* depth = nullptr; // left in DepthWrite
+	void Init(const PassInitContext& context) override;
+	void OnResize(u32 width, u32 height) override;
+	void AddToGraph(RenderGraph& graph, FrameBlackboard& blackboard, const FrameView& view,
+					const PassContext& context) override;
 
-	Mat4 viewProj = {};
+private:
+	void CreateTargets(u32 width, u32 height);
 
-	// The renderer's draw list, which outlives the frame's graph.
-	Span<const BatchItem> batches;
-	Buffer* instances	   = nullptr;
-	Buffer* visibleIndices = nullptr;
-	Buffer* drawArgs	   = nullptr; // in IndirectArgument
+	Device* m_device = nullptr;
+	PipelineHandle m_pipeline;
+
+	URef<Texture> m_albedo;
+	URef<Texture> m_normal;
+	URef<Texture> m_material;
+	URef<Texture> m_emissive;
+	URef<Texture> m_depth;
 };
-
-void AddGBufferPass(RenderGraph& graph, const PassContext& context, const GBufferPassInputs& inputs);
