@@ -192,17 +192,31 @@ void VKCommandList::SetPipelineState(PipelineState* state)
 	m_currentBindingMap	   = &vkPipeline->GetRootToVulkanBindingMap();
 	m_currentBindPoint	   = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipeline->GetNativePipeline());
+	PushSamplers(vkPipeline->GetSamplerBindings());
+}
 
+void VKCommandList::SetComputePipelineState(ComputePipelineState* state)
+{
+	DYNAMIC_ASSERT(state, "VKCommandList::SetComputePipelineState: state is null");
+	VKComputePipeline* vkPipeline = static_cast<VKComputePipeline*>(state);
+	m_currentLayout				  = vkPipeline->GetNativeLayout();
+	m_currentBindingMap			  = &vkPipeline->GetRootToVulkanBindingMap();
+	m_currentBindPoint			  = VK_PIPELINE_BIND_POINT_COMPUTE;
+	vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, vkPipeline->GetNativePipeline());
+	PushSamplers(vkPipeline->GetSamplerBindings());
+}
+
+void VKCommandList::PushSamplers(const Vector<VKSamplerBinding>& samplers)
+{
 	// Samplers belong to the pipeline, the Vulkan side of D3D12's static samplers,
-	// so they are pushed here once rather than by every draw.
-	const Vector<VKSamplerBinding>& samplers = vkPipeline->GetSamplerBindings();
+	// so they are pushed once when it is bound rather than by every draw.
 	if (samplers.empty() || !m_pushDescriptorFn)
 	{
 		return;
 	}
 
 	constexpr u32 k_maxSamplers = 8;
-	DYNAMIC_ASSERT(samplers.size() <= k_maxSamplers, "VKCommandList::SetPipelineState: too many samplers");
+	DYNAMIC_ASSERT(samplers.size() <= k_maxSamplers, "VKCommandList::PushSamplers: too many samplers");
 
 	VkDescriptorImageInfo samplerInfos[k_maxSamplers] = {};
 	VkWriteDescriptorSet writes[k_maxSamplers]		  = {};
@@ -219,17 +233,7 @@ void VKCommandList::SetPipelineState(PipelineState* state)
 		writes[i].pImageInfo	  = &samplerInfos[i];
 	}
 
-	m_pushDescriptorFn(m_cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_currentLayout, 0, samplerCount, writes);
-}
-
-void VKCommandList::SetComputePipelineState(ComputePipelineState* state)
-{
-	DYNAMIC_ASSERT(state, "VKCommandList::SetComputePipelineState: state is null");
-	VKComputePipeline* vkPipeline = static_cast<VKComputePipeline*>(state);
-	m_currentLayout				  = vkPipeline->GetNativeLayout();
-	m_currentBindingMap			  = &vkPipeline->GetRootToVulkanBindingMap();
-	m_currentBindPoint			  = VK_PIPELINE_BIND_POINT_COMPUTE;
-	vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, vkPipeline->GetNativePipeline());
+	m_pushDescriptorFn(m_cmdBuf, m_currentBindPoint, m_currentLayout, 0, samplerCount, writes);
 }
 
 // ---------------------------------------------------------------------------
@@ -542,7 +546,8 @@ void VKCommandList::TransitionTexture(Texture* texture, ResourceState newState)
 	barrier.srcQueueFamilyIndex	  = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex	  = VK_QUEUE_FAMILY_IGNORED;
 	barrier.image				  = vkTex->GetNativeImage();
-	barrier.subresourceRange	  = { aspect, 0, vkTex->GetMipLevels(), 0, 1 };
+	// Every layer, or a cubemap's faces 1 to 5 would keep their old layout.
+	barrier.subresourceRange = { aspect, 0, vkTex->GetMipLevels(), 0, vkTex->GetArrayLayers() };
 
 	VkDependencyInfo depInfo		= {};
 	depInfo.sType					= VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -750,6 +755,30 @@ void VKCommandList::SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 o
 void VKCommandList::SetUnorderedAccessBuffer(u32 rootIndex, Buffer* buffer, u64 offset)
 {
 	SetShaderResourceBuffer(rootIndex, buffer, offset);
+}
+
+void VKCommandList::SetUnorderedAccessTexture(u32 rootIndex, Texture* texture, u32 mip)
+{
+	DYNAMIC_ASSERT(m_pushDescriptorFn, "VKCommandList::SetUnorderedAccessTexture: push descriptors not available");
+	DYNAMIC_ASSERT(texture, "VKCommandList::SetUnorderedAccessTexture: texture is null");
+	DYNAMIC_ASSERT(m_currentLayout != VK_NULL_HANDLE, "VKCommandList::SetUnorderedAccessTexture: no pipeline bound");
+	DYNAMIC_ASSERT(m_currentBindingMap && rootIndex < m_currentBindingMap->size(),
+				   "VKCommandList::SetUnorderedAccessTexture: rootIndex out of range");
+
+	// Storage images are read and written in GENERAL, which is UnorderedAccess.
+	VkDescriptorImageInfo imageInfo = {};
+	imageInfo.imageView =
+		reinterpret_cast<VkImageView>(static_cast<uintptr_t>(texture->GetUAV(mip).ptr));
+	imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+	VkWriteDescriptorSet write = {};
+	write.sType				   = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstBinding		   = (*m_currentBindingMap)[rootIndex];
+	write.descriptorCount	   = 1;
+	write.descriptorType	   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	write.pImageInfo		   = &imageInfo;
+
+	m_pushDescriptorFn(m_cmdBuf, m_currentBindPoint, m_currentLayout, 0, 1, &write);
 }
 
 // ---------------------------------------------------------------------------

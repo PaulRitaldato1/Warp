@@ -21,6 +21,7 @@ inline VkFormat ToVkFormat(TextureFormat fmt)
 		case TextureFormat::RG8:             return VK_FORMAT_R8G8_UNORM;
 		case TextureFormat::R8:              return VK_FORMAT_R8_UNORM;
 		case TextureFormat::RGBA16F:         return VK_FORMAT_R16G16B16A16_SFLOAT;
+		case TextureFormat::RG16F:           return VK_FORMAT_R16G16_SFLOAT;
 		case TextureFormat::RGBA32F:         return VK_FORMAT_R32G32B32A32_SFLOAT;
 		case TextureFormat::RGB32F:          return VK_FORMAT_R32G32B32_SFLOAT;
 		case TextureFormat::RG32F:           return VK_FORMAT_R32G32_SFLOAT;
@@ -54,11 +55,13 @@ inline VkResourceStateInfo ToVkResourceStateInfo(ResourceState state)
 		case ResourceState::Undefined:
 			return { VK_IMAGE_LAYOUT_UNDEFINED, 0, VK_PIPELINE_STAGE_2_NONE };
 
+		// Compute too, since compute passes sample textures, e.g. the IBL prefilter.
 		case ResourceState::ShaderResource:
 			return {
 				VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 				VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-				VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
+				VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+					VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
 			};
 
 		case ResourceState::UnorderedAccess:
@@ -148,6 +151,7 @@ inline u32 FormatByteSize(TextureFormat fmt)
 		case TextureFormat::RG8:      return 2;
 		case TextureFormat::R8:       return 1;
 		case TextureFormat::RGBA16F:  return 8;
+		case TextureFormat::RG16F:    return 4;
 		case TextureFormat::RGBA32F:  return 16;
 		case TextureFormat::RGB32F:   return 12;
 		case TextureFormat::RG32F:    return 8;

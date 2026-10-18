@@ -16,6 +16,7 @@
 //   TextureTable       → N sampled image bindings
 //   StructuredBuffer   → 1 SSBO binding (t shift)
 //   RWStructuredBuffer → 1 SSBO binding (u shift)
+//   RWTexture          → 1 storage image binding (u shift)
 //   Samplers           → 1 sampler binding each, pushed when the pipeline is bound
 // ---------------------------------------------------------------------------
 
@@ -76,6 +77,17 @@ static DescriptorSetLayoutInfo BuildDescriptorSetLayout(VkDevice device, const V
 				VkDescriptorSetLayoutBinding binding = {};
 				binding.binding						 = vulkanBindingIndex;
 				binding.descriptorType				 = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+				binding.descriptorCount				 = 1;
+				binding.stageFlags					 = stages;
+				vkBindings.push_back(binding);
+				break;
+			}
+			case BindingType::RWTexture:
+			{
+				vulkanBindingIndex = slot.shaderRegister + Warp::Dxc::VkBindingShift::U;
+				VkDescriptorSetLayoutBinding binding = {};
+				binding.binding						 = vulkanBindingIndex;
+				binding.descriptorType				 = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 				binding.descriptorCount				 = 1;
 				binding.stageFlags					 = stages;
 				vkBindings.push_back(binding);
@@ -499,9 +511,11 @@ void VKComputePipeline::Initialize(const ComputePipelineDesc& desc)
 	DYNAMIC_ASSERT(desc.computeShader, "VKComputePipeline: computeShader is null");
 	VKShader* cs = static_cast<VKShader*>(desc.computeShader);
 
-	DescriptorSetLayoutInfo setLayout = BuildDescriptorSetLayout(m_device, desc.bindings, {}, VK_SHADER_STAGE_COMPUTE_BIT);
+	DescriptorSetLayoutInfo setLayout =
+		BuildDescriptorSetLayout(m_device, desc.bindings, desc.samplers, VK_SHADER_STAGE_COMPUTE_BIT);
 	m_descriptorSetLayout = setLayout.layout;
 	m_rootToVulkanBinding = std::move(setLayout.rootToBinding);
+	m_samplers			  = std::move(setLayout.samplers);
 
 	VkPipelineLayoutCreateInfo layoutInfo = {};
 	layoutInfo.sType					  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -539,6 +553,12 @@ void VKComputePipeline::Cleanup()
 		vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
 		m_descriptorSetLayout = VK_NULL_HANDLE;
 	}
+
+	for (const VKSamplerBinding& samplerBinding : m_samplers)
+	{
+		vkDestroySampler(m_device, samplerBinding.sampler, nullptr);
+	}
+	m_samplers.clear();
 }
 
 #endif // WARP_BUILD_VK

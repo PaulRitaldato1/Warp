@@ -103,6 +103,12 @@ public:
 		return m_rootToVulkanBinding;
 	}
 
+	// Pushed by VKCommandList::SetComputePipelineState.
+	const Vector<VKSamplerBinding>& GetSamplerBindings() const
+	{
+		return m_samplers;
+	}
+
 private:
 	VkDevice m_device							= VK_NULL_HANDLE;
 	VkPipeline m_pipeline						= VK_NULL_HANDLE;
@@ -110,6 +116,7 @@ private:
 	VkDescriptorSetLayout m_descriptorSetLayout = VK_NULL_HANDLE;
 
 	Vector<u32> m_rootToVulkanBinding;
+	Vector<VKSamplerBinding> m_samplers;
 };
 
 #endif // WARP_BUILD_VK

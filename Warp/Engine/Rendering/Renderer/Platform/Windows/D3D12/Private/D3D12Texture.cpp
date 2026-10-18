@@ -13,6 +13,12 @@ void D3D12Texture::InitializeWithDevice(ID3D12Device* device, const TextureDesc&
 
 	m_desc = desc;
 
+	// Matches Vulkan, which always gives a cubemap six layers.
+	if (desc.type == TextureType::CubeMap)
+	{
+		m_desc.arrayLayers = 6;
+	}
+
 	D3D12_HEAP_PROPERTIES heapProps = {};
 	heapProps.Type                  = D3D12_HEAP_TYPE_DEFAULT;
 
@@ -31,13 +37,9 @@ void D3D12Texture::InitializeWithDevice(ID3D12Device* device, const TextureDesc&
 			resourceDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE3D;
 			resourceDesc.DepthOrArraySize = static_cast<UINT16>(desc.depth);
 			break;
-		case TextureType::CubeMap:
+		default: // Texture2D and CubeMap, whose faces are array slices
 			resourceDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-			resourceDesc.DepthOrArraySize = static_cast<UINT16>(desc.arrayLayers);
-			break;
-		default: // Texture2D
-			resourceDesc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-			resourceDesc.DepthOrArraySize = static_cast<UINT16>(desc.arrayLayers);
+			resourceDesc.DepthOrArraySize = static_cast<UINT16>(m_desc.arrayLayers);
 			break;
 	}
 
@@ -126,10 +128,9 @@ void D3D12Texture::InitializeWithDevice(ID3D12Device* device, const TextureDesc&
 		m_dsvHandle = { static_cast<u64>(handle.ptr), desc.width, desc.height };
 	}
 
-	// SRV — Sampled, RenderTarget, and DepthStencilSampled textures.
+	// SRV — every usage but plain DepthStencil.
 	// CPU-only staging heap; copy into the frame's shader-visible heap when binding to a root signature.
-	if (desc.usage == TextureUsage::Sampled || desc.usage == TextureUsage::RenderTarget
-		|| desc.usage == TextureUsage::DepthStencilSampled)
+	if (desc.usage != TextureUsage::DepthStencil)
 	{
 		D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
 		heapDesc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -175,6 +176,48 @@ void D3D12Texture::InitializeWithDevice(ID3D12Device* device, const TextureDesc&
 		m_srvHandle = { static_cast<u64>(handle.ptr), desc.width, desc.height };
 	}
 
+	// UAVs — Storage textures, one per mip, so compute can write a mip while
+	// another is bound for reading. CPU-only, copied into the frame heap on bind.
+	if (desc.usage == TextureUsage::Storage)
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+		heapDesc.Type						= D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		heapDesc.NumDescriptors				= desc.mipLevels;
+		heapDesc.Flags						= D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		ThrowIfFailed(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_uavHeap)));
+
+		const u32 descriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		D3D12_CPU_DESCRIPTOR_HANDLE handle = m_uavHeap->GetCPUDescriptorHandleForHeapStart();
+
+		for (u32 mip = 0; mip < desc.mipLevels; ++mip)
+		{
+			D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+			uavDesc.Format							 = resourceDesc.Format;
+
+			// A cubemap is written as a 2D array, one slice per face.
+			if (m_desc.arrayLayers > 1)
+			{
+				uavDesc.ViewDimension				   = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+				uavDesc.Texture2DArray.MipSlice		   = mip;
+				uavDesc.Texture2DArray.FirstArraySlice = 0;
+				uavDesc.Texture2DArray.ArraySize	   = m_desc.arrayLayers;
+			}
+			else
+			{
+				uavDesc.ViewDimension	   = D3D12_UAV_DIMENSION_TEXTURE2D;
+				uavDesc.Texture2D.MipSlice = mip;
+			}
+
+			device->CreateUnorderedAccessView(m_resource.Get(), nullptr, &uavDesc, handle);
+
+			const u32 mipWidth	= (desc.width >> mip) > 0 ? (desc.width >> mip) : 1;
+			const u32 mipHeight = (desc.height >> mip) > 0 ? (desc.height >> mip) : 1;
+			m_uavHandles.push_back({ static_cast<u64>(handle.ptr), mipWidth, mipHeight });
+
+			handle.ptr += descriptorSize;
+		}
+	}
+
 	LOG_DEBUG("D3D12Texture created: {}x{}, mips={}", desc.width, desc.height, desc.mipLevels);
 }
 
@@ -188,7 +231,15 @@ void D3D12Texture::Cleanup()
 	m_rtvHeap.Reset();
 	m_dsvHeap.Reset();
 	m_srvHeap.Reset();
+	m_uavHeap.Reset();
+	m_uavHandles.clear();
 	m_resource.Reset();
+}
+
+DescriptorHandle D3D12Texture::GetUAV(u32 mip) const
+{
+	DYNAMIC_ASSERT(mip < m_uavHandles.size(), "D3D12Texture::GetUAV: not a Storage texture, or mip out of range");
+	return m_uavHandles[mip];
 }
 
 #endif

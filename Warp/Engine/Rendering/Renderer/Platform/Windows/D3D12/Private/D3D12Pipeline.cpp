@@ -14,6 +14,7 @@
 //   TextureTable       → descriptor table of N SRVs starting at register tN
 //   StructuredBuffer   → root SRV  at register tN
 //   RWStructuredBuffer → root UAV  at register uN
+//   RWTexture          → descriptor table of 1 UAV at register uN
 //
 // Graphics limits tables and samplers to the pixel shader and allows the input
 // assembler. Compute has only one stage, so everything is visible to it.
@@ -73,6 +74,21 @@ static ComRef<ID3D12RootSignature> CreateRootSignature(ID3D12Device* device, con
 				params[index].Descriptor.ShaderRegister = slot.shaderRegister;
 				params[index].Descriptor.RegisterSpace	= 0;
 				params[index].ShaderVisibility			= D3D12_SHADER_VISIBILITY_ALL;
+				break;
+			}
+			case BindingType::RWTexture:
+			{
+				// A table, since a root UAV can only point at a buffer.
+				ranges[index].RangeType							= D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+				ranges[index].NumDescriptors					= 1;
+				ranges[index].BaseShaderRegister				= slot.shaderRegister;
+				ranges[index].RegisterSpace						= 0;
+				ranges[index].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+				params[index].ParameterType						  = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+				params[index].DescriptorTable.NumDescriptorRanges = 1;
+				params[index].DescriptorTable.pDescriptorRanges	  = &ranges[index];
+				params[index].ShaderVisibility					  = stageVisibility;
 				break;
 			}
 		}
@@ -337,7 +353,7 @@ bool D3D12ComputePipeline::InitializeWithDevice(ID3D12Device* device, const Comp
 	DYNAMIC_ASSERT(device, "D3D12ComputePipeline::InitializeWithDevice: device is null");
 	DYNAMIC_ASSERT(desc.computeShader, "D3D12ComputePipeline::InitializeWithDevice: computeShader required");
 
-	m_rootSignature = CreateRootSignature(device, desc.bindings, {}, true);
+	m_rootSignature = CreateRootSignature(device, desc.bindings, desc.samplers, true);
 
 	D3D12Shader* cs = static_cast<D3D12Shader*>(desc.computeShader);
 

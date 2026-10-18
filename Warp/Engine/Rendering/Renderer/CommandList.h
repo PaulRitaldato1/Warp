@@ -129,6 +129,10 @@ public:
 	// created with BufferDesc::bUnorderedAccess and be in UnorderedAccess state.
 	virtual void SetUnorderedAccessBuffer(u32 rootIndex, Buffer* buffer, u64 offset) = 0;
 
+	// Bind one mip of a Storage texture as a RWTexture at rootIndex. The texture
+	// must be in UnorderedAccess state.
+	virtual void SetUnorderedAccessTexture(u32 rootIndex, Texture* texture, u32 mip) = 0;
+
 	// ---------------------------------------------------------------------------
 	// Copy / transfer
 	// ---------------------------------------------------------------------------

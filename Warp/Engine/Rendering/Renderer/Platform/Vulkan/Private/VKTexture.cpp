@@ -55,6 +55,7 @@ void VKTexture::Init(const TextureDesc& desc)
 	const u32 arrayLayers = (desc.type == TextureType::CubeMap)
 		? 6u
 		: desc.arrayLayers;
+	m_arrayLayers = arrayLayers;
 
 	// -------------------------------------------------------------------------
 	// VkImage
@@ -132,10 +133,45 @@ void VKTexture::Init(const TextureDesc& desc)
 
 	VK_CHECK(vkCreateImageView(m_device, &viewInfo, nullptr, &m_view),
 	         "VKTexture: vkCreateImageView failed");
+
+	// Storage views, one per mip. A storage image cannot be a cube view, so a
+	// cubemap is written as a 2D array, one layer per face.
+	if (desc.usage == TextureUsage::Storage)
+	{
+		m_mipStorageViews.resize(desc.mipLevels, VK_NULL_HANDLE);
+		for (u32 mip = 0; mip < desc.mipLevels; ++mip)
+		{
+			VkImageViewCreateInfo storageInfo           = viewInfo;
+			storageInfo.viewType                        = arrayLayers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
+			                                                              : VK_IMAGE_VIEW_TYPE_2D;
+			storageInfo.subresourceRange.baseMipLevel   = mip;
+			storageInfo.subresourceRange.levelCount     = 1;
+
+			VK_CHECK(vkCreateImageView(m_device, &storageInfo, nullptr, &m_mipStorageViews[mip]),
+			         "VKTexture: vkCreateImageView failed for a storage view");
+		}
+	}
+}
+
+DescriptorHandle VKTexture::GetUAV(u32 mip) const
+{
+	DYNAMIC_ASSERT(mip < m_mipStorageViews.size(), "VKTexture::GetUAV: not a Storage texture, or mip out of range");
+
+	DescriptorHandle h;
+	h.ptr    = static_cast<u64>(reinterpret_cast<uintptr_t>(m_mipStorageViews[mip]));
+	h.width  = (m_width >> mip) > 0 ? (m_width >> mip) : 1;
+	h.height = (m_height >> mip) > 0 ? (m_height >> mip) : 1;
+	return h;
 }
 
 void VKTexture::Cleanup()
 {
+	for (VkImageView storageView : m_mipStorageViews)
+	{
+		vkDestroyImageView(m_device, storageView, nullptr);
+	}
+	m_mipStorageViews.clear();
+
 	if (m_view != VK_NULL_HANDLE)
 	{
 		vkDestroyImageView(m_device, m_view, nullptr);

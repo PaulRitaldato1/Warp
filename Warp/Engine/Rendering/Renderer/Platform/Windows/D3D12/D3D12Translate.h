@@ -23,6 +23,7 @@ inline DXGI_FORMAT ToD3D12Format(TextureFormat fmt)
 		case TextureFormat::RG8:             return DXGI_FORMAT_R8G8_UNORM;
 		case TextureFormat::R8:              return DXGI_FORMAT_R8_UNORM;
 		case TextureFormat::RGBA16F:         return DXGI_FORMAT_R16G16B16A16_FLOAT;
+		case TextureFormat::RG16F:           return DXGI_FORMAT_R16G16_FLOAT;
 		case TextureFormat::RGBA32F:         return DXGI_FORMAT_R32G32B32A32_FLOAT;
 		case TextureFormat::RGB32F:          return DXGI_FORMAT_R32G32B32_FLOAT;
 		case TextureFormat::RG32F:           return DXGI_FORMAT_R32G32_FLOAT;
@@ -54,6 +55,7 @@ inline u32 BytesPerPixelForFormat(TextureFormat fmt)
 		case TextureFormat::RG8:         return 2;
 		case TextureFormat::R8:          return 1;
 		case TextureFormat::RGBA16F:     return 8;
+		case TextureFormat::RG16F:       return 4;
 		case TextureFormat::RGBA32F:     return 16;
 		case TextureFormat::RGB32F:      return 12;
 		case TextureFormat::RG32F:       return 8;

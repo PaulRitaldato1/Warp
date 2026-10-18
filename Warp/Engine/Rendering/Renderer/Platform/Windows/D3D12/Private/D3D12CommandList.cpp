@@ -334,6 +334,20 @@ void D3D12CommandList::SetUnorderedAccessBuffer(u32 rootIndex, Buffer* buffer, u
 		m_list->SetGraphicsRootUnorderedAccessView(rootIndex, address);
 }
 
+void D3D12CommandList::SetUnorderedAccessTexture(u32 rootIndex, Texture* texture, u32 mip)
+{
+	DYNAMIC_ASSERT(texture,   "D3D12CommandList::SetUnorderedAccessTexture: texture is null");
+	DYNAMIC_ASSERT(m_srvHeap, "D3D12CommandList::SetUnorderedAccessTexture: no SRV heap");
+	DYNAMIC_ASSERT(m_device,  "D3D12CommandList::SetUnorderedAccessTexture: no device");
+
+	// Same frame heap as SRVs, it holds CBV, SRV and UAV descriptors alike.
+	const DescriptorHandle srcHandle = texture->GetUAV(mip);
+	D3D12_CPU_DESCRIPTOR_HANDLE src	 = { static_cast<SIZE_T>(srcHandle.ptr) };
+	D3D12DescriptorHeap::Allocation alloc = m_srvHeap->Alloc(1);
+	m_device->CopyDescriptorsSimple(1, alloc.cpu, src, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	BindRootTable(rootIndex, alloc.gpu);
+}
+
 // ---------------------------------------------------------------------------
 // Copy / transfer
 // ---------------------------------------------------------------------------

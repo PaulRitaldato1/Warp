@@ -38,8 +38,7 @@ public:
 	RenderPassBuilder AddPass(const char* name);
 
 	// Records every pass into cmd, each inside a GPU marker and a profile scope,
-	// then clears them. The lambdas usually capture the frame's locals by
-	// reference, so they must not outlive it.
+	// then clears them, so no lambda outlives the frame it was added in.
 	void Execute(CommandList& cmd);
 
 	struct PassStats

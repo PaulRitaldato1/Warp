@@ -26,6 +26,7 @@ public:
 	DescriptorHandle GetRTV() const override { return m_rtvHandle; }
 	DescriptorHandle GetSRV() const override { return m_srvHandle; }
 	DescriptorHandle GetDSV() const override { return m_dsvHandle; }
+	DescriptorHandle GetUAV(u32 mip) const override;
 
 	// D3D12-specific: raw resource pointer and current barrier state.
 	ID3D12Resource*       GetNativeResource() const  { return m_resource.Get(); }
@@ -41,10 +42,12 @@ private:
 	ComRef<ID3D12DescriptorHeap> m_rtvHeap;
 	ComRef<ID3D12DescriptorHeap> m_dsvHeap;
 	ComRef<ID3D12DescriptorHeap> m_srvHeap;
+	ComRef<ID3D12DescriptorHeap> m_uavHeap; // one descriptor per mip, Storage only
 
 	DescriptorHandle m_rtvHandle;
 	DescriptorHandle m_srvHandle;
 	DescriptorHandle m_dsvHandle;
+	Vector<DescriptorHandle> m_uavHandles;
 };
 
 #endif

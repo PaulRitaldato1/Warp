@@ -25,6 +25,7 @@ enum class TextureFormat
 
 	// HDR uncompressed
 	RGBA16F,         // DXGI_FORMAT_R16G16B16A16_FLOAT
+	RG16F,           // DXGI_FORMAT_R16G16_FLOAT
 	RGBA32F,         // DXGI_FORMAT_R32G32B32A32_FLOAT  — Vec4 (tangent / color)
 	RGB32F,          // DXGI_FORMAT_R32G32B32_FLOAT     — Vec3 (position / normal)
 	RG32F,           // DXGI_FORMAT_R32G32_FLOAT        — Vec2 (UV)
@@ -48,7 +49,7 @@ enum class TextureUsage
 	RenderTarget,         // colour output + SRV for read-back
 	DepthStencil,         // depth/stencil output only — no shader read
 	DepthStencilSampled,  // depth/stencil output + SRV for shader read (e.g. lighting pass)
-	Storage,              // read/write in compute shaders
+	Storage,              // written by compute through GetUAV, and sampled
 };
 
 struct TextureDesc
@@ -58,7 +59,7 @@ struct TextureDesc
 	u32           height      = 1;
 	u32           depth       = 1;  // for Texture3D
 	u32           mipLevels   = 1;
-	u32           arrayLayers = 1;
+	u32           arrayLayers = 1;  // ignored for CubeMap, which always has 6
 	TextureFormat format      = TextureFormat::RGBA8;
 	TextureUsage  usage       = TextureUsage::Sampled;
 };
@@ -87,4 +88,8 @@ public:
 	virtual DescriptorHandle GetRTV() const = 0;
 	virtual DescriptorHandle GetSRV() const = 0;
 	virtual DescriptorHandle GetDSV() const = 0;
+
+	// One mip of a Storage texture, for compute to write. A cubemap's covers all
+	// six faces, so the shader declares RWTexture2DArray and picks the face with z.
+	virtual DescriptorHandle GetUAV(u32 mip) const = 0;
 };

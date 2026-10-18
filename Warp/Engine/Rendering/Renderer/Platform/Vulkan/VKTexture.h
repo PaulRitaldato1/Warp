@@ -27,6 +27,7 @@ public:
 	u32   GetHeight()             const override { return m_height; }
 	u32   GetDepth()              const override { return m_depth;  }
 	u32   GetMipLevels()          const override { return m_mipLevels; }
+	u32   GetArrayLayers()        const          { return m_arrayLayers; }
 	TextureFormat GetFormat()     const override { return m_format; }
 
 	// Texture interface — all three return the same VkImageView; usage is
@@ -34,6 +35,9 @@ public:
 	DescriptorHandle GetRTV() const override { return GetDescriptorHandle(); }
 	DescriptorHandle GetSRV() const override { return GetDescriptorHandle(); }
 	DescriptorHandle GetDSV() const override { return GetDescriptorHandle(); }
+
+	// ptr is the mip's storage VkImageView.
+	DescriptorHandle GetUAV(u32 mip) const override;
 
 	VkImage     GetNativeImage() const { return m_image; }
 	VkImageView GetNativeView()  const { return m_view;  }
@@ -50,6 +54,7 @@ private:
 	VkDevice      m_device        = VK_NULL_HANDLE;
 	VkImage       m_image         = VK_NULL_HANDLE;
 	VkImageView   m_view          = VK_NULL_HANDLE;
+	Vector<VkImageView> m_mipStorageViews; // Storage only, one per mip
 	VmaAllocation m_allocation    = VK_NULL_HANDLE;
 	VkImageLayout m_currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -57,6 +62,7 @@ private:
 	u32           m_height    = 0;
 	u32           m_depth     = 1;
 	u32           m_mipLevels = 1;
+	u32           m_arrayLayers = 1;
 	TextureFormat m_format    = TextureFormat::RGBA8;
 	TextureUsage  m_usage     = TextureUsage::Sampled;
 	TextureType   m_type      = TextureType::Texture2D;

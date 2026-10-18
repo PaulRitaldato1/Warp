@@ -47,6 +47,7 @@ public:
 	void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures)           override;
 	void SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 offset)            override;
 	void SetUnorderedAccessBuffer(u32 rootIndex, Buffer* buffer, u64 offset)           override;
+	void SetUnorderedAccessTexture(u32 rootIndex, Texture* texture, u32 mip)           override;
 
 	void CopyBuffer(Buffer* src, Buffer* dst,
 	                u64 srcOffset, u64 dstOffset, u64 size) override;

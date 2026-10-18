@@ -117,12 +117,13 @@ enum class BindingType : u8
 	TextureTable,	  // D3D12: SRV descriptor table.  Vulkan: combined image sampler array.
 	StructuredBuffer, // D3D12: root SRV.              Vulkan: storage buffer.
 	RWStructuredBuffer, // D3D12: root UAV (u register). Vulkan: storage buffer.
+	RWTexture,			// D3D12: one UAV in a table.     Vulkan: storage image. One mip, see GetUAV.
 };
 
 struct BindingSlot
 {
 	BindingType type;
-	u32 shaderRegister; // HLSL register number (b0, t0, t4, etc.)
+	u32 shaderRegister; // HLSL register number (b0, t0, t4, u0, etc.)
 	u32 count;			// TextureTable: number of consecutive SRVs. Others: 1.
 };
 
@@ -199,6 +200,9 @@ struct ComputePipelineDesc
 
 	// Same rules as PipelineDesc::bindings. The array index is the rootIndex.
 	Vector<BindingSlot> bindings;
+
+	// Same as PipelineDesc::samplers, e.g. for sampling a cubemap in a prefilter.
+	Vector<SamplerDesc> samplers;
 };
 
 // ---------------------------------------------------------------------------

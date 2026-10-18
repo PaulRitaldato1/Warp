@@ -6,6 +6,8 @@
 #include <Rendering/Renderer/DescriptorHandle.h>
 #include <Rendering/Renderer/Platform/Vulkan/VKCommon.h>
 
+struct VKSamplerBinding;
+
 // ---------------------------------------------------------------------------
 // VKCommandList — wraps a VkCommandBuffer with one VkCommandPool per
 // frame-in-flight slot.  Dynamic rendering (Vulkan 1.3) is used in place
@@ -39,6 +41,9 @@ public:
 
 	void SetPipelineState(PipelineState* state)               override;
 	void SetComputePipelineState(ComputePipelineState* state) override;
+
+	// The bound pipeline's samplers, pushed once per bind.
+	void PushSamplers(const Vector<VKSamplerBinding>& samplers);
 
 	// ---------------------------------------------------------------------------
 	// Input assembly
@@ -96,6 +101,7 @@ public:
 	void SetShaderResources(u32 rootIndex, const Vector<Texture*>& textures) override;
 	void SetShaderResourceBuffer(u32 rootIndex, Buffer* buffer, u64 offset)  override;
 	void SetUnorderedAccessBuffer(u32 rootIndex, Buffer* buffer, u64 offset) override;
+	void SetUnorderedAccessTexture(u32 rootIndex, Texture* texture, u32 mip) override;
 
 	// ---------------------------------------------------------------------------
 	// Draw / dispatch
